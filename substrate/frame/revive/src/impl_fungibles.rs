@@ -58,8 +58,9 @@ impl<T: Config> Pallet<T> {
 	}
 }
 
-impl<T: Config> fungibles::Inspect<<T as frame_system::Config>::AccountId> for Pallet<T>
+impl<T> fungibles::Inspect<<T as frame_system::Config>::AccountId> for Pallet<T>
 where
+	T: Config + pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256> + Bounded,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,
@@ -163,8 +164,9 @@ where
 // We implement `fungibles::Mutate` to override `burn_from` and `mint_to`.
 //
 // These functions are used in [`xcm_builder::FungiblesAdapter`].
-impl<T: Config> fungibles::Mutate<<T as frame_system::Config>::AccountId> for Pallet<T>
+impl<T> fungibles::Mutate<<T as frame_system::Config>::AccountId> for Pallet<T>
 where
+	T: Config + pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256> + Bounded,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,
@@ -249,8 +251,9 @@ where
 // However, we don't have this type of access to smart contracts.
 // Withdraw and deposit happen via the custom `fungibles::Mutate` impl above.
 // Because of this, all functions here return an error, when possible.
-impl<T: Config> fungibles::Unbalanced<<T as frame_system::Config>::AccountId> for Pallet<T>
+impl<T> fungibles::Unbalanced<<T as frame_system::Config>::AccountId> for Pallet<T>
 where
+	T: Config + pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256> + Bounded,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,

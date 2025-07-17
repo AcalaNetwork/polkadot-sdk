@@ -338,17 +338,31 @@ pub struct ExecConfig {
 	/// Using it for on-chain code is unsafe as it will allow execution without taking any money
 	/// from the origin,
 	pub unsafe_skip_transfers: bool,
+	/// The gas price that was chosen for this transaction.
+	///
+	/// It is determined when transforming `eth_transact` into a proper extrinsic.
+	pub effective_gas_price: Option<U256>,
 }
 
 impl ExecConfig {
 	/// Create a default config appropriate when the call originated from a subtrate tx.
 	pub fn new_substrate_tx() -> Self {
-		Self { bump_nonce: true, collect_deposit_from_hold: false, unsafe_skip_transfers: false }
+		Self {
+			bump_nonce: true,
+			collect_deposit_from_hold: false,
+			unsafe_skip_transfers: false,
+			effective_gas_price: None,
+		}
 	}
 
 	/// Create a default config appropriate when the call originated from a ethereum tx.
-	pub fn new_eth_tx() -> Self {
-		Self { bump_nonce: false, collect_deposit_from_hold: true, unsafe_skip_transfers: false }
+	pub fn new_eth_tx(effective_gas_price: U256) -> Self {
+		Self {
+			bump_nonce: false,
+			collect_deposit_from_hold: true,
+			unsafe_skip_transfers: false,
+			effective_gas_price: Some(effective_gas_price),
+		}
 	}
 }
 

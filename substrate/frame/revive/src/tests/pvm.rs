@@ -24,7 +24,7 @@ use super::{
 use crate::{
 	address::{create1, create2, AddressMapper},
 	assert_refcount, assert_return_code,
-	evm::{runtime::GAS_PRICE, CallTrace, CallTracer, CallType, GenericTransaction},
+	evm::{CallTrace, CallTracer, CallType, GenericTransaction},
 	exec::Key,
 	limits,
 	storage::DeletionQueueManager,
@@ -3353,7 +3353,10 @@ fn gas_price_api_works() {
 		// Call the contract: It echoes back the value returned by the gas price API.
 		let received = builder::bare_call(addr).build_and_unwrap_result();
 		assert_eq!(received.flags, ReturnFlags::empty());
-		assert_eq!(u64::from_le_bytes(received.data[..].try_into().unwrap()), u64::from(GAS_PRICE));
+		assert_eq!(
+			u64::from_le_bytes(received.data[..].try_into().unwrap()),
+			u64::try_from(<Pallet<Test>>::evm_gas_price()).unwrap(),
+		);
 	});
 }
 
@@ -3840,7 +3843,7 @@ fn skip_transfer_works() {
 					..Default::default()
 				},
 				Weight::MAX,
-				|_, _| 0u64,
+				|_, _| Some(0u64),
 			),
 			EthTransactError::Message(format!(
 				"insufficient funds for gas * price + value: address {BOB_ADDR:?} have 0 (supplied gas 1)"
@@ -3855,7 +3858,7 @@ fn skip_transfer_works() {
 				..Default::default()
 			},
 			Weight::MAX,
-			|_, _| 0u64,
+			|_, _| Some(0u64),
 		));
 
 		let Contract { addr, .. } =
@@ -3875,7 +3878,7 @@ fn skip_transfer_works() {
 					..Default::default()
 				},
 				Weight::MAX,
-				|_, _| 0u64,
+				|_, _| Some(0u64),
 			),
 			EthTransactError::Message(format!(
 				"insufficient funds for gas * price + value: address {BOB_ADDR:?} have 0 (supplied gas 1)"
@@ -3895,7 +3898,7 @@ fn skip_transfer_works() {
 				..Default::default()
 			},
 			Weight::MAX,
-			|_, _| 0u64,
+			|_, _| Some(0u64),
 		)
 		.is_err(),);
 
@@ -3908,7 +3911,7 @@ fn skip_transfer_works() {
 				..Default::default()
 			},
 			Weight::MAX,
-			|_, _| 0u64,
+			|_, _| Some(0u64),
 		));
 
 		// call through contract works when transfers are skipped
@@ -3920,7 +3923,7 @@ fn skip_transfer_works() {
 				..Default::default()
 			},
 			Weight::MAX,
-			|_, _| 0u64,
+			|_, _| Some(0u64),
 		));
 
 		// works with transfers enabled if we don't incur a storage cost
@@ -3934,7 +3937,7 @@ fn skip_transfer_works() {
 				..Default::default()
 			},
 			Weight::MAX,
-			|_, _| 0u64,
+			|_, _| Some(0u64),
 		));
 
 		// fails when trying to increase the storage item size
@@ -3947,7 +3950,7 @@ fn skip_transfer_works() {
 				..Default::default()
 			},
 			Weight::MAX,
-			|_, _| 0u64,
+			|_, _| Some(0u64),
 		)
 		.is_err());
 	});

@@ -22,9 +22,10 @@ mod sol;
 
 use crate::{
 	self as pallet_revive,
+	evm::{fees::BlockRatioFee, runtime::SetWeightLimit},
 	genesis::{Account, ContractData},
 	test_utils::*,
-	AccountId32Mapper, AddressMapper, BalanceOf, BalanceWithDust, CodeInfoOf, Config,
+	AccountId32Mapper, AddressMapper, BalanceOf, BalanceWithDust, Call, CodeInfoOf, Config,
 	GenesisConfig, Origin, Pallet, PristineCode,
 };
 use frame_support::{
@@ -32,7 +33,7 @@ use frame_support::{
 	pallet_prelude::EnsureOrigin,
 	parameter_types,
 	traits::{ConstU32, ConstU64, FindAuthor, StorageVersion},
-	weights::{constants::WEIGHT_REF_TIME_PER_SECOND, FixedFee, IdentityFee, Weight},
+	weights::{constants::WEIGHT_REF_TIME_PER_SECOND, FixedFee, Weight},
 };
 use pallet_revive_fixtures::compile_module;
 use pallet_transaction_payment::{ConstFeeMultiplier, Multiplier};
@@ -227,7 +228,7 @@ impl Test {
 parameter_types! {
 	pub BlockWeights: frame_system::limits::BlockWeights =
 		frame_system::limits::BlockWeights::simple_max(
-			Weight::from_parts(2 * WEIGHT_REF_TIME_PER_SECOND, u64::MAX),
+			Weight::from_parts(2 * WEIGHT_REF_TIME_PER_SECOND, 10 * 1024 * 1024),
 		);
 	pub static ExistentialDeposit: u64 = 1;
 }
@@ -281,7 +282,7 @@ parameter_types! {
 #[derive_impl(pallet_transaction_payment::config_preludes::TestDefaultConfig)]
 impl pallet_transaction_payment::Config for Test {
 	type OnChargeTransaction = pallet_transaction_payment::FungibleAdapter<Balances, ()>;
-	type WeightToFee = IdentityFee<<Self as pallet_balances::Config>::Balance>;
+	type WeightToFee = BlockRatioFee<1, 1, Self>;
 	type LengthToFee = FixedFee<100, <Self as pallet_balances::Config>::Balance>;
 	type FeeMultiplierUpdate = ConstFeeMultiplier<FeeMultiplier>;
 }
@@ -362,13 +363,25 @@ impl Config for Test {
 	type DepositSource = DepositSource;
 }
 
-impl TryFrom<RuntimeCall> for crate::Call<Test> {
+impl TryFrom<RuntimeCall> for Call<Test> {
 	type Error = ();
 
 	fn try_from(value: RuntimeCall) -> Result<Self, Self::Error> {
 		match value {
 			RuntimeCall::Contracts(call) => Ok(call),
 			_ => Err(()),
+		}
+	}
+}
+
+impl SetWeightLimit for RuntimeCall {
+	fn set_weight_limit(&mut self, weight_limit: Weight) {
+		match self {
+			Self::Contracts(
+				Call::eth_call { gas_limit, .. } |
+				Call::eth_instantiate_with_code { gas_limit, .. },
+			) => *gas_limit = weight_limit,
+			_ => (),
 		}
 	}
 }

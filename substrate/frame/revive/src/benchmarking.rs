@@ -20,7 +20,6 @@
 #![cfg(feature = "runtime-benchmarks")]
 use crate::{
 	call_builder::{caller_funding, default_deposit_limit, CallSetup, Contract, VmBinaryModule},
-	evm::runtime::GAS_PRICE,
 	exec::{Key, MomentOf, PrecompileExt},
 	limits,
 	precompiles::{
@@ -111,6 +110,7 @@ fn whitelisted_pallet_account<T: Config>() -> T::AccountId {
 		<T as frame_system::Config>::RuntimeEvent: From<pallet::Event<T>>,
 		<T as Config>::RuntimeCall: From<frame_system::Call<T>>,
 		<T as frame_system::Config>::Hash: frame_support::traits::IsType<H256>,
+		T: pallet_transaction_payment::Config,
 )]
 mod benchmarks {
 	use super::*;
@@ -305,7 +305,7 @@ mod benchmarks {
 		}
 
 		#[extrinsic_call]
-		_(origin, evm_value, Weight::MAX, storage_deposit, code, input);
+		_(origin, evm_value, Weight::MAX, storage_deposit, code, input, 0u32.into());
 
 		let deposit =
 			T::Currency::balance_on_hold(&HoldReason::StorageDepositReserve.into(), &account_id);
@@ -453,7 +453,7 @@ mod benchmarks {
 		let before = Pallet::<T>::evm_balance(&instance.address);
 		let storage_deposit = default_deposit_limit::<T>();
 		#[extrinsic_call]
-		_(origin, instance.address, evm_value, Weight::MAX, storage_deposit, data);
+		_(origin, instance.address, evm_value, Weight::MAX, storage_deposit, data, 0u32.into());
 		let deposit = T::Currency::balance_on_hold(
 			&HoldReason::StorageDepositReserve.into(),
 			&instance.account_id,
@@ -951,7 +951,7 @@ mod benchmarks {
 		{
 			result = runtime.bench_gas_price(memory.as_mut_slice());
 		}
-		assert_eq!(result.unwrap(), u64::from(GAS_PRICE));
+		assert_eq!(U256::from(result.unwrap()), <Pallet<T>>::evm_gas_price());
 	}
 
 	#[benchmark(pov_mode = Measured)]
@@ -1062,24 +1062,6 @@ mod benchmarks {
 		}
 		assert_ok!(result);
 		assert_eq!(U256::from_little_endian(&memory[..]), runtime.ext().now());
-	}
-
-	#[benchmark(pov_mode = Measured)]
-	fn seal_weight_to_fee() {
-		build_runtime!(runtime, memory: [[0u8;32], ]);
-		let weight = Weight::from_parts(500_000, 300_000);
-		let result;
-		#[block]
-		{
-			result = runtime.bench_weight_to_fee(
-				memory.as_mut_slice(),
-				weight.ref_time(),
-				weight.proof_size(),
-				0,
-			);
-		}
-		assert_ok!(result);
-		assert_eq!(U256::from_little_endian(&memory[..]), runtime.ext().get_weight_price(weight));
 	}
 
 	#[benchmark(pov_mode = Measured)]

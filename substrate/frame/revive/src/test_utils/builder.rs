@@ -50,6 +50,7 @@ macro_rules! builder {
 		#[allow(dead_code)]
 		impl<T: Config> $name<T>
 		where
+			T: pallet_transaction_payment::Config,
 			BalanceOf<T>: Into<sp_core::U256> + TryFrom<sp_core::U256>,
 			crate::MomentOf<T>: Into<sp_core::U256>,
 			T::Hash: frame_support::traits::IsType<sp_core::H256>,
@@ -244,6 +245,7 @@ builder!(
 		gas_limit: Weight,
 		storage_deposit_limit: BalanceOf<T>,
 		data: Vec<u8>,
+		effective_gas_price: U256,
 	) -> DispatchResultWithPostInfo;
 
 	/// Create a [`EthCallBuilder`] with default values.
@@ -255,6 +257,7 @@ builder!(
 			gas_limit: GAS_LIMIT,
 			storage_deposit_limit: deposit_limit::<T>(),
 			data: vec![],
+			effective_gas_price: 0u32.into(),
 		}
 	}
 );

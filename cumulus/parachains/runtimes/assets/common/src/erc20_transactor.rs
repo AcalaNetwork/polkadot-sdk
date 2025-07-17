@@ -78,6 +78,7 @@ impl<
 		TransfersCheckingAccount,
 	>
 where
+	T: pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256>,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,

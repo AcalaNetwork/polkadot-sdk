@@ -60,7 +60,7 @@ pub struct CallSetup<T: Config> {
 
 impl<T> Default for CallSetup<T>
 where
-	T: Config,
+	T: Config + pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256>,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,
@@ -72,7 +72,7 @@ where
 
 impl<T> CallSetup<T>
 where
-	T: Config,
+	T: Config + pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256>,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,
@@ -225,7 +225,7 @@ pub struct Contract<T: Config> {
 
 impl<T> Contract<T>
 where
-	T: Config,
+	T: Config + pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256>,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,

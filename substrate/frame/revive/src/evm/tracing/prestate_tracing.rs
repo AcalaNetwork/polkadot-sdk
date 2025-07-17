@@ -43,6 +43,7 @@ pub struct PrestateTracer<T> {
 
 impl<T: Config> PrestateTracer<T>
 where
+	T: pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256> + Bounded,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,
@@ -133,6 +134,7 @@ where
 
 impl<T: Config> PrestateTracer<T>
 where
+	T: pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256> + Bounded,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,
@@ -166,6 +168,7 @@ where
 
 impl<T: Config> Tracing for PrestateTracer<T>
 where
+	T: pallet_transaction_payment::Config,
 	BalanceOf<T>: Into<U256> + TryFrom<U256> + Bounded,
 	MomentOf<T>: Into<U256>,
 	T::Hash: frame_support::traits::IsType<H256>,
