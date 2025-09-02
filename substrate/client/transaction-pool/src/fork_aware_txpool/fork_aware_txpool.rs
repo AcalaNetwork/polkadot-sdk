@@ -450,9 +450,9 @@ where
 			}
 		}
 		.boxed();
-		spawner.spawn_essential("txpool-background", Some("transaction-pool"), combined_tasks);
+		spawner.spawn_essential("txpool-background-combined", Some("transaction-pool"), combined_tasks);
 		spawner.spawn_essential_blocking(
-			"txpool-background",
+			"txpool-background-blocking-mempool",
 			Some("transaction-pool"),
 			blocking_mempool_task,
 		);
