@@ -16,6 +16,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+// TODO: this is not a pallet, but a traits library, need to rename it or break it
+
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::upper_case_acronyms)]
 #![allow(clippy::from_over_into)]
@@ -27,15 +29,35 @@ use sp_std::prelude::*;
 pub mod bounded;
 pub mod dex;
 pub mod honzon;
+pub mod data_provider;
 
 pub use crate::bounded::*;
 pub use crate::dex::*;
 pub use crate::honzon::*;
+pub use crate::data_provider::*;
 
 pub type Price = FixedU128;
 pub type ExchangeRate = FixedU128;
 pub type Ratio = FixedU128;
 pub type Rate = FixedU128;
+
+/// Combine data provided by operators
+pub trait CombineData<Key, TimestampedValue> {
+	/// Combine data provided by operators
+	fn combine_data(
+		key: &Key,
+		values: Vec<TimestampedValue>,
+		prev_value: Option<TimestampedValue>,
+	) -> Option<TimestampedValue>;
+}
+
+/// New data handler
+#[impl_trait_for_tuples::impl_for_tuples(30)]
+pub trait OnNewData<AccountId, Key, Value> {
+	/// New data is available
+	fn on_new_data(who: &AccountId, key: &Key, value: &Value);
+}
+
 
 pub trait PriceProvider<CurrencyId> {
 	fn get_price(currency_id: CurrencyId) -> Option<Price>;

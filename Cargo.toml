@@ -10,6 +10,7 @@ resolver = "2"
 
 members = [
 	"substrate/frame/traits",
+	"substrate/frame/oracle",
 	"bridges/bin/runtime-common",
 	"bridges/chains/chain-cumulus",
 	"bridges/chains/chain-polkadot-bulletin",
