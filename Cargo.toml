@@ -12,6 +12,7 @@ members = [
 	"substrate/frame/traits",
 	"substrate/frame/oracle",
 	"substrate/frame/auction",
+	"substrate/frame/cdp-treasury",
 	"bridges/bin/runtime-common",
 	"bridges/chains/chain-cumulus",
 	"bridges/chains/chain-polkadot-bulletin",
@@ -632,6 +633,7 @@ zero-prefixed-literal = { level = "allow", priority = 2 }            # 00_1000_0
 [workspace.dependencies]
 pallet-traits = { path = "substrate/frame/traits", default-features = false }
 pallet-oracle = { path = "substrate/frame/oracle", default-features = false }
+pallet-cdp-treasury = { path = "substrate/frame/cdp-treasury", default-features = false }
 Inflector = { version = "0.11.4" }
 aes-gcm = { version = "0.10" }
 ahash = { version = "0.8.2" }

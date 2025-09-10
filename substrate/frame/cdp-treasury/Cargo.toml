@@ -1,0 +1,39 @@
+[package]
+name = "pallet-cdp-treasury"
+version = "1.0.0"
+authors = ["Acala Developers"]
+edition = { workspace = true }
+
+[dependencies]
+log = { workspace = true }
+codec = { workspace = true, package = "parity-scale-codec" }
+scale-info = { workspace = true }
+sp-runtime = { workspace = true }
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+sp-std = { workspace = true }
+pallet-traits = { workspace = true }
+pallet-asset-conversion = { workspace = true, default-features = false }
+num-traits = { workspace = true, default-features = false }
+
+[dev-dependencies]
+sp-core = { workspace = true, features = ["std"] }
+sp-io = { workspace = true, features = ["std"] }
+pallet-balances = { workspace = true, features = ["std"] }
+pallet-auction = { path = "../auction", features = ["std"] }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"frame-support/std",
+	"frame-system/std",
+	"scale-info/std",
+	"sp-runtime/std",
+	"sp-std/std",
+	"pallet-asset-conversion/std",
+]
+try-runtime = [
+	"frame-support/try-runtime",
+	"frame-system/try-runtime",
+]

@@ -11811,6 +11811,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-cdp-treasury"
+version = "1.0.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "num-traits",
+ "pallet-asset-conversion",
+ "pallet-auction",
+ "pallet-balances",
+ "pallet-traits",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core 28.0.0",
+ "sp-io",
+ "sp-runtime",
+ "sp-std 14.0.0",
+]
+
+[[package]]
 name = "pallet-child-bounties"
 version = "27.0.0"
 dependencies = [
