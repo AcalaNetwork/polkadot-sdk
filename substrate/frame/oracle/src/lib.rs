@@ -33,7 +33,8 @@ use frame_support::{
 	Parameter,
 };
 use frame_system::{ensure_root, ensure_signed, pallet_prelude::*};
-pub use pallet_traits::{CombineData, DataFeeder, DataProvider, DataProviderExtended, OnNewData, OrderedSet};
+use pallet_traits::OnNewData;
+pub use pallet_traits::{CombineData, DataFeeder, DataProvider, DataProviderExtended};
 use scale_info::TypeInfo;
 use sp_runtime::{traits::Member, DispatchResult, RuntimeDebug};
 use sp_std::{prelude::*, vec};
@@ -85,8 +86,6 @@ pub mod module {
 
 	#[pallet::config]
 	pub trait Config<I: 'static = ()>: frame_system::Config {
-		type RuntimeEvent: From<Event<Self, I>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
 		/// Hook on new data received
 		type OnNewData: OnNewData<Self::AccountId, Self::OracleKey, Self::OracleValue>;
 
@@ -158,7 +157,7 @@ pub mod module {
 	/// If an oracle operator has fed a value in this block
 	#[pallet::storage]
 	pub(crate) type HasDispatched<T: Config<I>, I: 'static = ()> =
-		StorageValue<_, OrderedSet<T::AccountId, T::MaxHasDispatchedSize>, ValueQuery>;
+		StorageValue<_, BoundedBTreeSet<T::AccountId, T::MaxHasDispatchedSize>, ValueQuery>;
 
 	#[pallet::pallet]
 	pub struct Pallet<T, I = ()>(PhantomData<(T, I)>);
@@ -194,10 +193,12 @@ pub mod module {
 			let who = Self::ensure_account(feeder)?;
 
 			// ensure account hasn't dispatched an updated yet
-			ensure!(
-				HasDispatched::<T, I>::mutate(|set| set.insert(who.clone())),
-				Error::<T, I>::AlreadyFeeded
-			);
+			<HasDispatched<T, I>>::try_mutate(|set| {
+				set.try_insert(who.clone())
+					.map_err(|_| Error::<T, I>::AlreadyFeeded)?
+					.then_some(())
+					.ok_or(Error::<T, I>::AlreadyFeeded)
+			})?;
 
 			Self::do_feed_values(who, values.into())?;
 			Ok(Pays::No.into())
