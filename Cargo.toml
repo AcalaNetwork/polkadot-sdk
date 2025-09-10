@@ -9,6 +9,7 @@ repository = "https://github.com/paritytech/polkadot-sdk.git"
 resolver = "2"
 
 members = [
+	"substrate/frame/traits",
 	"bridges/bin/runtime-common",
 	"bridges/chains/chain-cumulus",
 	"bridges/chains/chain-polkadot-bulletin",
