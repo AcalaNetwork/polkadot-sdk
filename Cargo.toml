@@ -13,6 +13,7 @@ members = [
 	"substrate/frame/oracle",
 	"substrate/frame/auction",
 	"substrate/frame/cdp-treasury",
+	"substrate/frame/loans",
 	"bridges/bin/runtime-common",
 	"bridges/chains/chain-cumulus",
 	"bridges/chains/chain-polkadot-bulletin",

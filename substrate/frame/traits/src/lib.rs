@@ -47,6 +47,19 @@ pub type ExchangeRate = FixedU128;
 pub type Ratio = FixedU128;
 pub type Rate = FixedU128;
 
+pub trait Handler<T> {
+	fn handle(t: &T) -> DispatchResult;
+}
+
+#[impl_trait_for_tuples::impl_for_tuples(30)]
+impl<T> Handler<T> for Tuple {
+	fn handle(t: &T) -> DispatchResult {
+		for_tuples!( #( Tuple::handle(t); )* );
+		Ok(())
+	}
+}
+
+
 /// Indicate if should change a value
 #[derive(Encode, Decode, Clone, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 pub enum Change<Value> {
