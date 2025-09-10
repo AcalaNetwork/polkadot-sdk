@@ -11448,6 +11448,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-auction"
+version = "1.0.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "pallet-traits",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core 28.0.0",
+ "sp-io",
+ "sp-runtime",
+ "sp-std 14.0.0",
+]
+
+[[package]]
 name = "pallet-aura"
 version = "27.0.0"
 dependencies = [
@@ -12864,6 +12880,7 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
+ "pallet-traits",
  "parity-scale-codec",
  "scale-info",
  "serde",

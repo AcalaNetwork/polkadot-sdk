@@ -23,14 +23,20 @@
 #![allow(clippy::from_over_into)]
 #![allow(clippy::type_complexity)]
 
-use sp_runtime::{traits::CheckedDiv, DispatchError, DispatchResult, FixedU128};
+use codec::{Decode, Encode, MaxEncodedLen};
+#[cfg(feature = "std")]
+use serde::{Deserialize, Serialize};
+use scale_info::TypeInfo;
+use sp_runtime::{traits::CheckedDiv, DispatchError, DispatchResult, FixedU128, RuntimeDebug};
 use sp_std::prelude::*;
 
+pub mod auction;
 pub mod bounded;
 pub mod dex;
 pub mod honzon;
 pub mod data_provider;
 
+pub use crate::auction::*;
 pub use crate::bounded::*;
 pub use crate::dex::*;
 pub use crate::honzon::*;
@@ -40,6 +46,23 @@ pub type Price = FixedU128;
 pub type ExchangeRate = FixedU128;
 pub type Ratio = FixedU128;
 pub type Rate = FixedU128;
+
+/// Indicate if should change a value
+#[derive(Encode, Decode, Clone, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+pub enum Change<Value> {
+	/// No change.
+	NoChange,
+	/// Changed to new value.
+	NewValue(Value),
+}
+
+#[derive(Encode, Decode, RuntimeDebug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy)]
+#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
+pub struct TimestampedValue<Value: Ord + PartialOrd, Moment> {
+	pub value: Value,
+	pub timestamp: Moment,
+}
+
 
 /// Combine data provided by operators
 pub trait CombineData<Key, TimestampedValue> {
