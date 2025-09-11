@@ -14,6 +14,7 @@ members = [
 	"substrate/frame/auction",
 	"substrate/frame/cdp-treasury",
 	"substrate/frame/loans",
+	"substrate/frame/auction-manager",
 	"bridges/bin/runtime-common",
 	"bridges/chains/chain-cumulus",
 	"bridges/chains/chain-polkadot-bulletin",
