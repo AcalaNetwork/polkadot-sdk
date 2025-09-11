@@ -1,62 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1757602687673,
+  "lastUpdate": 1757627378825,
   "repoUrl": "https://github.com/paritytech/polkadot-sdk",
   "entries": {
     "availability-distribution-regression-bench": [
-      {
-        "commit": {
-          "author": {
-            "email": "egor@parity.io",
-            "name": "Egor_P",
-            "username": "EgorPopelyaev"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "e9a15dce993a62c65a89dcb54158bc2ff181f5b9",
-          "message": "[Release|Ci/CD] Update path to `ci-unfied` Dockerfile to grab a right Rust version (#7869)",
-          "timestamp": "2025-03-11T11:37:01Z",
-          "tree_id": "47dcf4cb85807c0d52cc94a40af415ee10c5be88",
-          "url": "https://github.com/paritytech/polkadot-sdk/commit/e9a15dce993a62c65a89dcb54158bc2ff181f5b9"
-        },
-        "date": 1741697585946,
-        "tool": "customSmallerIsBetter",
-        "benches": [
-          {
-            "name": "Sent to peers",
-            "value": 18481.666666666653,
-            "unit": "KiB"
-          },
-          {
-            "name": "Received from peers",
-            "value": 433.3333333333332,
-            "unit": "KiB"
-          },
-          {
-            "name": "availability-store",
-            "value": 0.1560523449666668,
-            "unit": "seconds"
-          },
-          {
-            "name": "test-environment",
-            "value": 0.008895146186666723,
-            "unit": "seconds"
-          },
-          {
-            "name": "availability-distribution",
-            "value": 0.012494010713333335,
-            "unit": "seconds"
-          },
-          {
-            "name": "bitfield-distribution",
-            "value": 0.02397454455333333,
-            "unit": "seconds"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -26999,6 +26945,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "availability-store",
             "value": 0.1588942509600001,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "35698397+drskalman@users.noreply.github.com",
+            "name": "drskalman",
+            "username": "drskalman"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dae4b9cf572920848910b520d3cefe83d34692f3",
+          "message": "Proof of possession alongside signing on owner (#9471)\n\n# Description\n  \nWhen signing on a new session key the signer must also use the session\nkey to sign on the authority signer key to prove that it is not faking\nthe ownership of someone's else key to mount a front runner attack. On\nthe other hand for aggregatable crypto schemes, the signer should proof\nthe ownership of the private key by signing a specific statement in a\nseparate domain than one is used for usual signing to prevent rogue key\nattack. This means that those scheme needs to submit two signature as\nproof in contrast to non-aggregatble schemes. It is also possible that\nin future some crypto scheme requires the key submitter to prove other\nfact before accepting its submission.\n\nThis PR introduce a new customize type ProofOfPossession for Pairs (in\naddition to Public and Signature) to represent these proof. Currently\n`ProofOfPossession = Signature` for `ecdsa, ed25519 and sr25519` while\n`ProofOfPossession = Signature | Signature` for bls381 and\n`ProofOfPossession = ecdsa:Signature | bls381:Signature |\nbls381:Signature` for `ecdsa_bls381` paired_key scheme.\n\n---------\n\nCo-authored-by: Bastian Köcher <git@kchr.de>\nCo-authored-by: Davide Galassi <davxy@datawok.net>",
+          "timestamp": "2025-09-11T19:58:10Z",
+          "tree_id": "597cc7d36c3d338a58f4b577b6a2e2d78d7bdf1f",
+          "url": "https://github.com/paritytech/polkadot-sdk/commit/dae4b9cf572920848910b520d3cefe83d34692f3"
+        },
+        "date": 1757627360662,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Sent to peers",
+            "value": 18481.666666666653,
+            "unit": "KiB"
+          },
+          {
+            "name": "Received from peers",
+            "value": 433.3333333333332,
+            "unit": "KiB"
+          },
+          {
+            "name": "test-environment",
+            "value": 0.007606240579999987,
+            "unit": "seconds"
+          },
+          {
+            "name": "bitfield-distribution",
+            "value": 0.02261888454,
+            "unit": "seconds"
+          },
+          {
+            "name": "availability-store",
+            "value": 0.15866383296666675,
+            "unit": "seconds"
+          },
+          {
+            "name": "availability-distribution",
+            "value": 0.013016551480000001,
             "unit": "seconds"
           }
         ]
