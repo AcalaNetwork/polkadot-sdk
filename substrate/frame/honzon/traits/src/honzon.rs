@@ -86,12 +86,11 @@ pub trait AuctionManager<AccountId> {
 
 	fn new_collateral_auction(
 		refund_recipient: &AccountId,
-		currency_id: Self::CurrencyId,
 		amount: Self::Balance,
 		target: Self::Balance,
 	) -> DispatchResult;
 	fn cancel_auction(id: Self::AuctionId) -> DispatchResult;
-	fn get_total_collateral_in_auction(id: Self::CurrencyId) -> Self::Balance;
+	fn get_total_collateral_in_auction() -> Self::Balance;
 	fn get_total_target_in_auction() -> Self::Balance;
 }
 
@@ -107,7 +106,7 @@ pub trait CDPTreasury<AccountId> {
 	fn get_debit_pool() -> Self::Balance;
 
 	/// get collateral assets amount of cdp treasury
-	fn get_total_collaterals(id: Self::CurrencyId) -> Self::Balance;
+	fn get_total_collaterals() -> Self::Balance;
 
 	/// calculate the proportion of specific debit amount for the whole system
 	fn get_debit_proportion(amount: Self::Balance) -> Ratio;
@@ -133,39 +132,24 @@ pub trait CDPTreasury<AccountId> {
 	fn withdraw_surplus(to: &AccountId, surplus: Self::Balance) -> DispatchResult;
 
 	/// deposit collateral assets to cdp treasury by `who`
-	fn deposit_collateral(
-		from: &AccountId,
-		currency_id: Self::CurrencyId,
-		amount: Self::Balance,
-	) -> DispatchResult;
+	fn deposit_collateral(from: &AccountId, amount: Self::Balance) -> DispatchResult;
 
 	/// withdraw collateral assets of cdp treasury to `who`
-	fn withdraw_collateral(
-		to: &AccountId,
-		currency_id: Self::CurrencyId,
-		amount: Self::Balance,
-	) -> DispatchResult;
+	fn withdraw_collateral(to: &AccountId, amount: Self::Balance) -> DispatchResult;
 }
 
 pub trait CDPTreasuryExtended<AccountId>: CDPTreasury<AccountId> {
 	fn swap_collateral_to_stable(
-		currency_id: Self::CurrencyId,
 		limit: SwapLimit<Self::Balance>,
 		collateral_in_auction: bool,
 	) -> sp_std::result::Result<(Self::Balance, Self::Balance), DispatchError>;
 
 	fn create_collateral_auctions(
-		currency_id: Self::CurrencyId,
 		amount: Self::Balance,
 		target: Self::Balance,
 		refund_receiver: AccountId,
 		split: bool,
 	) -> sp_std::result::Result<u32, DispatchError>;
-
-	fn remove_liquidity_for_lp_collateral(
-		currency_id: Self::CurrencyId,
-		amount: Self::Balance,
-	) -> sp_std::result::Result<(Self::Balance, Self::Balance), DispatchError>;
 
 	fn max_auction() -> u32;
 }

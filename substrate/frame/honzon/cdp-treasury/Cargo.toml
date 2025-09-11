@@ -20,7 +20,9 @@ num-traits = { workspace = true, default-features = false }
 sp-core = { workspace = true, features = ["std"] }
 sp-io = { workspace = true, features = ["std"] }
 pallet-balances = { workspace = true, features = ["std"] }
+pallet-assets = { workspace = true, features = ["std"] }
 pallet-auction = { path = "../auction", features = ["std"] }
+serde = { workspace = true, features = ["derive"] }
 
 [features]
 default = ["std"]

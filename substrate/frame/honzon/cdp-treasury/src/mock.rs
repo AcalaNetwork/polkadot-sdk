@@ -21,74 +21,79 @@
 #![cfg(test)]
 
 use super::*;
+use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
-	construct_runtime, derive_impl, ord_parameter_types, parameter_types,
-	traits::{ConstU128, ConstU32, ConstU64, EitherOfDiverse, Nothing},
+	construct_runtime, derive_impl, parameter_types, PalletId,
+	traits::{
+		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, EitherOfDiverse, Everything,
+		Incrementable, InstanceFilter, OnUnbalanced, SortedMembers,
+	},
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use module_support::SpecificJointsSwap;
-use nutsfinance_stable_asset::traits::StableAsset;
-use nutsfinance_stable_asset::{
-	PoolTokenIndex, RedeemProportionResult, StableAssetPoolId, StableAssetPoolInfo, SwapResult,
+use pallet_traits::{AggregatedSwapPath, AuctionManager, Swap, SwapLimit};
+use scale_info::TypeInfo;
+use sp_core::H256;
+use sp_runtime::{
+	traits::{IdentityLookup},
+	BuildStorage, DispatchError, DispatchResult, Permill,
 };
-use orml_traits::parameter_type_with_key;
-use primitives::{DexShare, TokenSymbol, TradingPair};
-use sp_runtime::{traits::IdentityLookup, BuildStorage};
+use std::cell::RefCell;
 
 pub type AccountId = u128;
 pub type BlockNumber = u64;
 pub type Amount = i64;
 pub type AuctionId = u32;
+pub type Balance = u128;
+
+pub type CurrencyId = u32;
 
 pub const ALICE: AccountId = 0;
 pub const BOB: AccountId = 1;
 pub const CHARLIE: AccountId = 2;
-pub const ACA: CurrencyId = CurrencyId::Token(TokenSymbol::ACA);
-pub const AUSD: CurrencyId = CurrencyId::Token(TokenSymbol::AUSD);
-pub const BTC: CurrencyId = CurrencyId::ForeignAsset(255);
-pub const DOT: CurrencyId = CurrencyId::Token(TokenSymbol::DOT);
-pub const STABLE_ASSET_LP: CurrencyId = CurrencyId::StableAssetPoolToken(0);
-pub const LP_AUSD_DOT: CurrencyId =
-	CurrencyId::DexShare(DexShare::Token(TokenSymbol::AUSD), DexShare::Token(TokenSymbol::DOT));
+pub const NATIVE: CurrencyId = 0;
+pub const STABLE: CurrencyId = 1;
 
 mod cdp_treasury {
 	pub use super::super::*;
 }
 
+type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
+type Block = frame_system::mocking::MockBlock<Test>;
+
+construct_runtime!(
+	pub enum Test where
+		Block = Block,
+		NodeBlock = Block,
+		UncheckedExtrinsic = UncheckedExtrinsic
+	{
+		System: frame_system,
+		CDPTreasuryModule: cdp_treasury,
+		PalletBalances: pallet_balances,
+		Assets: pallet_assets,
+	}
+);
+
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
-impl frame_system::Config for Runtime {
+impl frame_system::Config for Test {
 	type AccountId = AccountId;
 	type Lookup = IdentityLookup<Self::AccountId>;
 	type Block = Block;
 	type AccountData = pallet_balances::AccountData<Balance>;
+	type OnNewAccount = ();
+	type OnKilledAccount = ();
+	type BaseCallFilter = Everything;
+	type SystemWeightInfo = ();
+	type PalletInfo = PalletInfo;
+	type OnSetCode = ();
+	type MaxConsumers = ConstU32<16>;
 }
 
-parameter_type_with_key! {
-	pub ExistentialDeposits: |_currency_id: CurrencyId| -> Balance {
-		Default::default()
-	};
-}
-
-impl orml_tokens::Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
-	type Balance = Balance;
-	type Amount = Amount;
-	type CurrencyId = CurrencyId;
-	type WeightInfo = ();
-	type ExistentialDeposits = ExistentialDeposits;
-	type CurrencyHooks = ();
-	type MaxLocks = ();
-	type MaxReserves = ();
-	type ReserveIdentifier = [u8; 8];
-	type DustRemovalWhitelist = Nothing;
-}
-
-impl pallet_balances::Config for Runtime {
+impl pallet_balances::Config for Test {
 	type Balance = Balance;
 	type DustRemoval = ();
 	type RuntimeEvent = RuntimeEvent;
 	type ExistentialDeposit = ConstU128<1>;
-	type AccountStore = frame_system::Pallet<Runtime>;
+	type AccountStore = System;
 	type MaxLocks = ();
 	type MaxReserves = ();
 	type ReserveIdentifier = [u8; 8];
@@ -97,65 +102,69 @@ impl pallet_balances::Config for Runtime {
 	type RuntimeFreezeReason = RuntimeFreezeReason;
 	type FreezeIdentifier = ();
 	type MaxFreezes = ();
-}
-pub type AdaptedBasicCurrency = orml_currencies::BasicCurrencyAdapter<Runtime, PalletBalances, Amount, BlockNumber>;
-
-parameter_types! {
-	pub const GetNativeCurrencyId: CurrencyId = ACA;
-}
-
-impl orml_currencies::Config for Runtime {
-	type MultiCurrency = Tokens;
-	type NativeCurrency = AdaptedBasicCurrency;
-	type GetNativeCurrencyId = GetNativeCurrencyId;
-	type WeightInfo = ();
+	type DoneSlashHandler = ();
 }
 
 parameter_types! {
-	pub const GetStableCurrencyId: CurrencyId = AUSD;
-	pub const GetExchangeFee: (u32, u32) = (0, 100);
-	pub EnabledTradingPairs: Vec<TradingPair> = vec![
-		TradingPair::from_currency_ids(AUSD, BTC).unwrap(),
-		TradingPair::from_currency_ids(AUSD, DOT).unwrap(),
-		TradingPair::from_currency_ids(BTC, DOT).unwrap(),
-	];
-	pub const DEXPalletId: PalletId = PalletId(*b"aca/dexm");
+	pub const GetStableCurrencyId: CurrencyId = STABLE;
+	pub const GetNativeCurrencyId: CurrencyId = NATIVE;
 }
 
-impl module_dex::Config for Runtime {
+pub struct OneMember;
+impl SortedMembers<AccountId> for OneMember {
+	fn sorted_members() -> Vec<AccountId> {
+		vec![1]
+	}
+}
+
+impl pallet_assets::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
-	type Currency = Currencies;
-	type GetExchangeFee = GetExchangeFee;
-	type TradingPathLimit = ConstU32<4>;
-	type PalletId = DEXPalletId;
-	type GetNativeCurrencyId = GetNativeCurrencyId;
-	type Erc20InfoMapping = ();
-	type DEXIncentives = ();
+	type Balance = Balance;
+	type AssetId = CurrencyId;
+		type AssetIdParameter = u32;
+		type Currency = PalletBalances;
+	type CreateOrigin = AsEnsureOriginWithArg<EnsureSignedBy<OneMember, AccountId>>;
+	type ForceOrigin = EnsureRoot<AccountId>;
+	type AssetDeposit = ConstU128<1>;
+	type AssetAccountDeposit = ConstU128<1>;
+	type MetadataDepositBase = ConstU128<1>;
+	type MetadataDepositPerByte = ConstU128<1>;
+	type ApprovalDeposit = ConstU128<1>;
+	type StringLimit = ConstU32<50>;
+	type Freezer = ();
+	type Extra = ();
 	type WeightInfo = ();
-	type ListingOrigin = EnsureSignedBy<One, AccountId>;
-	type ExtendedProvisioningBlocks = ConstU64<0>;
-	type OnLiquidityPoolUpdated = ();
+	type RemoveItemsLimit = ConstU32<1000>;
+	type CallbackHandle = ();
+	type Holder = ();
 }
 
-parameter_types! {
-	pub static TotalCollateralAuction: u32 = 0;
-	pub static TotalCollateralInAuction: Balance = 0;
+thread_local! {
+	pub static TOTAL_COLLATERAL_AUCTION: RefCell<u32> = RefCell::new(0);
+	pub static TOTAL_COLLATERAL_IN_AUCTION: RefCell<Balance> = RefCell::new(0);
+}
+
+pub fn total_collateral_auction() -> u32 {
+	TOTAL_COLLATERAL_AUCTION.with(|v| *v.borrow())
+}
+
+pub fn total_collateral_in_auction() -> Balance {
+	TOTAL_COLLATERAL_IN_AUCTION.with(|v| *v.borrow())
 }
 
 pub struct MockAuctionManager;
 impl AuctionManager<AccountId> for MockAuctionManager {
-	type CurrencyId = CurrencyId;
-	type Balance = Balance;
 	type AuctionId = AuctionId;
+	type Balance = Balance;
+	type CurrencyId = CurrencyId;
 
 	fn new_collateral_auction(
 		_refund_recipient: &AccountId,
-		_currency_id: Self::CurrencyId,
 		amount: Self::Balance,
 		_target: Self::Balance,
 	) -> DispatchResult {
-		TotalCollateralAuction::mutate(|v| *v += 1);
-		TotalCollateralInAuction::mutate(|v| *v += amount);
+		TOTAL_COLLATERAL_AUCTION.with(|v| *v.borrow_mut() += 1);
+		TOTAL_COLLATERAL_IN_AUCTION.with(|v| *v.borrow_mut() += amount);
 		Ok(())
 	}
 
@@ -163,8 +172,8 @@ impl AuctionManager<AccountId> for MockAuctionManager {
 		unimplemented!()
 	}
 
-	fn get_total_collateral_in_auction(_id: Self::CurrencyId) -> Self::Balance {
-		TOTAL_COLLATERAL_IN_AUCTION.with(|v| *v.borrow_mut())
+	fn get_total_collateral_in_auction() -> Self::Balance {
+		TOTAL_COLLATERAL_IN_AUCTION.with(|v| *v.borrow())
 	}
 
 	fn get_total_target_in_auction() -> Self::Balance {
@@ -172,45 +181,65 @@ impl AuctionManager<AccountId> for MockAuctionManager {
 	}
 }
 
-ord_parameter_types! {
+pub struct MockSwap;
+impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
+	fn swap(
+		_who: &AccountId,
+		_from: CurrencyId,
+		_to: CurrencyId,
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((0, 0))
+	}
+
+	fn get_swap_amount(
+		_from: CurrencyId,
+		_to: CurrencyId,
+		_limit: SwapLimit<Balance>,
+	) -> Option<(Balance, Balance)> {
+		None
+	}
+
+	fn swap_by_path(
+		_who: &AccountId,
+		_path: &[CurrencyId],
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((0, 0))
+	}
+
+	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
+		_who: &AccountId,
+		_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((0, 0))
+	}
+}
+
+parameter_types! {
 	pub const One: AccountId = 1;
 }
 
 parameter_types! {
-	pub const CDPTreasuryPalletId: PalletId = PalletId(*b"aca/cdpt");
+	pub const CDPTreasuryPalletId: PalletId = PalletId(*b"ac/cdpty");
 	pub const TreasuryAccount: AccountId = 10;
-	pub AlternativeSwapPathJointList: Vec<Vec<CurrencyId>> = vec![
-		vec![DOT],
-	];
 }
 
-impl Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
-	type Currency = Currencies;
+impl Config for Test {
+	type Fungibles = Assets;
 	type GetStableCurrencyId = GetStableCurrencyId;
+	type GetBaseCurrencyId = GetNativeCurrencyId;
 	type AuctionManagerHandler = MockAuctionManager;
-	type UpdateOrigin = EitherOfDiverse<EnsureRoot<AccountId>, EnsureSignedBy<One, AccountId>>;
-	type DEX = DEXModule;
-	type Swap = SpecificJointsSwap<DEXModule, AlternativeSwapPathJointList>;
+	type UpdateOrigin = EitherOfDiverse<EnsureRoot<AccountId>, EnsureSignedBy<OneMember, AccountId>>;
 	type MaxAuctionsCount = ConstU32<5>;
 	type PalletId = CDPTreasuryPalletId;
 	type TreasuryAccount = TreasuryAccount;
 	type WeightInfo = ();
-	type StableAsset = MockStableAsset;
+	type Balance = Balance;
+	type CurrencyId = CurrencyId;
+	type Swap = MockSwap;
 }
-
-type Block = frame_system::mocking::MockBlock<Runtime>;
-
-construct_runtime!(
-	pub enum Runtime {
-		System: frame_system,
-		CDPTreasuryModule: cdp_treasury,
-		Currencies: orml_currencies,
-		Tokens: orml_tokens,
-		PalletBalances: pallet_balances,
-		DEXModule: module_dex,
-	}
-);
 
 pub struct ExtBuilder {
 	balances: Vec<(AccountId, CurrencyId, Balance)>,
@@ -220,16 +249,11 @@ impl Default for ExtBuilder {
 	fn default() -> Self {
 		Self {
 			balances: vec![
-				(ALICE, DOT, 1000),
-				(ALICE, AUSD, 1000),
-				(ALICE, BTC, 1000),
-				(ALICE, STABLE_ASSET_LP, 1000),
-				(BOB, DOT, 1000),
-				(BOB, AUSD, 1000),
-				(BOB, BTC, 1000),
-				(BOB, STABLE_ASSET_LP, 1000),
-				(CHARLIE, DOT, 1000),
-				(CHARLIE, BTC, 1000),
+				(ALICE, NATIVE, 100000),
+				(ALICE, STABLE, 100000),
+				(BOB, NATIVE, 100000),
+				(BOB, STABLE, 100000),
+				(CHARLIE, NATIVE, 100000),
 			],
 		}
 	}
@@ -237,272 +261,22 @@ impl Default for ExtBuilder {
 
 impl ExtBuilder {
 	pub fn build(self) -> sp_io::TestExternalities {
-		let mut t = frame_system::GenesisConfig::<Runtime>::default()
+		let mut t = frame_system::GenesisConfig::<Test>::default()
 			.build_storage()
 			.unwrap();
 
-		orml_tokens::GenesisConfig::<Runtime> {
-			balances: self.balances,
-		}
-		.assimilate_storage(&mut t)
-		.unwrap();
-
-		module_dex::GenesisConfig::<Runtime> {
-			initial_listing_trading_pairs: vec![],
-			initial_enabled_trading_pairs: EnabledTradingPairs::get(),
-			initial_added_liquidity_pools: vec![],
+		pallet_assets::GenesisConfig::<Test> {
+			assets: vec![
+				(STABLE, CDPTreasuryModule::account_id(), true, 1),
+				(NATIVE, CDPTreasuryModule::account_id(), true, 1),
+			],
+			metadata: vec![],
+			accounts: self.balances.into_iter().map(|(id, asset, balance)| (asset, id, balance)).collect(),
+			next_asset_id: None,
 		}
 		.assimilate_storage(&mut t)
 		.unwrap();
 
 		t.into()
-	}
-}
-
-pub struct MockStableAsset;
-
-impl StableAsset for MockStableAsset {
-	type AssetId = CurrencyId;
-	type AtLeast64BitUnsigned = Balance;
-	type Balance = Balance;
-	type AccountId = AccountId;
-	type BlockNumber = BlockNumber;
-
-	fn pool_count() -> StableAssetPoolId {
-		unimplemented!()
-	}
-
-	fn pool(
-		_id: StableAssetPoolId,
-	) -> Option<StableAssetPoolInfo<Self::AssetId, Self::Balance, Self::Balance, Self::AccountId, Self::BlockNumber>> {
-		Some(StableAssetPoolInfo {
-			pool_asset: CurrencyId::StableAssetPoolToken(0),
-			assets: vec![CurrencyId::ForeignAsset(255), CurrencyId::Token(TokenSymbol::DOT)],
-			precisions: vec![1, 1],
-			mint_fee: 0,
-			swap_fee: 0,
-			redeem_fee: 0,
-			total_supply: 0,
-			a: 100,
-			a_block: 1,
-			future_a: 100,
-			future_a_block: 1,
-			balances: vec![0, 0],
-			fee_recipient: 0,
-			account_id: 1,
-			yield_recipient: 2,
-			precision: 1,
-		})
-	}
-
-	fn create_pool(
-		_pool_asset: Self::AssetId,
-		_assets: Vec<Self::AssetId>,
-		_precisions: Vec<Self::Balance>,
-		_mint_fee: Self::Balance,
-		_swap_fee: Self::Balance,
-		_redeem_fee: Self::Balance,
-		_initial_a: Self::Balance,
-		_fee_recipient: Self::AccountId,
-		_yield_recipient: Self::AccountId,
-		_precision: Self::Balance,
-	) -> DispatchResult {
-		unimplemented!()
-	}
-
-	fn mint(
-		_who: &Self::AccountId,
-		_pool_id: StableAssetPoolId,
-		_amounts: Vec<Self::Balance>,
-		_min_mint_amount: Self::Balance,
-	) -> DispatchResult {
-		unimplemented!()
-	}
-
-	fn swap(
-		_who: &Self::AccountId,
-		_pool_id: StableAssetPoolId,
-		_i: PoolTokenIndex,
-		_j: PoolTokenIndex,
-		_dx: Self::Balance,
-		_min_dy: Self::Balance,
-		_asset_length: u32,
-	) -> sp_std::result::Result<(Self::Balance, Self::Balance), DispatchError> {
-		unimplemented!()
-	}
-
-	fn redeem_proportion(
-		_who: &Self::AccountId,
-		_pool_id: StableAssetPoolId,
-		_amount: Self::Balance,
-		_min_redeem_amounts: Vec<Self::Balance>,
-	) -> DispatchResult {
-		Ok(())
-	}
-
-	fn redeem_single(
-		_who: &Self::AccountId,
-		_pool_id: StableAssetPoolId,
-		_amount: Self::Balance,
-		_i: PoolTokenIndex,
-		_min_redeem_amount: Self::Balance,
-		_asset_length: u32,
-	) -> sp_std::result::Result<(Self::Balance, Self::Balance), DispatchError> {
-		unimplemented!()
-	}
-
-	fn redeem_multi(
-		_who: &Self::AccountId,
-		_pool_id: StableAssetPoolId,
-		_amounts: Vec<Self::Balance>,
-		_max_redeem_amount: Self::Balance,
-	) -> DispatchResult {
-		unimplemented!()
-	}
-
-	fn collect_fee(
-		_pool_id: StableAssetPoolId,
-		_pool_info: &mut StableAssetPoolInfo<
-			Self::AssetId,
-			Self::Balance,
-			Self::Balance,
-			Self::AccountId,
-			Self::BlockNumber,
-		>,
-	) -> DispatchResult {
-		unimplemented!()
-	}
-
-	fn update_balance(
-		_pool_id: StableAssetPoolId,
-		_pool_info: &mut StableAssetPoolInfo<
-			Self::AssetId,
-			Self::Balance,
-			Self::Balance,
-			Self::AccountId,
-			Self::BlockNumber,
-		>,
-	) -> DispatchResult {
-		unimplemented!()
-	}
-
-	fn collect_yield(
-		_pool_id: StableAssetPoolId,
-		_pool_info: &mut StableAssetPoolInfo<
-			Self::AssetId,
-			Self::Balance,
-			Self::Balance,
-			Self::AccountId,
-			Self::BlockNumber,
-		>,
-	) -> DispatchResult {
-		unimplemented!()
-	}
-
-	fn modify_a(_pool_id: StableAssetPoolId, _a: Self::Balance, _future_a_block: Self::BlockNumber) -> DispatchResult {
-		unimplemented!()
-	}
-
-	fn get_collect_yield_amount(
-		_pool_info: &StableAssetPoolInfo<
-			Self::AssetId,
-			Self::Balance,
-			Self::Balance,
-			Self::AccountId,
-			Self::BlockNumber,
-		>,
-	) -> Option<StableAssetPoolInfo<Self::AssetId, Self::Balance, Self::Balance, Self::AccountId, Self::BlockNumber>> {
-		Some(StableAssetPoolInfo {
-			pool_asset: CurrencyId::StableAssetPoolToken(0),
-			assets: vec![CurrencyId::ForeignAsset(255), CurrencyId::Token(TokenSymbol::DOT)],
-			precisions: vec![1, 1],
-			mint_fee: 0,
-			swap_fee: 0,
-			redeem_fee: 0,
-			total_supply: 0,
-			a: 100,
-			a_block: 1,
-			future_a: 100,
-			future_a_block: 1,
-			balances: vec![0, 0],
-			fee_recipient: 0,
-			account_id: 1,
-			yield_recipient: 2,
-			precision: 1,
-		})
-	}
-
-	fn get_balance_update_amount(
-		_pool_info: &StableAssetPoolInfo<
-			Self::AssetId,
-			Self::Balance,
-			Self::Balance,
-			Self::AccountId,
-			Self::BlockNumber,
-		>,
-	) -> Option<StableAssetPoolInfo<Self::AssetId, Self::Balance, Self::Balance, Self::AccountId, Self::BlockNumber>> {
-		Some(StableAssetPoolInfo {
-			pool_asset: CurrencyId::StableAssetPoolToken(0),
-			assets: vec![CurrencyId::ForeignAsset(255), CurrencyId::Token(TokenSymbol::DOT)],
-			precisions: vec![1, 1],
-			mint_fee: 0,
-			swap_fee: 0,
-			redeem_fee: 0,
-			total_supply: 1000,
-			a: 100,
-			a_block: 1,
-			future_a: 100,
-			future_a_block: 1,
-			balances: vec![0, 0],
-			fee_recipient: 0,
-			account_id: 1,
-			yield_recipient: 2,
-			precision: 1,
-		})
-	}
-
-	fn get_redeem_proportion_amount(
-		_pool_info: &StableAssetPoolInfo<
-			Self::AssetId,
-			Self::Balance,
-			Self::Balance,
-			Self::AccountId,
-			Self::BlockNumber,
-		>,
-		_amount_bal: Self::Balance,
-	) -> Option<RedeemProportionResult<Self::Balance>> {
-		Some(RedeemProportionResult {
-			amounts: vec![100, 100],
-			balances: vec![0, 0],
-			fee_amount: 0,
-			total_supply: 0,
-			redeem_amount: 0,
-		})
-	}
-
-	fn get_best_route(
-		_input_asset: Self::AssetId,
-		_output_asset: Self::AssetId,
-		_input_amount: Self::Balance,
-	) -> Option<(StableAssetPoolId, PoolTokenIndex, PoolTokenIndex, Self::Balance)> {
-		unimplemented!()
-	}
-
-	fn get_swap_output_amount(
-		_pool_id: StableAssetPoolId,
-		_input_index: PoolTokenIndex,
-		_output_index: PoolTokenIndex,
-		_dx_bal: Self::Balance,
-	) -> Option<SwapResult<Self::Balance>> {
-		unimplemented!()
-	}
-
-	fn get_swap_input_amount(
-		_pool_id: StableAssetPoolId,
-		_input_index: PoolTokenIndex,
-		_output_index: PoolTokenIndex,
-		_dy_bal: Self::Balance,
-	) -> Option<SwapResult<Self::Balance>> {
-		unimplemented!()
 	}
 }

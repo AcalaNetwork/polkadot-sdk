@@ -4,7 +4,7 @@
 
 use super::*;
 use frame_support::{construct_runtime, derive_impl};
-use orml_traits::OnNewBidResult;
+use pallet_traits::OnNewBidResult;
 use sp_runtime::{traits::IdentityLookup, BuildStorage};
 
 use crate as auction;
@@ -48,7 +48,7 @@ impl AuctionHandler<AccountId, Balance, BlockNumber, AuctionId> for Handler {
 }
 
 impl Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
+
 	type Balance = Balance;
 	type AuctionId = AuctionId;
 	type Handler = Handler;
