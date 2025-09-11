@@ -5,7 +5,7 @@ authors = ["Acala Developers"]
 edition = { workspace = true }
 
 [dependencies]
-codec = { package = "parity-scale-codec", workspace = true }
+codec = { workspace = true }
 scale-info = { workspace = true }
 sp-runtime = { workspace = true }
 sp-core = { workspace = true }

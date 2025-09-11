@@ -6,7 +6,7 @@ edition = { workspace = true }
 
 [dependencies]
 log = { workspace = true }
-codec = { workspace = true, package = "parity-scale-codec" }
+codec = { workspace = true }
 scale-info = { workspace = true }
 sp-runtime = { workspace = true }
 frame-support = { workspace = true }
