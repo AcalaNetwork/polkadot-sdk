@@ -17,6 +17,7 @@ members = [
 	"substrate/frame/auction-manager",
 	"substrate/frame/cdp-engine",
 	"substrate/frame/emergency-shutdown",
+	"substrate/frame/honzon",
 	"bridges/bin/runtime-common",
 	"bridges/chains/chain-cumulus",
 	"bridges/chains/chain-polkadot-bulletin",

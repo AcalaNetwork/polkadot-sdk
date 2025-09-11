@@ -1,7 +1,6 @@
 [package]
 name = "pallet-auction"
 description = "Auction module that implements `Auction` trait."
-repository = "https://github.com/open-web3-stack/open-runtime-module-library/tree/master/auction"
 license = "Apache-2.0"
 version = "1.0.0"
 authors = ["Acala Developers"]

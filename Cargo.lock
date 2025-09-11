@@ -12551,6 +12551,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-honzon"
+version = "1.0.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "pallet-balances",
+ "pallet-cdp-engine",
+ "pallet-cdp-treasury",
+ "pallet-loans",
+ "pallet-timestamp",
+ "pallet-traits",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core 28.0.0",
+ "sp-io",
+ "sp-runtime",
+ "sp-std 14.0.0",
+]
+
+[[package]]
 name = "pallet-identity"
 version = "29.0.0"
 dependencies = [
