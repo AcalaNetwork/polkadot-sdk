@@ -9,15 +9,15 @@ repository = "https://github.com/paritytech/polkadot-sdk.git"
 resolver = "2"
 
 members = [
-	"substrate/frame/traits",
-	"substrate/frame/oracle",
-	"substrate/frame/auction",
-	"substrate/frame/cdp-treasury",
-	"substrate/frame/loans",
-	"substrate/frame/auction-manager",
-	"substrate/frame/cdp-engine",
-	"substrate/frame/emergency-shutdown",
-	"substrate/frame/honzon",
+	"substrate/frame/honzon/traits",
+	"substrate/frame/honzon/oracle",
+	"substrate/frame/honzon/auction",
+	"substrate/frame/honzon/cdp-treasury",
+	"substrate/frame/honzon/loans",
+	"substrate/frame/honzon/auction-manager",
+	"substrate/frame/honzon/cdp-engine",
+	"substrate/frame/honzon/emergency-shutdown",
+	"substrate/frame/honzon/honzon",
 	"bridges/bin/runtime-common",
 	"bridges/chains/chain-cumulus",
 	"bridges/chains/chain-polkadot-bulletin",
@@ -636,9 +636,15 @@ while_immutable_condition = { level = "allow", priority = 2 }        # false pos
 zero-prefixed-literal = { level = "allow", priority = 2 }            # 00_1000_000
 
 [workspace.dependencies]
-pallet-traits = { path = "substrate/frame/traits", default-features = false }
-pallet-oracle = { path = "substrate/frame/oracle", default-features = false }
-pallet-cdp-treasury = { path = "substrate/frame/cdp-treasury", default-features = false }
+pallet-traits = { path = "substrate/frame/honzon/traits", default-features = false }
+pallet-oracle = { path = "substrate/frame/honzon/oracle", default-features = false }
+pallet-cdp-treasury = { path = "substrate/frame/honzon/cdp-treasury", default-features = false }
+pallet-auction = { path = "substrate/frame/honzon/auction", default-features = false }
+pallet-auction-manager = { path = "substrate/frame/honzon/auction-manager", default-features = false }
+pallet-cdp-engine = { path = "substrate/frame/honzon/cdp-engine", default-features = false }
+pallet-emergency-shutdown = { path = "substrate/frame/honzon/emergency-shutdown", default-features = false }
+pallet-honzon = { path = "substrate/frame/honzon/honzon", default-features = false }
+
 Inflector = { version = "0.11.4" }
 aes-gcm = { version = "0.10" }
 ahash = { version = "0.8.2" }
