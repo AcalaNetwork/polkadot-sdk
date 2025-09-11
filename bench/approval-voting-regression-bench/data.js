@@ -1,107 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1757602714885,
+  "lastUpdate": 1757627406167,
   "repoUrl": "https://github.com/paritytech/polkadot-sdk",
   "entries": {
     "approval-voting-regression-bench": [
-      {
-        "commit": {
-          "author": {
-            "email": "skunert49@gmail.com",
-            "name": "Sebastian Kunert",
-            "username": "skunert"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "fb19de2bd40de3f3b09009e4fa9237886c1cf3cc",
-          "message": "Remove gitlab zombienet tests for cumulus/substrate (#7870)\n\nFollow up of : #7217, #7529 \n\nWhen the zombienet tests were integrated into github, it seems like the\ngitlab ones remained active. But they look a lot more unstable. This\ncauses confusion when the same tests fail and pass at the same time\n(aside from extra costs). This PR attempts to get rid of the gitlab\nones.",
-          "timestamp": "2025-03-10T17:16:12Z",
-          "tree_id": "a1f836ddeb898256e2cc56cfbf2a831d29401b4c",
-          "url": "https://github.com/paritytech/polkadot-sdk/commit/fb19de2bd40de3f3b09009e4fa9237886c1cf3cc"
-        },
-        "date": 1741630682015,
-        "tool": "customSmallerIsBetter",
-        "benches": [
-          {
-            "name": "Received from peers",
-            "value": 52937.2,
-            "unit": "KiB"
-          },
-          {
-            "name": "Sent to peers",
-            "value": 63638.52999999999,
-            "unit": "KiB"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-2",
-            "value": 2.4473778588900004,
-            "unit": "seconds"
-          },
-          {
-            "name": "test-environment",
-            "value": 3.3870551944221985,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-0",
-            "value": 2.4156208542399993,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting",
-            "value": 0.000018509270000000004,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-distribution/test-environment",
-            "value": 0.000017991479999999997,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel",
-            "value": 12.006353792679974,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-db",
-            "value": 1.8648774736599907,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting/test-environment",
-            "value": 0.000018509270000000004,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-subsystem",
-            "value": 0.4802076004299856,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-distribution",
-            "value": 0.000017991479999999997,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-gather-signatures",
-            "value": 0.005848877900000006,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-3",
-            "value": 2.3942974437899993,
-            "unit": "seconds"
-          },
-          {
-            "name": "approval-voting-parallel/approval-voting-parallel-1",
-            "value": 2.398123683769998,
-            "unit": "seconds"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -49499,6 +49400,105 @@ window.BENCHMARK_DATA = {
           {
             "name": "approval-voting-parallel/approval-voting-parallel-3",
             "value": 2.5113137159400005,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "35698397+drskalman@users.noreply.github.com",
+            "name": "drskalman",
+            "username": "drskalman"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dae4b9cf572920848910b520d3cefe83d34692f3",
+          "message": "Proof of possession alongside signing on owner (#9471)\n\n# Description\n  \nWhen signing on a new session key the signer must also use the session\nkey to sign on the authority signer key to prove that it is not faking\nthe ownership of someone's else key to mount a front runner attack. On\nthe other hand for aggregatable crypto schemes, the signer should proof\nthe ownership of the private key by signing a specific statement in a\nseparate domain than one is used for usual signing to prevent rogue key\nattack. This means that those scheme needs to submit two signature as\nproof in contrast to non-aggregatble schemes. It is also possible that\nin future some crypto scheme requires the key submitter to prove other\nfact before accepting its submission.\n\nThis PR introduce a new customize type ProofOfPossession for Pairs (in\naddition to Public and Signature) to represent these proof. Currently\n`ProofOfPossession = Signature` for `ecdsa, ed25519 and sr25519` while\n`ProofOfPossession = Signature | Signature` for bls381 and\n`ProofOfPossession = ecdsa:Signature | bls381:Signature |\nbls381:Signature` for `ecdsa_bls381` paired_key scheme.\n\n---------\n\nCo-authored-by: Bastian Köcher <git@kchr.de>\nCo-authored-by: Davide Galassi <davxy@datawok.net>",
+          "timestamp": "2025-09-11T19:58:10Z",
+          "tree_id": "597cc7d36c3d338a58f4b577b6a2e2d78d7bdf1f",
+          "url": "https://github.com/paritytech/polkadot-sdk/commit/dae4b9cf572920848910b520d3cefe83d34692f3"
+        },
+        "date": 1757627387867,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Sent to peers",
+            "value": 63627.169999999984,
+            "unit": "KiB"
+          },
+          {
+            "name": "Received from peers",
+            "value": 52941.7,
+            "unit": "KiB"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-db",
+            "value": 1.92136749418001,
+            "unit": "seconds"
+          },
+          {
+            "name": "test-environment",
+            "value": 2.6340984297609653,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-1",
+            "value": 2.4378538994500025,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting/test-environment",
+            "value": 0.00002208421,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-3",
+            "value": 2.44901875917,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-0",
+            "value": 2.4510752607600006,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting",
+            "value": 0.00002208421,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-subsystem",
+            "value": 0.4401805340000024,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-parallel-2",
+            "value": 2.479561052630001,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-distribution/test-environment",
+            "value": 0.00002077642,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-distribution",
+            "value": 0.00002077642,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel",
+            "value": 12.184847057060017,
+            "unit": "seconds"
+          },
+          {
+            "name": "approval-voting-parallel/approval-voting-gather-signatures",
+            "value": 0.0057900568700000035,
             "unit": "seconds"
           }
         ]
