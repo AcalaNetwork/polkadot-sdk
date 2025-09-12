@@ -13,22 +13,20 @@ frame-support = { workspace = true }
 frame-system = { workspace = true }
 sp-std = { workspace = true }
 pallet-traits = { path = "../traits", default-features = false }
+pallet-cdp-engine = { path = "../cdp-engine", default-features = false }
+pallet-loans = { path = "../loans", default-features = false }
 
 [dev-dependencies]
 sp-io = { workspace = true }
-sp-core = { workspace = true }
 pallet-balances = { workspace = true }
 pallet-timestamp = { workspace = true }
 pallet-cdp-treasury = { path = "../cdp-treasury", default-features = false }
-pallet-cdp-engine = { path = "../cdp-engine", default-features = false }
-pallet-loans = { path = "../loans", default-features = false }
 pallet-assets = { workspace = true, default-features = false }
 sp-arithmetic = { workspace = true, default-features = false }
 
 [features]
 default = ["std"]
 std = [
-	"pallet-cdp-engine/std",
 	"codec/std",
 	"frame-support/std",
 	"frame-system/std",
@@ -36,18 +34,19 @@ std = [
 	"sp-core/std",
 	"sp-runtime/std",
 	"sp-std/std",
-	"pallet-traits/std",
-	"pallet-loans/std",
-	"pallet-balances/std",
-	"pallet-cdp-treasury/std",
-	"pallet-timestamp/std",
 	"pallet-assets/std",
+	"pallet-balances/std",
+	"pallet-cdp-engine/std",
+	"pallet-cdp-treasury/std",
+	"pallet-loans/std",
+	"pallet-timestamp/std",
+	"pallet-traits/std",
 	"sp-arithmetic/std"
 ]
 try-runtime = [
-	"pallet-cdp-engine/try-runtime",
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
-	"pallet-loans/try-runtime",
+	"pallet-cdp-engine/try-runtime",
 	"pallet-cdp-treasury/try-runtime",
+	"pallet-loans/try-runtime",
 ]

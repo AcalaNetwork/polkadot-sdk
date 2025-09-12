@@ -28,17 +28,21 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::unused_unit)]
 
-use frame_support::{pallet_prelude::*, traits::NamedReservableCurrency};
+use codec::{EncodeLike, FullCodec, MaxEncodedLen};
+use core::fmt::Debug;
+use frame_support::{
+	pallet_prelude::*,
+	traits::{Get, NamedReservableCurrency},
+};
+use sp_core::U256;
 use frame_system::pallet_prelude::*;
 use pallet_loans::{Amount, BalanceOf};
-use pallet_traits::{CDPTreasury, EmergencyShutdown, ExchangeRate, HonzonManager, PriceProvider, Ratio, Rate, Position};
-use sp_core::U256;
+use pallet_traits::{EmergencyShutdown, ExchangeRate, HonzonManager, Position, PriceProvider, Ratio};
 use sp_runtime::{
-	traits::{StaticLookup, Zero},
+	traits::{AtLeast32BitUnsigned, MaybeSerializeDeserialize, StaticLookup, Zero},
 	ArithmeticError, DispatchResult,
 };
 use sp_std::prelude::*;
-use codec::{EncodeLike, MaxEncodedLen};
 
 mod mock;
 mod tests;
@@ -55,13 +59,17 @@ pub mod pallet {
 	pub const RESERVE_ID: ReserveIdentifier = *b"honzon  ";
 
 	#[pallet::config]
-	pub trait Config: frame_system::Config + pallet_cdp_engine::Config + pallet_loans::Config {
+	pub trait Config:
+		frame_system::Config
+		+ pallet_cdp_engine::Config
+		+ pallet_loans::Config
+	{
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 
 		/// Currency for authorization reserved.
 		type Currency: NamedReservableCurrency<
-			<Self as frame_system::Config>::AccountId,
-			Balance = <Self as pallet_cdp_engine::Config>::Balance,
+			Self::AccountId,
+			Balance = BalanceOf<Self>,
 			ReserveIdentifier = ReserveIdentifier,
 		>;
 
@@ -113,7 +121,6 @@ pub mod pallet {
 	where
 		BalanceOf<T>: TryFrom<i128>,
 		i128: TryFrom<BalanceOf<T>>,
-		BalanceOf<T>: From<<T as pallet_cdp_engine::Config>::Balance>,
 	{
 		/// Adjust the loans by specific `collateral_adjustment` and
 		/// `debit_adjustment`
@@ -143,7 +150,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::close_loan_has_debit_by_dex())]
 		pub fn close_loan_has_debit_by_dex(
 			origin: OriginFor<T>,
-			#[pallet::compact] max_collateral_amount: <T as pallet_cdp_engine::Config>::Balance,
+			#[pallet::compact] max_collateral_amount: T::Balance,
 		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
 			Self::do_close_loan_by_dex(who, max_collateral_amount)
@@ -157,8 +164,8 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::expand_position_collateral())]
 		pub fn expand_position_collateral(
 			origin: OriginFor<T>,
-			increase_debit_value: <T as pallet_cdp_engine::Config>::Balance,
-			min_increase_collateral: <T as pallet_cdp_engine::Config>::Balance,
+			increase_debit_value: T::Balance,
+			min_increase_collateral: T::Balance,
 		) -> DispatchResult {
 			let _who = ensure_signed(origin)?;
 			// TODO: not implemented
@@ -173,8 +180,8 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::shrink_position_debit())]
 		pub fn shrink_position_debit(
 			origin: OriginFor<T>,
-			decrease_collateral: <T as pallet_cdp_engine::Config>::Balance,
-			min_decrease_debit_value: <T as pallet_cdp_engine::Config>::Balance,
+			decrease_collateral: T::Balance,
+			min_decrease_debit_value: T::Balance,
 		) -> DispatchResult {
 			let _who = ensure_signed(origin)?;
 			// TODO: not implemented
@@ -207,10 +214,11 @@ pub mod pallet {
 	}
 }
 
-	impl<T: Config> Pallet<T> where
+	impl<T: Config> Pallet<T>
+	where
 		BalanceOf<T>: TryFrom<i128>,
 		i128: TryFrom<BalanceOf<T>>,
-{
+	{
 	fn do_adjust_loan(
 		who: &<T as frame_system::Config>::AccountId,
 		collateral_adjustment: Amount,
@@ -226,7 +234,7 @@ pub mod pallet {
 
 	fn do_close_loan_by_dex(
 		who: <T as frame_system::Config>::AccountId,
-		max_collateral_amount: <T as pallet_cdp_engine::Config>::Balance,
+		max_collateral_amount: T::Balance,
 	) -> DispatchResult {
 		ensure!(!T::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
 		// TODO: not implemented
