@@ -16,74 +16,75 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! Mocks for the honzon module.
+//! Mocks for the emergency shutdown module.
 
 #![cfg(test)]
 
 use super::*;
 use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types, parameter_types,
-	traits::{ConstU128, ConstU32, Nothing},
+	traits::{AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, Everything, SortedMembers, Nothing},
 	PalletId,
 };
-use frame_system::EnsureSignedBy;
-use module_support::{mocks::MockStableAsset, AuctionManager, LockablePrice, RiskManager, SpecificJointsSwap};
-use orml_traits::parameter_type_with_key;
-use primitives::{Amount, TokenSymbol};
+use frame_system::{EnsureRoot, EnsureSignedBy};
+use pallet_traits::{AuctionManager, CDPTreasury, LockablePrice, PriceProvider, RiskManager, Swap, SwapLimit, AggregatedSwapPath};
 use sp_runtime::{
 	traits::{AccountIdConversion, IdentityLookup},
-	BuildStorage, DispatchResult,
+	BuildStorage, DispatchResult, FixedU128, DispatchError,
 };
 
 pub type AccountId = u128;
-pub type AuctionId = u32;
 pub type BlockNumber = u64;
+pub type Balance = u128;
+pub type CurrencyId = u32;
+pub type Amount = i128;
+pub type AuctionId = u32;
 
 pub const ALICE: AccountId = 1;
 pub const BOB: AccountId = 2;
-pub const ACA: CurrencyId = CurrencyId::Token(TokenSymbol::ACA);
-pub const AUSD: CurrencyId = CurrencyId::Token(TokenSymbol::AUSD);
-pub const BTC: CurrencyId = CurrencyId::ForeignAsset(255);
-pub const DOT: CurrencyId = CurrencyId::Token(TokenSymbol::DOT);
+pub const NATIVE: CurrencyId = 0;
+pub const STABLE: CurrencyId = 1;
 
 mod emergency_shutdown {
 	pub use super::super::*;
 }
 
+type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
+type Block = frame_system::mocking::MockBlock<Test>;
+
+construct_runtime!(
+	pub enum Test
+	{
+		System: frame_system,
+		EmergencyShutdownModule: emergency_shutdown,
+		PalletBalances: pallet_balances,
+		Assets: pallet_assets,
+		CDPTreasuryModule: pallet_cdp_treasury,
+		Loans: pallet_loans,
+	}
+);
+
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
-impl frame_system::Config for Runtime {
+impl frame_system::Config for Test {
 	type AccountId = AccountId;
 	type Lookup = IdentityLookup<Self::AccountId>;
 	type Block = Block;
 	type AccountData = pallet_balances::AccountData<Balance>;
+	type OnNewAccount = ();
+	type OnKilledAccount = ();
+	type BaseCallFilter = Everything;
+	type SystemWeightInfo = ();
+	type PalletInfo = PalletInfo;
+	type OnSetCode = ();
+	type MaxConsumers = ConstU32<16>;
 }
 
-parameter_type_with_key! {
-	pub ExistentialDeposits: |_currency_id: CurrencyId| -> Balance {
-		Default::default()
-	};
-}
-
-impl orml_tokens::Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
-	type Balance = Balance;
-	type Amount = Amount;
-	type CurrencyId = CurrencyId;
-	type WeightInfo = ();
-	type ExistentialDeposits = ExistentialDeposits;
-	type CurrencyHooks = ();
-	type MaxLocks = ();
-	type MaxReserves = ();
-	type ReserveIdentifier = [u8; 8];
-	type DustRemovalWhitelist = Nothing;
-}
-
-impl pallet_balances::Config for Runtime {
+impl pallet_balances::Config for Test {
 	type Balance = Balance;
 	type DustRemoval = ();
 	type RuntimeEvent = RuntimeEvent;
 	type ExistentialDeposit = ConstU128<1>;
-	type AccountStore = frame_system::Pallet<Runtime>;
+	type AccountStore = System;
 	type MaxLocks = ();
 	type MaxReserves = ();
 	type ReserveIdentifier = [u8; 8];
@@ -92,18 +93,36 @@ impl pallet_balances::Config for Runtime {
 	type RuntimeFreezeReason = RuntimeFreezeReason;
 	type FreezeIdentifier = ();
 	type MaxFreezes = ();
-}
-pub type AdaptedBasicCurrency = orml_currencies::BasicCurrencyAdapter<Runtime, PalletBalances, Amount, BlockNumber>;
-
-parameter_types! {
-	pub const GetNativeCurrencyId: CurrencyId = ACA;
+	type DoneSlashHandler = ();
 }
 
-impl orml_currencies::Config for Runtime {
-	type MultiCurrency = Tokens;
-	type NativeCurrency = AdaptedBasicCurrency;
-	type GetNativeCurrencyId = GetNativeCurrencyId;
+pub struct OneMember;
+impl SortedMembers<AccountId> for OneMember {
+	fn sorted_members() -> Vec<AccountId> {
+		vec![1]
+	}
+}
+
+impl pallet_assets::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type Balance = Balance;
+	type AssetId = CurrencyId;
+		type AssetIdParameter = u32;
+		type Currency = PalletBalances;
+	type CreateOrigin = AsEnsureOriginWithArg<EnsureSignedBy<OneMember, AccountId>>;
+	type ForceOrigin = EnsureRoot<AccountId>;
+	type AssetDeposit = ConstU128<1>;
+	type AssetAccountDeposit = ConstU128<1>;
+	type MetadataDepositBase = ConstU128<1>;
+	type MetadataDepositPerByte = ConstU128<1>;
+	type ApprovalDeposit = ConstU128<1>;
+	type StringLimit = ConstU32<50>;
+	type Freezer = ();
+	type Extra = ();
 	type WeightInfo = ();
+	type RemoveItemsLimit = ConstU32<1000>;
+	type CallbackHandle = ();
+	type Holder = ();
 }
 
 pub struct MockRiskManager;
@@ -128,15 +147,25 @@ impl RiskManager<AccountId, CurrencyId, Balance, Balance> for MockRiskManager {
 
 parameter_types! {
 	pub const LoansPalletId: PalletId = PalletId(*b"aca/loan");
+	pub const GetNativeCurrencyId: CurrencyId = NATIVE;
 }
 
-impl module_loans::Config for Runtime {
+impl pallet_loans::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
-	type Currency = Tokens;
+	type Currency = PalletBalances;
+	type CurrencyId = CurrencyId;
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = CDPTreasuryModule;
 	type PalletId = LoansPalletId;
+	type CollateralCurrencyId = GetNativeCurrencyId;
 	type OnUpdateLoan = ();
+}
+
+pub struct MockPriceProvider;
+impl PriceProvider<CurrencyId> for MockPriceProvider {
+	fn get_price(_currency_id: CurrencyId) -> Option<FixedU128> {
+		Some(FixedU128::from_inner(100))
+	}
 }
 
 pub struct MockLockablePrice;
@@ -182,55 +211,76 @@ ord_parameter_types! {
 	pub const One: AccountId = 1;
 }
 
+pub struct MockSwap;
+impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
+	fn swap(
+		_who: &AccountId,
+		_from: CurrencyId,
+		_to: CurrencyId,
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((0, 0))
+	}
+
+	fn get_swap_amount(
+		_from: CurrencyId,
+		_to: CurrencyId,
+		_limit: SwapLimit<Balance>,
+	) -> Option<(Balance, Balance)> {
+		None
+	}
+
+	fn swap_by_path(
+		_who: &AccountId,
+		_path: &[CurrencyId],
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((0, 0))
+	}
+
+	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
+		_who: &AccountId,
+		_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((0, 0))
+	}
+}
+
 parameter_types! {
-	pub const GetStableCurrencyId: CurrencyId = AUSD;
+	pub const GetStableCurrencyId: CurrencyId = STABLE;
 	pub const CDPTreasuryPalletId: PalletId = PalletId(*b"aca/cdpt");
 	pub TreasuryAccount: AccountId = PalletId(*b"aca/hztr").into_account_truncating();
-	pub AlternativeSwapPathJointList: Vec<Vec<CurrencyId>> = vec![];
 }
 
-impl module_cdp_treasury::Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
-	type Currency = Currencies;
-	type GetStableCurrencyId = GetStableCurrencyId;
-	type AuctionManagerHandler = MockAuctionManager;
+impl pallet_cdp_treasury::Config for Test {
 	type UpdateOrigin = EnsureSignedBy<One, AccountId>;
-	type DEX = ();
-	type Swap = SpecificJointsSwap<(), AlternativeSwapPathJointList>;
+	type Fungibles = Assets;
+	type AuctionManagerHandler = MockAuctionManager;
+	type Balance = Balance;
+	type CurrencyId = CurrencyId;
 	type MaxAuctionsCount = ConstU32<10_000>;
-	type PalletId = CDPTreasuryPalletId;
 	type TreasuryAccount = TreasuryAccount;
+	type PalletId = CDPTreasuryPalletId;
 	type WeightInfo = ();
-	type StableAsset = MockStableAsset<CurrencyId, Balance, AccountId, BlockNumber>;
+	type GetStableCurrencyId = GetStableCurrencyId;
+	type GetBaseCurrencyId = GetNativeCurrencyId;
+	type Swap = MockSwap;
 }
 
-ord_parameter_types! {
-	pub const MockCollateralCurrencyIds: Vec<CurrencyId> = vec![BTC, DOT];
+parameter_types! {
+	pub const CollateralCurrencyId: CurrencyId = NATIVE;
 }
 
-impl Config for Runtime {
+impl Config for Test {
 	type RuntimeEvent = RuntimeEvent;
-	type CollateralCurrencyIds = MockCollateralCurrencyIds;
+	type CollateralCurrencyId = CollateralCurrencyId;
 	type PriceSource = MockLockablePrice;
 	type CDPTreasury = CDPTreasuryModule;
 	type AuctionManagerHandler = MockAuctionManager;
 	type ShutdownOrigin = EnsureSignedBy<One, AccountId>;
 	type WeightInfo = ();
 }
-
-type Block = frame_system::mocking::MockBlock<Runtime>;
-
-construct_runtime!(
-	pub enum Runtime {
-		System: frame_system,
-		EmergencyShutdownModule: emergency_shutdown,
-		Tokens: orml_tokens,
-		PalletBalances: pallet_balances,
-		Currencies: orml_currencies,
-		CDPTreasuryModule: module_cdp_treasury,
-		Loans: module_loans,
-	}
-);
 
 pub struct ExtBuilder {
 	balances: Vec<(AccountId, CurrencyId, Balance)>,
@@ -240,10 +290,8 @@ impl Default for ExtBuilder {
 	fn default() -> Self {
 		Self {
 			balances: vec![
-				(ALICE, BTC, 1000),
-				(BOB, BTC, 1000),
-				(ALICE, DOT, 1000),
-				(BOB, DOT, 1000),
+				(ALICE, NATIVE, 1000),
+				(BOB, NATIVE, 1000),
 			],
 		}
 	}
@@ -251,12 +299,18 @@ impl Default for ExtBuilder {
 
 impl ExtBuilder {
 	pub fn build(self) -> sp_io::TestExternalities {
-		let mut t = frame_system::GenesisConfig::<Runtime>::default()
+		let mut t = frame_system::GenesisConfig::<Test>::default()
 			.build_storage()
 			.unwrap();
 
-		orml_tokens::GenesisConfig::<Runtime> {
-			balances: self.balances,
+		pallet_assets::GenesisConfig::<Test> {
+			assets: vec![
+				(STABLE, CDPTreasuryModule::account_id(), true, 1),
+				(NATIVE, CDPTreasuryModule::account_id(), true, 1),
+			],
+			metadata: vec![],
+			accounts: self.balances.into_iter().map(|(id, asset, balance)| (asset, id, balance)).collect(),
+			next_asset_id: None,
 		}
 		.assimilate_storage(&mut t)
 		.unwrap();

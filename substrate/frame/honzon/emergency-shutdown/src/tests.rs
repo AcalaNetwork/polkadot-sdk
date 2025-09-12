@@ -23,7 +23,7 @@
 use super::*;
 use frame_support::{assert_noop, assert_ok};
 use mock::{RuntimeEvent, *};
-use sp_runtime::traits::BadOrigin;
+use sp_runtime::DispatchError::BadOrigin;
 
 #[test]
 fn emergency_shutdown_work() {
@@ -41,7 +41,7 @@ fn emergency_shutdown_work() {
 		assert!(EmergencyShutdownModule::is_shutdown());
 		assert_noop!(
 			EmergencyShutdownModule::emergency_shutdown(RuntimeOrigin::signed(1)),
-			Error::<Runtime>::AlreadyShutdown,
+			Error::<Test>::AlreadyShutdown,
 		);
 	});
 }
@@ -52,7 +52,7 @@ fn open_collateral_refund_fail() {
 		assert!(!EmergencyShutdownModule::can_refund());
 		assert_noop!(
 			EmergencyShutdownModule::open_collateral_refund(RuntimeOrigin::signed(1)),
-			Error::<Runtime>::MustAfterShutdown,
+			Error::<Test>::MustAfterShutdown,
 		);
 	});
 }
@@ -82,7 +82,7 @@ fn refund_collaterals_fail() {
 	ExtBuilder::default().build().execute_with(|| {
 		assert_noop!(
 			EmergencyShutdownModule::refund_collaterals(RuntimeOrigin::signed(ALICE), 10),
-			Error::<Runtime>::CanNotRefund,
+			Error::<Test>::CanNotRefund,
 		);
 	});
 }

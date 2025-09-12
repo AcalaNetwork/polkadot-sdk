@@ -165,26 +165,21 @@ pub trait EmergencyShutdown {
 }
 
 /// Functionality of Honzon Protocol to be exposed to EVM+.
-pub trait HonzonManager<AccountId, CurrencyId, Amount, Balance> {
+pub trait HonzonManager<AccountId, Amount, Balance> {
 	/// Adjust CDP loan
 	fn adjust_loan(
 		who: &AccountId,
-		currency_id: CurrencyId,
 		collateral_adjustment: Amount,
 		debit_adjustment: Amount,
 	) -> DispatchResult;
 	/// Close CDP loan using DEX
-	fn close_loan_by_dex(
-		who: AccountId,
-		currency_id: CurrencyId,
-		max_collateral_amount: Balance,
-	) -> DispatchResult;
-	/// Get open CDP corresponding to an account and collateral `CurrencyId`
-	fn get_position(who: &AccountId, currency_id: CurrencyId) -> Position<Balance>;
-	/// Get liquidation ratio for collateral `CurrencyId`
-	fn get_collateral_parameters(currency_id: CurrencyId) -> Vec<U256>;
+	fn close_loan_by_dex(who: AccountId, max_collateral_amount: Balance) -> DispatchResult;
+	/// Get open CDP corresponding to an account
+	fn get_position(who: &AccountId) -> Position<Balance>;
+	/// Get liquidation ratio for collateral
+	fn get_collateral_parameters() -> Vec<U256>;
 	/// Get current ratio of collateral to debit of open CDP
-	fn get_current_collateral_ratio(who: &AccountId, currency_id: CurrencyId) -> Option<Ratio>;
-	/// Get exchange rate of debit units to debit value for a currency_id
-	fn get_debit_exchange_rate(currency_id: CurrencyId) -> ExchangeRate;
+	fn get_current_collateral_ratio(who: &AccountId) -> Option<Ratio>;
+	/// Get exchange rate of debit units to debit value
+	fn get_debit_exchange_rate() -> ExchangeRate;
 }

@@ -12307,7 +12307,9 @@ version = "1.0.0"
 dependencies = [
  "frame-support",
  "frame-system",
+ "pallet-assets",
  "pallet-auction-manager",
+ "pallet-balances",
  "pallet-cdp-treasury",
  "pallet-loans",
  "pallet-traits",
@@ -12564,6 +12566,7 @@ version = "1.0.0"
 dependencies = [
  "frame-support",
  "frame-system",
+ "pallet-assets",
  "pallet-balances",
  "pallet-cdp-engine",
  "pallet-cdp-treasury",
@@ -12572,6 +12575,7 @@ dependencies = [
  "pallet-traits",
  "parity-scale-codec",
  "scale-info",
+ "sp-arithmetic",
  "sp-core 28.0.0",
  "sp-io",
  "sp-runtime",

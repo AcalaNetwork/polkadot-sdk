@@ -160,6 +160,7 @@ impl AuctionManager<AccountId> for MockAuctionManager {
 
 	fn new_collateral_auction(
 		_refund_recipient: &AccountId,
+		_collateral_currency: Self::CurrencyId,
 		amount: Self::Balance,
 		_target: Self::Balance,
 	) -> DispatchResult {
@@ -172,7 +173,7 @@ impl AuctionManager<AccountId> for MockAuctionManager {
 		unimplemented!()
 	}
 
-	fn get_total_collateral_in_auction() -> Self::Balance {
+	fn get_total_collateral_in_auction(_collateral_currency: Self::CurrencyId) -> Self::Balance {
 		TOTAL_COLLATERAL_IN_AUCTION.with(|v| *v.borrow())
 	}
 

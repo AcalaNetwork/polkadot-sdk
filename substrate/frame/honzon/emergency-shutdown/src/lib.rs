@@ -61,7 +61,7 @@ pub mod pallet {
 		type PriceSource: LockablePrice<<Self as pallet_loans::Config>::CurrencyId>;
 
 		/// CDP treasury to escrow collateral assets after settlement
-		type CDPTreasury: CDPTreasury<Self::AccountId, Balance = pallet_loans::BalanceOf<Self>, CurrencyId = <Self as pallet_loans::Config>::CurrencyId>;
+		type CDPTreasury: CDPTreasury<Self::AccountId, Balance = pallet_loans::BalanceOf<Self>>;
 
 		/// Check the auction cancellation to decide whether to open the final
 		/// redemption
@@ -170,7 +170,7 @@ pub mod pallet {
 			);
 			// there's on debit in CDP
 			ensure!(
-				<pallet_loans::Pallet<T>>::total_positions().debit.is_zero(),
+				pallet_loans::Pallet::<T>::total_positions().debit.is_zero(),
 				Error::<T>::ExistUnhandledDebit,
 			);
 
@@ -200,10 +200,10 @@ pub mod pallet {
 			let mut refund_assets: Vec<(<T as pallet_loans::Config>::CurrencyId, pallet_loans::BalanceOf<T>)> = vec![];
 			// refund collaterals to caller by CDP treasury
 			let refund_amount =
-				refund_ratio.saturating_mul_int(<T as Config>::CDPTreasury::get_total_collaterals(currency_id));
+				refund_ratio.saturating_mul_int(<T as Config>::CDPTreasury::get_total_collaterals());
 
 			if !refund_amount.is_zero() {
-				let res = <T as Config>::CDPTreasury::withdraw_collateral(&who, currency_id, refund_amount);
+				let res = <T as Config>::CDPTreasury::withdraw_collateral(&who, refund_amount);
 				if res.is_ok() {
 					refund_assets.push((currency_id, refund_amount));
 				}
