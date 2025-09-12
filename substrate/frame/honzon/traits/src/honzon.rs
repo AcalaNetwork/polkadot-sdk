@@ -86,16 +86,18 @@ pub trait AuctionManager<AccountId> {
 
 	fn new_collateral_auction(
 		refund_recipient: &AccountId,
+		currency_id: Self::CurrencyId,
 		amount: Self::Balance,
 		target: Self::Balance,
 	) -> DispatchResult;
 	fn cancel_auction(id: Self::AuctionId) -> DispatchResult;
-	fn get_total_collateral_in_auction() -> Self::Balance;
+	fn get_total_collateral_in_auction(currency_id: Self::CurrencyId) -> Self::Balance;
 	fn get_total_target_in_auction() -> Self::Balance;
 }
 
 /// An abstraction of cdp treasury for Honzon Protocol.
 pub trait CDPTreasury<AccountId> {
+	fn account_id() -> AccountId;
 	type Balance;
 	type CurrencyId;
 
@@ -136,6 +138,10 @@ pub trait CDPTreasury<AccountId> {
 
 	/// withdraw collateral assets of cdp treasury to `who`
 	fn withdraw_collateral(to: &AccountId, amount: Self::Balance) -> DispatchResult;
+
+	fn pay_surplus(amount: Self::Balance) -> DispatchResult;
+
+	fn refund_surplus(amount: Self::Balance) -> DispatchResult;
 }
 
 pub trait CDPTreasuryExtended<AccountId>: CDPTreasury<AccountId> {

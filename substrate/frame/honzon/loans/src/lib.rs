@@ -143,11 +143,7 @@ pub mod pallet {
 			let debit_adjustment = Self::amount_try_from_balance(debit_decrease)?;
 
 			// transfer collateral to cdp treasury
-			T::CDPTreasury::deposit_collateral(
-				&Self::account_id(),
-				T::CollateralCurrencyId::get(),
-				collateral_confiscate,
-			)?;
+			T::CDPTreasury::deposit_collateral(&Self::account_id(), collateral_confiscate)?;
 
 			// deposit debit to cdp treasury
 			let bad_debt_value = T::RiskManager::get_debit_value(T::CollateralCurrencyId::get(), debit_decrease);

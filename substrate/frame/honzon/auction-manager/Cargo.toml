@@ -21,6 +21,13 @@ pallet-balances = { workspace = true, default-features = false }
 sp-core = { workspace = true, features = ["std"] }
 pallet-balances = { workspace = true, features = ["std"] }
 pallet-auction = { path = "../auction", features = ["std"] }
+pallet-cdp-treasury = { path = "../cdp-treasury", features = ["std"] }
+pallet-assets = { workspace = true, features = ["std"] }
+pallet-asset-conversion = { workspace = true, features = ["std"] }
+pallet-assets-freezer = { workspace = true, features = ["std"] }
+pallet-assets-holder = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["derive"] }
+
 
 [features]
 default = ["std"]
@@ -33,6 +40,11 @@ std = [
 	"sp-runtime/std",
 	"sp-std/std",
 	"pallet-balances/std",
+	"pallet-cdp-treasury/std",
+	"pallet-assets/std",
+	"pallet-asset-conversion/std",
+	"pallet-assets-freezer/std",
+	"pallet-assets-holder/std"
 ]
 try-runtime = [
 	"frame-support/try-runtime",

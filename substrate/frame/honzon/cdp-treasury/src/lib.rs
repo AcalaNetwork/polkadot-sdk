@@ -273,8 +273,9 @@ impl<T: Config> Pallet<T> {
 
 	/// Get collateral amount not in auction
 	pub fn total_collaterals_not_in_auction() -> T::Balance {
-		Self::total_collaterals()
-			.saturating_sub(T::AuctionManagerHandler::get_total_collateral_in_auction())
+		Self::total_collaterals().saturating_sub(
+			T::AuctionManagerHandler::get_total_collateral_in_auction(T::GetBaseCurrencyId::get()),
+		)
 	}
 
 	fn offset_surplus_and_debit() {
@@ -311,6 +312,18 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 	type Balance = T::Balance;
 	type CurrencyId = T::CurrencyId;
 
+	fn account_id() -> T::AccountId {
+		Self::account_id()
+	}
+
+	fn pay_surplus(amount: Self::Balance) -> DispatchResult {
+		T::Fungibles::mint_into(T::GetStableCurrencyId::get(), &Self::account_id(), amount).map(|_| ())
+	}
+
+	fn refund_surplus(amount: Self::Balance) -> DispatchResult {
+		T::Fungibles::burn_from(T::GetStableCurrencyId::get(), &Self::account_id(), amount, Preservation::Expendable, Precision::Exact, Fortitude::Polite).map(|_| ())
+	}
+
 	fn get_surplus_pool() -> Self::Balance {
 		Self::surplus_pool()
 	}
@@ -332,7 +345,7 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 			_from,
 			&Self::account_id(),
 			_amount,
-			Preservation::Preserve,
+			Preservation::Expendable,
 		)
 		.map(|_| ())
 	}
@@ -418,7 +431,9 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 		if collateral_in_auction {
 			ensure!(
 				Self::total_collaterals() >= supply_limit &&
-					T::AuctionManagerHandler::get_total_collateral_in_auction() >= supply_limit,
+					T::AuctionManagerHandler::get_total_collateral_in_auction(
+						T::GetBaseCurrencyId::get()
+					) >= supply_limit,
 				Error::<T>::CollateralNotEnough,
 			);
 		} else {
@@ -487,6 +502,7 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 
 			T::AuctionManagerHandler::new_collateral_auction(
 				&refund_receiver,
+				T::GetBaseCurrencyId::get(),
 				lot_collateral_amount,
 				lot_target,
 			)?;
