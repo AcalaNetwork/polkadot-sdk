@@ -16,6 +16,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//! This module provides a `BoundedType` for values that must stay within a defined range.
+
 use super::Rate;
 
 use codec::{Decode, Encode, MaxEncodedLen};
@@ -30,18 +32,19 @@ use sp_std::{marker::PhantomData, prelude::*, result::Result};
 #[cfg(feature = "std")]
 use serde::{de::Error as SerdeError, Deserialize, Deserializer, Serialize};
 
-/// The bounded type errors.
+/// An error related to a `BoundedType`.
 #[derive(RuntimeDebug, PartialEq, Eq)]
 pub enum Error {
-	/// The value is out of bound.
+	/// The value is outside the defined bounds.
 	OutOfBounds,
-	/// The change diff exceeds the max absolute value.
+	/// The change in value exceeds the maximum allowed absolute change.
 	ExceedMaxChangeAbs,
 }
 
-/// An abstract definition of bounded type. The type is within the range of `Range`
-/// and while update the inner value, the max absolute value of the diff is `MaxChangeAbs`.
-/// The `Default` value is minimum value of the range.
+/// A type that is bounded within a specified `Range`.
+///
+/// When updating the inner value, the absolute difference between the old and new values
+/// cannot exceed `MaxChangeAbs`. The `Default` value is the minimum value of the range.
 #[cfg_attr(feature = "std", derive(Serialize), serde(transparent))]
 #[derive(
 	Encode, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, TypeInfo, MaxEncodedLen, RuntimeDebug,
@@ -92,7 +95,9 @@ where
 	Range: Get<(T, T)>,
 	MaxChangeAbs: Get<T>,
 {
-	/// Try to create a new instance of `BoundedType`. Returns `Err` if out of bound.
+	/// Tries to create a new `BoundedType` instance.
+	///
+	/// Returns `Err` if the value is outside the defined bounds.
 	pub fn try_from(value: T) -> Result<Self, Error> {
 		let (min, max) = Range::get();
 		if value < min || value > max {
@@ -101,8 +106,10 @@ where
 		Ok(Self(value, PhantomData))
 	}
 
-	/// Set the inner value. Returns `Err` if out of bound or the diff with current value exceeds
-	/// the max absolute value.
+	/// Tries to set the inner value.
+	///
+	/// Returns `Err` if the new value is outside the defined bounds or if the change
+	/// exceeds the maximum allowed absolute difference.
 	pub fn try_set(&mut self, value: T) -> Result<(), Error> {
 		let (min, max) = Range::get();
 		let max_change_abs = MaxChangeAbs::get();
@@ -128,10 +135,12 @@ where
 		Ok(())
 	}
 
+	/// Consumes the `BoundedType` and returns the inner value.
 	pub fn into_inner(self) -> T {
 		self.0
 	}
 
+	/// Returns a reference to the inner value.
 	pub fn inner(&self) -> &T {
 		&self.0
 	}
@@ -155,15 +164,18 @@ impl Get<Rate> for OneFifth {
 	}
 }
 
+/// A `BoundedType` for a `Rate`.
 pub type BoundedRate<Range, MaxChangeAbs> = BoundedType<Rate, Range, MaxChangeAbs>;
 
-/// Fractional rate.
+/// A `BoundedRate` with a fractional range between 0 and 1.
 ///
-/// The range is between 0 to 1, and max absolute value of change diff is 1/5.
+/// The maximum absolute change is 1/5.
 pub type FractionalRate = BoundedRate<Fractional, OneFifth>;
 
+/// A `BoundedType` for a `Balance`.
 pub type BoundedBalance<Balance, Range, MaxChangeAbs> = BoundedType<Balance, Range, MaxChangeAbs>;
 
+/// A `BoundedType` for a `BlockNumber`.
 pub type BoundedBlockNumber<BlockNumber, Range, MaxChangeAbs> =
 	BoundedType<BlockNumber, Range, MaxChangeAbs>;
 

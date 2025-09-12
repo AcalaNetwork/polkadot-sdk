@@ -1,18 +1,31 @@
-//! # Oracle
-//! A module to allow oracle operators to feed external data.
-//!
-//! - [`Config`](./trait.Config.html)
-//! - [`Call`](./enum.Call.html)
-//! - [`Module`](./struct.Module.html)
+//! # Oracle Module
 //!
 //! ## Overview
 //!
-//! This module exposes capabilities for oracle operators to feed external
-//! offchain data. The raw values can be combined to provide an aggregated
-//! value.
+//! The Oracle module provides a decentralized and trustworthy way to bring
+//! external, off-chain data onto the blockchain. It allows a configurable set of
+//! oracle operators to feed data, such as prices, into the system. This data can
+//! then be used by other pallets.
 //!
-//! The data is valid only if feeded by an authorized operator.
-//! `pallet_membership` in FRAME can be used to as source of `T::Members`.
+//! The module is designed to be flexible and can be configured to use different
+//! data sources and aggregation strategies.
+//!
+//! ### Key Concepts
+//!
+//! *   **Oracle Operators**: A set of trusted accounts that are authorized to
+//!     submit data to the oracle. The module uses the
+//!     `frame_support::traits::SortedMembers` trait to manage the set of
+//!     operators. This allows using pallets like `pallet-membership` to manage
+//!     the oracle members.
+//! *   **Data Feeds**: Operators feed data as key-value pairs. The `OracleKey`
+//!     is used to identify the data being fed (e.g., a specific currency pair),
+//!     and the `OracleValue` is the data itself (e.g., the price).
+//! *   **Data Aggregation**: The module can be configured with a `CombineData`
+//!     implementation to aggregate the raw values submitted by individual
+//!     operators into a single, trusted value. A default implementation
+//!     `DefaultCombineData` is provided, which takes the median of the values.
+//! *   **Timestamped Data**: All data submitted to the oracle is timestamped,
+//!     allowing consumers of the data to know how fresh it is.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 // Disable the following two lints since they originate from an external macro (namely decl_storage)
@@ -77,84 +90,96 @@ pub mod module {
 	pub(crate) type MomentOf<T, I = ()> = <<T as Config<I>>::Time as Time>::Moment;
 	pub(crate) type TimestampedValueOf<T, I = ()> = TimestampedValue<<T as Config<I>>::OracleValue, MomentOf<T, I>>;
 
+	/// A wrapper for a value with a timestamp.
 	#[derive(Encode, Decode, RuntimeDebug, Eq, PartialEq, Clone, Copy, Ord, PartialOrd, TypeInfo, MaxEncodedLen)]
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 	pub struct TimestampedValue<Value, Moment> {
+		/// The value.
 		pub value: Value,
+		/// The timestamp.
 		pub timestamp: Moment,
 	}
 
 	#[pallet::config]
 	pub trait Config<I: 'static = ()>: frame_system::Config {
-		/// Hook on new data received
+		/// A hook to be called when new data is received.
 		type OnNewData: OnNewData<Self::AccountId, Self::OracleKey, Self::OracleValue>;
 
-		/// Provide the implementation to combine raw values to produce
-		/// aggregated value
+		/// The implementation to combine raw values into a single aggregated
+		/// value.
 		type CombineData: CombineData<Self::OracleKey, TimestampedValueOf<Self, I>>;
 
-		/// Time provider
+		/// The time provider.
 		type Time: Time;
 
-		/// The data key type
+		/// The key type for the oracle data.
 		type OracleKey: Parameter + Member + MaxEncodedLen;
 
-		/// The data value type
+		/// The value type for the oracle data.
 		type OracleValue: Parameter + Member + Ord + MaxEncodedLen;
 
-		/// The root operator account id, record all sudo feeds on this account.
+		/// The account ID for the root operator. This account can bypass the
+		/// membership check and feed values directly.
 		#[pallet::constant]
 		type RootOperatorAccountId: Get<Self::AccountId>;
 
-		/// Oracle operators.
+		/// The source of oracle members.
 		type Members: SortedMembers<Self::AccountId>;
 
-		/// Weight information for extrinsics in this module.
+		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: WeightInfo;
 
-		/// Maximum size of HasDispatched
+		/// The maximum number of members that can be stored in `HasDispatched`.
 		#[pallet::constant]
 		type MaxHasDispatchedSize: Get<u32>;
 
-		/// Maximum size the vector used for feed values
+		/// The maximum number of values that can be fed in a single extrinsic.
 		#[pallet::constant]
 		type MaxFeedValues: Get<u32>;
 
+		/// A helper trait for benchmarking.
 		#[cfg(feature = "runtime-benchmarks")]
 		type BenchmarkHelper: BenchmarkHelper<Self::OracleKey, Self::OracleValue, Self::MaxFeedValues>;
 	}
 
 	#[pallet::error]
 	pub enum Error<T, I = ()> {
-		/// Sender does not have permission
+		/// The sender is not a member of the oracle and does not have
+		/// permission to feed data.
 		NoPermission,
-		/// Feeder has already feeded at this block
+		/// The oracle member has already fed data in the current block.
 		AlreadyFeeded,
 	}
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(crate) fn deposit_event)]
 	pub enum Event<T: Config<I>, I: 'static = ()> {
-		/// New feed data is submitted.
+		/// New data has been fed into the oracle.
 		NewFeedData {
+			/// The account that fed the data.
 			sender: T::AccountId,
+			/// The key-value pairs of the data that was fed.
 			values: Vec<(T::OracleKey, T::OracleValue)>,
 		},
 	}
 
-	/// Raw values for each oracle operators
+	/// The raw values for each oracle operator.
+	///
+	/// Maps `(AccountId, OracleKey)` to `TimestampedValue`.
 	#[pallet::storage]
 	#[pallet::getter(fn raw_values)]
 	pub type RawValues<T: Config<I>, I: 'static = ()> =
 		StorageDoubleMap<_, Twox64Concat, T::AccountId, Twox64Concat, T::OracleKey, TimestampedValueOf<T, I>>;
 
-	/// Up to date combined value from Raw Values
+	/// The aggregated values for each oracle key.
+	///
+	/// Maps `OracleKey` to `TimestampedValue`.
 	#[pallet::storage]
 	#[pallet::getter(fn values)]
 	pub type Values<T: Config<I>, I: 'static = ()> =
 		StorageMap<_, Twox64Concat, <T as Config<I>>::OracleKey, TimestampedValueOf<T, I>>;
 
-	/// If an oracle operator has fed a value in this block
+	/// A set of accounts that have already fed data in the current block.
 	#[pallet::storage]
 	pub(crate) type HasDispatched<T: Config<I>, I: 'static = ()> =
 		StorageValue<_, BoundedBTreeSet<T::AccountId, T::MaxHasDispatchedSize>, ValueQuery>;
@@ -179,7 +204,13 @@ pub mod module {
 	impl<T: Config<I>, I: 'static> Pallet<T, I> {
 		/// Feed the external value.
 		///
-		/// Require authorized operator.
+		/// This function can be called by any authorized oracle member to feed
+		/// a list of key-value pairs. The `origin` of the transaction must be a
+		/// member of the oracle or the root operator.
+		///
+		/// - `values`: A list of key-value pairs to be fed into the oracle.
+		///
+		/// Emits a `NewFeedData` event on success.
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::feed_values(values.len() as u32))]
 		pub fn feed_values(
@@ -207,6 +238,7 @@ pub mod module {
 }
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
+	/// Reads the raw values for a given key from all oracle members.
 	pub fn read_raw_values(key: &T::OracleKey) -> Vec<TimestampedValueOf<T, I>> {
 		T::Members::sorted_members()
 			.iter()
@@ -215,11 +247,12 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 			.collect()
 	}
 
-	/// Fetch current combined value.
+	/// Returns the aggregated and timestamped value for a given key.
 	pub fn get(key: &T::OracleKey) -> Option<TimestampedValueOf<T, I>> {
 		Self::values(key)
 	}
 
+	/// Returns all aggregated and timestamped values.
 	#[allow(clippy::complexity)]
 	pub fn get_all_values() -> Vec<(T::OracleKey, Option<TimestampedValueOf<T, I>>)> {
 		<Values<T, I>>::iter().map(|(k, v)| (k, Some(v))).collect()

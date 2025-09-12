@@ -1,12 +1,31 @@
-//! # Auction
+//! # Auction Pallet
 //!
 //! ## Overview
 //!
-//! This module provides a basic abstraction to implement on-chain auctioning
-//! feature.
-//!
-//! The auction logic can be customized by implement and supplying
+//! This pallet provides a generic framework for on-chain auctions. It allows for the creation
+//! and management of auctions for any type of asset. The core logic of the auction, such as
+//! bid validation and what happens when an auction ends, is customizable through the
 //! `AuctionHandler` trait.
+//!
+//! This pallet is designed to be flexible and can be used to implement various auction
+//! types, such as English auctions, Dutch auctions, or other custom formats.
+//!
+//! ## Features
+//!
+//! - **Generic Auction Mechanism:** Can be used for auctioning any asset.
+//! - **Customizable Logic:** The `AuctionHandler` trait allows for custom implementation of
+//!   auction logic.
+//! - **Scheduled Auctions:** Auctions can be scheduled to start at a future block number.
+//! - **Automatic Auction Closing:** Auctions are automatically closed at their end block number
+//!   in the `on_finalize` hook.
+//!
+//! ## Terminology
+//!
+//! - **Auction:** A process of buying and selling goods or services by offering them up for
+//!   bid, taking bids, and then selling the item to the highest bidder.
+//! - **Bid:** An offer of a price.
+//! - **Auction Handler:** A trait implementation that defines the specific logic for an
+//!   auction, such as how to handle new bids and what to do when an auction ends.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 // Disable the following two lints since they originate from an external macro (namely decl_storage)
@@ -35,7 +54,7 @@ pub mod module {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
-		/// The balance type for bidding.
+		/// The balance type for bidding in auctions.
 		type Balance: Parameter
 			+ Member
 			+ AtLeast32BitUnsigned
@@ -44,7 +63,7 @@ pub mod module {
 			+ MaybeSerializeDeserialize
 			+ MaxEncodedLen;
 
-		/// The auction ID type.
+		/// The type for identifying auctions.
 		type AuctionId: Parameter
 			+ Member
 			+ AtLeast32BitUnsigned
@@ -55,35 +74,47 @@ pub mod module {
 			+ codec::FullCodec
 			+ codec::MaxEncodedLen;
 
-		/// The `AuctionHandler` that allow custom bidding logic and handles
-		/// auction result.
+		/// The handler for custom auction logic. This is used to validate bids
+		/// and handle the outcome of an auction.
 		type Handler: AuctionHandler<Self::AccountId, Self::Balance, BlockNumberFor<Self>, Self::AuctionId>;
 
-		/// Weight information for extrinsics in this module.
+		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: WeightInfo;
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
+		/// The specified auction does not exist.
 		AuctionNotExist,
+		/// The auction has not started yet.
 		AuctionNotStarted,
+		/// The bid was not accepted by the `AuctionHandler`.
 		BidNotAccepted,
+		/// The bid price is invalid. It might be lower than or equal to the
+		/// current highest bid, or it might be zero.
 		InvalidBidPrice,
+		/// There are no available auction IDs to be assigned to a new auction.
 		NoAvailableAuctionId,
 	}
 
 	#[pallet::event]
 	#[pallet::generate_deposit(fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// A bid is placed
+		/// A bid was successfully placed in an auction.
 		Bid {
+			/// The ID of the auction.
 			auction_id: T::AuctionId,
+			/// The account that placed the bid.
 			bidder: T::AccountId,
+			/// The amount of the bid.
 			amount: T::Balance,
 		},
 	}
 
-	/// Stores on-going and future auctions. Closed auction are removed.
+	/// Stores ongoing and future auctions. Closed auctions are removed.
+	///
+	/// Key: Auction ID
+	/// Value: Auction information
 	#[pallet::storage]
 	#[pallet::getter(fn auctions)]
 	pub type Auctions<T: Config> = StorageMap<
@@ -94,12 +125,13 @@ pub mod module {
 		OptionQuery,
 	>;
 
-	/// Track the next auction ID.
+	/// Tracks the next available auction ID.
 	#[pallet::storage]
 	#[pallet::getter(fn auctions_index)]
 	pub type AuctionsIndex<T: Config> = StorageValue<_, T::AuctionId, ValueQuery>;
 
-	/// Index auctions by end time.
+	/// A mapping from block number to a list of auctions that end at that block.
+	/// This is used to efficiently process auctions that have ended.
 	#[pallet::storage]
 	#[pallet::getter(fn auction_end_time)]
 	pub type AuctionEndTime<T: Config> =
@@ -125,10 +157,14 @@ pub mod module {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// Bid an auction.
+		/// Place a bid in an ongoing auction.
 		///
-		/// The dispatch origin for this call must be `Signed` by the
-		/// transactor.
+		/// The dispatch origin for this call must be `Signed`.
+		///
+		/// ## Parameters
+		///
+		/// - `id`: The ID of the auction to bid on.
+		/// - `value`: The amount of the bid.
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::bid_collateral_auction())]
 		pub fn bid(origin: OriginFor<T>, id: T::AuctionId, #[pallet::compact] value: T::Balance) -> DispatchResult {

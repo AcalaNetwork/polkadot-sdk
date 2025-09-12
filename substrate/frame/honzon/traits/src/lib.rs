@@ -18,6 +18,7 @@
 
 // TODO: this is not a pallet, but a traits library, need to rename it or break it
 
+#![doc = "This crate provides a collection of shared traits and types for the Honzon protocol and its related pallets."]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::upper_case_acronyms)]
 #![allow(clippy::from_over_into)]
@@ -42,12 +43,18 @@ pub use crate::dex::*;
 pub use crate::honzon::*;
 pub use crate::data_provider::*;
 
+/// The price of a currency, represented as a `FixedU128`.
 pub type Price = FixedU128;
+/// The exchange rate between two currencies, represented as a `FixedU128`.
 pub type ExchangeRate = FixedU128;
+/// A ratio, represented as a `FixedU128`.
 pub type Ratio = FixedU128;
+/// A rate, represented as a `FixedU128`.
 pub type Rate = FixedU128;
 
+/// A generic handler for implementing the Chain of Responsibility pattern.
 pub trait Handler<T> {
+	/// Handles a given value.
 	fn handle(t: &T) -> DispatchResult;
 }
 
@@ -60,24 +67,27 @@ impl<T> Handler<T> for Tuple {
 }
 
 
-/// Indicate if should change a value
+/// Represents a potential change to a value.
 #[derive(Encode, Decode, Clone, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 pub enum Change<Value> {
-	/// No change.
+	/// No change is required.
 	NoChange,
-	/// Changed to new value.
+	/// The value should be changed to the new value.
 	NewValue(Value),
 }
 
+/// A value with an associated timestamp.
 #[derive(Encode, Decode, RuntimeDebug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy)]
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 pub struct TimestampedValue<Value: Ord + PartialOrd, Moment> {
+	/// The value.
 	pub value: Value,
+	/// The timestamp.
 	pub timestamp: Moment,
 }
 
 
-/// Combine data provided by operators
+/// Used to combine data from multiple providers.
 pub trait CombineData<Key, TimestampedValue> {
 	/// Combine data provided by operators
 	fn combine_data(
@@ -87,7 +97,7 @@ pub trait CombineData<Key, TimestampedValue> {
 	) -> Option<TimestampedValue>;
 }
 
-/// New data handler
+/// A handler for new data events.
 #[impl_trait_for_tuples::impl_for_tuples(30)]
 pub trait OnNewData<AccountId, Key, Value> {
 	/// New data is available
@@ -95,8 +105,11 @@ pub trait OnNewData<AccountId, Key, Value> {
 }
 
 
+/// A trait for providing the price of a currency.
 pub trait PriceProvider<CurrencyId> {
+	/// Returns the price of a currency.
 	fn get_price(currency_id: CurrencyId) -> Option<Price>;
+	/// Returns the relative price of two currencies.
 	fn get_relative_price(base: CurrencyId, quote: CurrencyId) -> Option<Price> {
 		if let (Some(base_price), Some(quote_price)) =
 			(Self::get_price(base), Self::get_price(quote))
@@ -108,19 +121,29 @@ pub trait PriceProvider<CurrencyId> {
 	}
 }
 
+/// Provides a relative price from a DEX.
 pub trait DEXPriceProvider<CurrencyId> {
+	/// Get the relative price of two currencies from a DEX.
 	fn get_relative_price(base: CurrencyId, quote: CurrencyId) -> Option<ExchangeRate>;
 }
 
+/// Used to lock and unlock prices.
 pub trait LockablePrice<CurrencyId> {
+	/// Lock the price of a currency.
 	fn lock_price(currency_id: CurrencyId) -> DispatchResult;
+	/// Unlock the price of a currency.
 	fn unlock_price(currency_id: CurrencyId) -> DispatchResult;
 }
 
+/// Provides a generic exchange rate.
 pub trait ExchangeRateProvider {
+	/// Get the exchange rate.
 	fn get_exchange_rate() -> ExchangeRate;
 }
+
+/// A trait for liquidating collateral.
 pub trait LiquidateCollateral<AccountId, CurrencyId, Balance> {
+	/// Liquidates a specified amount of collateral.
 	fn liquidate(
 		who: &AccountId,
 		currency_id: CurrencyId,

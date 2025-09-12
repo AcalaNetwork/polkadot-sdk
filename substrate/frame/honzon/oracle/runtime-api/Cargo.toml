@@ -1,17 +1,25 @@
 [package]
-name = "orml-oracle-runtime-api"
+name = "pallet-oracle-runtime-api"
 version = "1.0.0"
-authors = ["Laminar Developers <hello@laminar.one>"]
-edition = "2021"
+authors.workspace = true
+edition.workspace = true
 license = "Apache-2.0"
-description = "Runtime API module for orml-oracle."
-repository = "https://github.com/open-web3-stack/open-runtime-module-library"
+homepage.workspace = true
+repository.workspace = true
+description = "Runtime API for the oracle pallet."
 
 [dependencies]
-parity-scale-codec = {  version = "3.0.0", default-features = false, features = ["derive"] }
+codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["derive"] }
 sp-api = { workspace = true }
 sp-std = { workspace = true }
+scale-info = { workspace = true }
+
 
 [features]
 default = [ "std" ]
-std = [ "parity-scale-codec/std", "sp-api/std", "sp-std/std" ]
+std = [
+    "codec/std",
+    "sp-api/std",
+    "sp-std/std",
+    "scale-info/std",
+]

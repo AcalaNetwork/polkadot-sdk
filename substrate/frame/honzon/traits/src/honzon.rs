@@ -16,6 +16,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//! This module provides the core traits for the Honzon protocol.
+
 use codec::{Decode, Encode, FullCodec, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_core::U256;
@@ -28,6 +30,7 @@ use sp_std::{
 
 use crate::{dex::*, ExchangeRate, Ratio};
 
+/// A collateralized debt position.
 #[derive(
 	Encode, Decode, Eq, PartialEq, Copy, Clone, RuntimeDebug, Default, MaxEncodedLen, TypeInfo,
 )]
@@ -38,9 +41,12 @@ pub struct Position<Balance> {
 	pub debit: Balance,
 }
 
+/// A trait for managing the risk of the protocol.
 pub trait RiskManager<AccountId, CurrencyId, Balance, DebitBalance> {
+	/// Returns the value of a given amount of debit.
 	fn get_debit_value(currency_id: CurrencyId, debit_balance: DebitBalance) -> Balance;
 
+	/// Checks if a position is valid.
 	fn check_position_valid(
 		currency_id: CurrencyId,
 		collateral_balance: Balance,
@@ -48,6 +54,7 @@ pub trait RiskManager<AccountId, CurrencyId, Balance, DebitBalance> {
 		check_required_ratio: bool,
 	) -> DispatchResult;
 
+	/// Checks if the total debit for a currency has reached its cap.
 	fn check_debit_cap(
 		currency_id: CurrencyId,
 		total_debit_balance: DebitBalance,
@@ -79,77 +86,94 @@ impl<AccountId, CurrencyId, Balance: Default, DebitBalance>
 	}
 }
 
+/// A trait for managing auctions.
 pub trait AuctionManager<AccountId> {
+	/// The type of currency used in auctions.
 	type CurrencyId;
+	/// The type of balance used in auctions.
 	type Balance;
+	/// The type of auction ID.
 	type AuctionId: FullCodec + Debug + Clone + Eq + PartialEq;
 
+	/// Creates a new collateral auction.
 	fn new_collateral_auction(
 		refund_recipient: &AccountId,
 		currency_id: Self::CurrencyId,
 		amount: Self::Balance,
 		target: Self::Balance,
 	) -> DispatchResult;
+	/// Cancels an auction.
 	fn cancel_auction(id: Self::AuctionId) -> DispatchResult;
+	/// Returns the total amount of collateral in auctions for a given currency.
 	fn get_total_collateral_in_auction(currency_id: Self::CurrencyId) -> Self::Balance;
+	/// Returns the total target amount in auctions.
 	fn get_total_target_in_auction() -> Self::Balance;
 }
 
-/// An abstraction of cdp treasury for Honzon Protocol.
+/// A trait for managing the Collateralized Debt Position (CDP) treasury.
 pub trait CDPTreasury<AccountId> {
+	/// Returns the account ID of the treasury.
 	fn account_id() -> AccountId;
+	/// The type of balance used in the treasury.
 	type Balance;
+	/// The type of currency used in the treasury.
 	type CurrencyId;
 
-	/// get surplus amount of cdp treasury
+	/// Returns the amount of surplus in the treasury.
 	fn get_surplus_pool() -> Self::Balance;
 
-	/// get debit amount of cdp treasury
+	/// Returns the amount of debit in the treasury.
 	fn get_debit_pool() -> Self::Balance;
 
-	/// get collateral assets amount of cdp treasury
+	/// Returns the total amount of collateral in the treasury.
 	fn get_total_collaterals() -> Self::Balance;
 
-	/// calculate the proportion of specific debit amount for the whole system
+	/// Calculates the proportion of a specific debit amount relative to the whole system.
 	fn get_debit_proportion(amount: Self::Balance) -> Ratio;
 
-	/// issue debit for cdp treasury
+	/// Handles a system-wide debit event.
 	fn on_system_debit(amount: Self::Balance) -> DispatchResult;
 
-	/// issue surplus(stable currency) for cdp treasury
+	/// Handles a system-wide surplus event.
 	fn on_system_surplus(amount: Self::Balance) -> DispatchResult;
 
-	/// issue debit to `who`
-	/// if backed flag is true, means the debit to issue is backed on some
-	/// assets, otherwise will increase same amount of debit to system debit.
+	/// Issues debit to a specified account.
+	///
+	/// If `backed` is true, the debit is backed by some assets; otherwise, the system
+	/// debit will be increased by the same amount.
 	fn issue_debit(who: &AccountId, debit: Self::Balance, backed: bool) -> DispatchResult;
 
-	/// burn debit(stable currency) of `who`
+	/// Burns debit from a specified account.
 	fn burn_debit(who: &AccountId, debit: Self::Balance) -> DispatchResult;
 
-	/// deposit surplus(stable currency) to cdp treasury by `from`
+	/// Deposits surplus from a specified account into the treasury.
 	fn deposit_surplus(from: &AccountId, surplus: Self::Balance) -> DispatchResult;
 
-	/// withdraw surplus(stable currency) from cdp treasury to `to`
+	/// Withdraws surplus from the treasury to a specified account.
 	fn withdraw_surplus(to: &AccountId, surplus: Self::Balance) -> DispatchResult;
 
-	/// deposit collateral assets to cdp treasury by `who`
+	/// Deposits collateral from a specified account into the treasury.
 	fn deposit_collateral(from: &AccountId, amount: Self::Balance) -> DispatchResult;
 
-	/// withdraw collateral assets of cdp treasury to `who`
+	/// Withdraws collateral from the treasury to a specified account.
 	fn withdraw_collateral(to: &AccountId, amount: Self::Balance) -> DispatchResult;
 
+	/// Pays surplus from the treasury.
 	fn pay_surplus(amount: Self::Balance) -> DispatchResult;
 
+	/// Refunds surplus to the treasury.
 	fn refund_surplus(amount: Self::Balance) -> DispatchResult;
 }
 
+/// An extended `CDPTreasury` trait.
 pub trait CDPTreasuryExtended<AccountId>: CDPTreasury<AccountId> {
+	/// Swaps collateral to the stable currency.
 	fn swap_collateral_to_stable(
 		limit: SwapLimit<Self::Balance>,
 		collateral_in_auction: bool,
 	) -> sp_std::result::Result<(Self::Balance, Self::Balance), DispatchError>;
 
+	/// Creates collateral auctions.
 	fn create_collateral_auctions(
 		amount: Self::Balance,
 		target: Self::Balance,
@@ -157,29 +181,32 @@ pub trait CDPTreasuryExtended<AccountId>: CDPTreasury<AccountId> {
 		split: bool,
 	) -> sp_std::result::Result<u32, DispatchError>;
 
+	/// Returns the maximum number of auctions that can be created.
 	fn max_auction() -> u32;
 }
 
+/// A trait for handling emergency shutdowns.
 pub trait EmergencyShutdown {
+	/// Returns `true` if the system is in shutdown mode.
 	fn is_shutdown() -> bool;
 }
 
-/// Functionality of Honzon Protocol to be exposed to EVM+.
+/// A trait for managing the Honzon protocol, intended for use with EVM+.
 pub trait HonzonManager<AccountId, Amount, Balance> {
-	/// Adjust CDP loan
+	/// Adjusts a CDP loan.
 	fn adjust_loan(
 		who: &AccountId,
 		collateral_adjustment: Amount,
 		debit_adjustment: Amount,
 	) -> DispatchResult;
-	/// Close CDP loan using DEX
+	/// Closes a CDP loan using a DEX.
 	fn close_loan_by_dex(who: AccountId, max_collateral_amount: Balance) -> DispatchResult;
-	/// Get open CDP corresponding to an account
+	/// Returns the CDP for a given account.
 	fn get_position(who: &AccountId) -> Position<Balance>;
-	/// Get liquidation ratio for collateral
+	/// Returns the liquidation ratio for the collateral.
 	fn get_collateral_parameters() -> Vec<U256>;
-	/// Get current ratio of collateral to debit of open CDP
+	/// Returns the current collateral-to-debit ratio of a CDP.
 	fn get_current_collateral_ratio(who: &AccountId) -> Option<Ratio>;
-	/// Get exchange rate of debit units to debit value
+	/// Returns the exchange rate of debit units to debit value.
 	fn get_debit_exchange_rate() -> ExchangeRate;
 }

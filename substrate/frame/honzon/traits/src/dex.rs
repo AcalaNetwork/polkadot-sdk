@@ -16,6 +16,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//! This module provides traits for interacting with a Decentralized Exchange (DEX).
+
 use codec::{Decode, Encode};
 use frame_support::{ensure, traits::Get};
 use scale_info::TypeInfo;
@@ -25,37 +27,48 @@ use sp_core::H160;
 use sp_runtime::{DispatchError, DispatchResult, RuntimeDebug};
 use sp_std::{cmp::PartialEq, prelude::*, result::Result};
 
+/// Specifies the limit for a swap operation.
 #[derive(RuntimeDebug, Encode, Decode, Clone, Copy, PartialEq, Eq, TypeInfo)]
 pub enum SwapLimit<Balance> {
-	/// use exact amount supply amount to swap. (exact_supply_amount, minimum_target_amount)
+	/// Swaps an exact amount of the supply currency for a minimum amount of the target currency.
+	/// The tuple contains `(exact_supply_amount, minimum_target_amount)`.
 	ExactSupply(Balance, Balance),
-	/// swap to get exact amount target. (maximum_supply_amount, exact_target_amount)
+	/// Swaps a maximum amount of the supply currency for an exact amount of the target currency.
+	/// The tuple contains `(maximum_supply_amount, exact_target_amount)`.
 	ExactTarget(Balance, Balance),
 }
 
+/// Represents a swap path that can be aggregated across different DEX protocols.
 #[derive(Encode, Decode, Eq, PartialEq, Clone, RuntimeDebug, PartialOrd, Ord, TypeInfo)]
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 pub enum AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex> {
+	/// A swap path through a traditional DEX.
 	Dex(Vec<CurrencyId>),
+	/// A swap path through a Taiga stable asset pool.
 	Taiga(StableAssetPoolId, PoolTokenIndex, PoolTokenIndex),
 }
 
+/// A trait for managing a DEX.
 pub trait DEXManager<AccountId, Balance, CurrencyId> {
+	/// Returns the liquidity pool for a given pair of currencies.
 	fn get_liquidity_pool(
 		currency_id_a: CurrencyId,
 		currency_id_b: CurrencyId,
 	) -> (Balance, Balance);
 
+	/// Returns the address of the liquidity token for a given pair of currencies.
 	fn get_liquidity_token_address(
 		currency_id_a: CurrencyId,
 		currency_id_b: CurrencyId,
 	) -> Option<H160>;
 
+	/// Returns the swap amount for a given path and limit.
 	fn get_swap_amount(
 		path: &[CurrencyId],
 		limit: SwapLimit<Balance>,
 	) -> Option<(Balance, Balance)>;
 
+	/// Returns the best swap path for a given supply and target currency.
 	fn get_best_price_swap_path(
 		supply_currency_id: CurrencyId,
 		target_currency_id: CurrencyId,
@@ -63,12 +76,14 @@ pub trait DEXManager<AccountId, Balance, CurrencyId> {
 		alternative_path_joint_list: Vec<Vec<CurrencyId>>,
 	) -> Option<(Vec<CurrencyId>, Balance, Balance)>;
 
+	/// Swaps currencies along a specific path.
 	fn swap_with_specific_path(
 		who: &AccountId,
 		path: &[CurrencyId],
 		limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError>;
 
+	/// Adds liquidity to a currency pair.
 	fn add_liquidity(
 		who: &AccountId,
 		currency_id_a: CurrencyId,
@@ -79,6 +94,7 @@ pub trait DEXManager<AccountId, Balance, CurrencyId> {
 		stake_increment_share: bool,
 	) -> Result<(Balance, Balance, Balance), DispatchError>;
 
+	/// Removes liquidity from a currency pair.
 	fn remove_liquidity(
 		who: &AccountId,
 		currency_id_a: CurrencyId,
@@ -94,12 +110,14 @@ pub trait Swap<AccountId, Balance, CurrencyId>
 where
 	CurrencyId: Clone,
 {
+	/// Returns the swap amount for a given supply and target currency.
 	fn get_swap_amount(
 		supply_currency_id: CurrencyId,
 		target_currency_id: CurrencyId,
 		limit: SwapLimit<Balance>,
 	) -> Option<(Balance, Balance)>;
 
+	/// Swaps a supply currency for a target currency.
 	fn swap(
 		who: &AccountId,
 		supply_currency_id: CurrencyId,
@@ -107,12 +125,14 @@ where
 		limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError>;
 
+	/// Swaps currencies along a given path.
 	fn swap_by_path(
 		who: &AccountId,
 		swap_path: &[CurrencyId],
 		limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError>;
 
+	/// Swaps currencies along a given aggregated path.
 	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
 		who: &AccountId,
 		swap_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
@@ -120,8 +140,10 @@ where
 	) -> Result<(Balance, Balance), DispatchError>;
 }
 
+/// An error that can occur during a swap.
 #[derive(Eq, PartialEq, RuntimeDebug)]
 pub enum SwapError {
+	/// The swap cannot be completed.
 	CannotSwap,
 }
 
@@ -131,7 +153,7 @@ impl Into<DispatchError> for SwapError {
 	}
 }
 
-// Dex wrapper of Swap implementation
+/// A wrapper that implements the `Swap` trait for a DEX with specific joints.
 pub struct SpecificJointsSwap<Dex, Joints>(sp_std::marker::PhantomData<(Dex, Joints)>);
 
 impl<AccountId, Balance, CurrencyId, Dex, Joints> Swap<AccountId, Balance, CurrencyId>
@@ -271,23 +293,28 @@ where
 	}
 }
 
+/// A trait for bootstrapping a DEX.
 pub trait DEXBootstrap<AccountId, Balance, CurrencyId> {
+	/// Returns the provision pool for a given currency pair.
 	fn get_provision_pool(
 		currency_id_a: CurrencyId,
 		currency_id_b: CurrencyId,
 	) -> (Balance, Balance);
 
+	/// Returns the provision pool of a specific account for a given currency pair.
 	fn get_provision_pool_of(
 		who: &AccountId,
 		currency_id_a: CurrencyId,
 		currency_id_b: CurrencyId,
 	) -> (Balance, Balance);
 
+	/// Returns the initial share exchange rate for a given currency pair.
 	fn get_initial_share_exchange_rate(
 		currency_id_a: CurrencyId,
 		currency_id_b: CurrencyId,
 	) -> (Balance, Balance);
 
+	/// Adds a provision to the DEX.
 	fn add_provision(
 		who: &AccountId,
 		currency_id_a: CurrencyId,
@@ -296,12 +323,14 @@ pub trait DEXBootstrap<AccountId, Balance, CurrencyId> {
 		contribution_b: Balance,
 	) -> DispatchResult;
 
+	/// Claims a DEX share.
 	fn claim_dex_share(
 		who: &AccountId,
 		currency_id_a: CurrencyId,
 		currency_id_b: CurrencyId,
 	) -> Result<Balance, DispatchError>;
 
+	/// Refunds a provision.
 	fn refund_provision(
 		who: &AccountId,
 		currency_id_a: CurrencyId,

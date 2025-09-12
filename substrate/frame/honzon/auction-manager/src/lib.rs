@@ -16,14 +16,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! # Auction Manager Module
+//! # Auction Manager Pallet
 //!
 //! ## Overview
 //!
-//! Auction the assets of the system for maintain the normal operation of the
-//! business. Auction types include:
-//!   - `collateral auction`: sell collateral assets for getting stable currency to eliminate the
-//!     system's bad debit by auction
+//! The Auction Manager pallet is responsible for managing auctions of system assets to ensure the
+//! normal operation of the business. It handles collateral auctions, which involve selling
+//! collateral assets to acquire stable currency and cover the system's bad debt.
+//!
+//! This pallet implements the `AuctionManager` and `AuctionHandler` traits, providing a structured
+//! way to create, manage, and settle auctions. It interacts with other pallets like `pallet-auction`
+//! for the core auction mechanics and `pallet-cdp-treasury` for handling funds.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -45,22 +48,30 @@ pub mod weights;
 
 pub use weights::WeightInfo;
 
+/// Reasons for holding funds in this pallet.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 #[codec(dumb_trait_bound)]
 pub enum HoldReason {
+	/// Funds are held for a collateral auction.
 	CollateralAuction,
 }
 
+/// Represents an item up for collateral auction.
 #[derive(Encode, Decode, Clone, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 #[codec(dumb_trait_bound)]
 pub struct CollateralAuctionItem<AccountId, BlockNumber, Balance> {
+	/// The account to receive a refund if the auction is successful.
 	refund_recipient: AccountId,
+	/// The initial amount of collateral in the auction.
 	#[codec(compact)]
 	initial_amount: Balance,
+	/// The current amount of collateral in the auction.
 	#[codec(compact)]
 	amount: Balance,
+	/// The target amount to be raised from the auction.
 	#[codec(compact)]
 	target: Balance,
+	/// The block number when the auction started.
 	start_time: BlockNumber,
 }
 
@@ -78,63 +89,128 @@ pub mod pallet {
 	{
 		/// The overarching event type.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-		type CurrencyId: frame_support::pallet_prelude::Parameter + sp_std::cmp::PartialEq + sp_std::cmp::Eq + sp_std::marker::Copy + sp_std::cmp::Ord + sp_std::marker::Send + sp_std::marker::Sync + MaxEncodedLen + 'static;
-      	type GetNativeCurrencyId: Get<Self::CurrencyId>;
-      	type GetStableCurrencyId: Get<Self::CurrencyId>;
-		type CDPTreasury: CDPTreasury<Self::AccountId, Balance = <Self as pallet_auction::Config>::Balance, CurrencyId = Self::CurrencyId>;
-      	type PriceSource: PriceProvider<Self::CurrencyId>;
-      	type Swap: Swap<Self::AccountId, <Self as pallet_auction::Config>::Balance, Self::CurrencyId>;
+		/// The currency type for interacting with this pallet.
+		type CurrencyId: frame_support::pallet_prelude::Parameter
+			+ sp_std::cmp::PartialEq
+			+ sp_std::cmp::Eq
+			+ sp_std::marker::Copy
+			+ sp_std::cmp::Ord
+			+ sp_std::marker::Send
+			+ sp_std::marker::Sync
+			+ MaxEncodedLen
+			+ 'static;
+		/// The native currency ID.
+		type GetNativeCurrencyId: Get<Self::CurrencyId>;
+		/// The stable currency ID.
+		type GetStableCurrencyId: Get<Self::CurrencyId>;
+		/// The CDP treasury pallet.
+		type CDPTreasury: CDPTreasury<
+			Self::AccountId,
+			Balance = <Self as pallet_auction::Config>::Balance,
+			CurrencyId = Self::CurrencyId,
+		>;
+		/// The price provider.
+		type PriceSource: PriceProvider<Self::CurrencyId>;
+		/// The swap pallet.
+		type Swap: Swap<Self::AccountId, <Self as pallet_auction::Config>::Balance, Self::CurrencyId>;
+		/// The hold reason for this pallet.
 		type RuntimeHoldReason: From<HoldReason>;
+		/// The minimum increment size for bids in an auction.
 		#[pallet::constant]
 		type MinimumIncrementSize: Get<Rate>;
+		/// The time to close an auction.
 		#[pallet::constant]
 		type AuctionTimeToClose: Get<BlockNumberFor<Self>>;
+		/// The soft cap for auction duration.
 		#[pallet::constant]
 		type AuctionDurationSoftCap: Get<BlockNumberFor<Self>>;
-		type Currency: fungibles::Mutate<Self::AccountId, AssetId = Self::CurrencyId, Balance = <Self as pallet_auction::Config>::Balance>
-			+ fungibles::Balanced<Self::AccountId, AssetId = Self::CurrencyId, Balance = <Self as pallet_auction::Config>::Balance>
-			+ fungibles::hold::Mutate<Self::AccountId, AssetId = Self::CurrencyId, Balance = <Self as pallet_auction::Config>::Balance, Reason = Self::RuntimeHoldReason>;
+		/// The currency handler.
+		type Currency: fungibles::Mutate<
+				Self::AccountId,
+				AssetId = Self::CurrencyId,
+				Balance = <Self as pallet_auction::Config>::Balance,
+			> + fungibles::Balanced<
+				Self::AccountId,
+				AssetId = Self::CurrencyId,
+				Balance = <Self as pallet_auction::Config>::Balance,
+			> + fungibles::hold::Mutate<
+				Self::AccountId,
+				AssetId = Self::CurrencyId,
+				Balance = <Self as pallet_auction::Config>::Balance,
+				Reason = Self::RuntimeHoldReason,
+			>;
+		/// The auction pallet.
 		type Auction: Auction<Self::AccountId, BlockNumberFor<Self>>;
+		/// The emergency shutdown pallet.
 		type EmergencyShutdown: EmergencyShutdown;
+		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: WeightInfo;
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
+		/// The specified auction does not exist.
 		AuctionNotExists,
+		/// The auction is in the reverse stage and cannot be canceled.
 		InReverseStage,
+		/// The operation can only be performed after an emergency shutdown.
 		MustAfterShutdown,
+		/// The bid price is invalid.
 		InvalidBidPrice,
+		/// The amount is invalid.
 		InvalidAmount,
+		/// The currency ID is invalid.
 		InvalidCurrencyId,
 	}
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(crate) fn deposit_event)]
 	pub enum Event<T: Config> {
+		/// A new collateral auction has been created.
 		NewCollateralAuction {
+			/// The ID of the auction.
 			auction_id: <T as pallet_auction::Config>::AuctionId,
+			/// The type of collateral being auctioned.
 			collateral_type: T::CurrencyId,
+			/// The amount of collateral being auctioned.
 			collateral_amount: <T as pallet_auction::Config>::Balance,
+			/// The target bid price for the auction.
 			target_bid_price: <T as pallet_auction::Config>::Balance,
 		},
-		CancelAuction { auction_id: <T as pallet_auction::Config>::AuctionId },
-		CollateralAuctionDealt {
+		/// An auction has been canceled.
+		CancelAuction {
+			/// The ID of the canceled auction.
 			auction_id: <T as pallet_auction::Config>::AuctionId,
+		},
+		/// A collateral auction has been successfully dealt.
+		CollateralAuctionDealt {
+			/// The ID of the auction.
+			auction_id: <T as pallet_auction::Config>::AuctionId,
+			/// The type of collateral that was auctioned.
 			collateral_type: T::CurrencyId,
+			/// The amount of collateral that was auctioned.
 			collateral_amount: <T as pallet_auction::Config>::Balance,
+			/// The winner of the auction.
 			winner: T::AccountId,
+			/// The amount paid by the winner.
 			payment_amount: <T as pallet_auction::Config>::Balance,
 		},
+		/// A collateral auction has been aborted due to no bids.
 		CollateralAuctionAborted {
+			/// The ID of the auction.
 			auction_id: <T as pallet_auction::Config>::AuctionId,
+			/// The type of collateral that was being auctioned.
 			collateral_type: T::CurrencyId,
+			/// The amount of collateral that was being auctioned.
 			collateral_amount: <T as pallet_auction::Config>::Balance,
+			/// The target stable amount for the auction.
 			target_stable_amount: <T as pallet_auction::Config>::Balance,
+			/// The recipient of the refunded collateral.
 			refund_recipient: T::AccountId,
 		},
 	}
 
+	/// Stores the details of each collateral auction, indexed by auction ID.
 	#[pallet::storage]
 	pub type CollateralAuctions<T: Config> = StorageMap<
 		_,
@@ -144,11 +220,15 @@ pub mod pallet {
 		OptionQuery,
 	>;
 
+	/// The total amount of collateral currently in auction.
 	#[pallet::storage]
-	pub type TotalCollateralInAuction<T: Config> = StorageValue<_, <T as pallet_auction::Config>::Balance, ValueQuery>;
+	pub type TotalCollateralInAuction<T: Config> =
+		StorageValue<_, <T as pallet_auction::Config>::Balance, ValueQuery>;
 
+	/// The total target amount to be raised from all auctions.
 	#[pallet::storage]
-	pub type TotalTargetInAuction<T: Config> = StorageValue<_, <T as pallet_auction::Config>::Balance, ValueQuery>;
+	pub type TotalTargetInAuction<T: Config> =
+		StorageValue<_, <T as pallet_auction::Config>::Balance, ValueQuery>;
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}

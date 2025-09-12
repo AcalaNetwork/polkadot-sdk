@@ -1,24 +1,25 @@
+//! This module provides traits for data feeding and provisioning.
+
 use sp_runtime::DispatchResult;
 use sp_std::vec::Vec;
 
-/// Data provider with ability to provide data with no-op, and provide all data.
+/// A trait for feeding data to a data provider.
 pub trait DataFeeder<Key, Value, AccountId> {
-	/// Provide a new value for a given key from an operator
+	/// Feeds a new value for a given key.
 	fn feed_value(who: Option<AccountId>, key: Key, value: Value) -> DispatchResult;
 }
 
-/// A simple trait to provide data
+/// A simple trait for providing data.
 pub trait DataProvider<Key, Value> {
-	/// Get data by key
+	/// Returns the data for a given key.
 	fn get(key: &Key) -> Option<Value>;
 }
 
-/// Extended data provider to provide timestamped data by key with no-op, and
-/// all data.
+/// An extended `DataProvider` that provides timestamped data.
 pub trait DataProviderExtended<Key, TimestampedValue> {
-	/// Get timestamped value by key
+	/// Returns the timestamped value for a given key.
 	fn get_no_op(key: &Key) -> Option<TimestampedValue>;
-	/// Provide a list of tuples of key and timestamped value
+	/// Returns a list of all keys and their optional timestamped values.
 	fn get_all_values() -> Vec<(Key, Option<TimestampedValue>)>;
 }
 
@@ -35,6 +36,7 @@ pub fn median<T: Ord + Clone>(mut items: Vec<T>) -> Option<T> {
 	Some(item.clone())
 }
 
+/// Creates a median data provider from a list of other data providers.
 #[macro_export]
 macro_rules! create_median_value_data_provider {
 	($name:ident, $key:ty, $value:ty, $timestamped_value:ty, [$( $provider:ty ),*]) => {

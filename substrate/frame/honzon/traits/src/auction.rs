@@ -1,3 +1,5 @@
+//! This module provides traits and types for a generic auction system.
+
 use crate::Change;
 use codec::{Decode, Encode, FullCodec, MaxEncodedLen};
 use scale_info::TypeInfo;
@@ -11,56 +13,58 @@ use sp_std::{
 	result,
 };
 
-/// Auction info.
+/// Represents the state of an auction.
 #[cfg_attr(feature = "std", derive(PartialEq, Eq))]
 #[derive(Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 pub struct AuctionInfo<AccountId, Balance, BlockNumber> {
-	/// Current bidder and bid price.
+	/// The current bidder and their bid, if any.
 	pub bid: Option<(AccountId, Balance)>,
-	/// Define which block this auction will be started.
+	/// The block number at which the auction started.
 	pub start: BlockNumber,
-	/// Define which block this auction will be ended.
+	/// The block number at which the auction will end, if set.
 	pub end: Option<BlockNumber>,
 }
 
-/// Abstraction over a simple auction system.
+/// A trait for managing auctions.
 pub trait Auction<AccountId, BlockNumber> {
-	/// The id of an AuctionInfo
+	/// The type used to identify an auction.
 	type AuctionId: FullCodec + Default + Copy + Eq + PartialEq + MaybeSerializeDeserialize + Bounded + Debug;
-	/// The price to bid.
+	/// The type used to represent the bid price.
 	type Balance: AtLeast32Bit + FullCodec + Copy + MaybeSerializeDeserialize + Debug + Default;
 
-	/// The auction info of `id`
+	/// Returns the information for a given auction.
 	fn auction_info(id: Self::AuctionId) -> Option<AuctionInfo<AccountId, Self::Balance, BlockNumber>>;
-	/// Update the auction info of `id` with `info`
+	/// Updates the information for a given auction.
 	fn update_auction(id: Self::AuctionId, info: AuctionInfo<AccountId, Self::Balance, BlockNumber>) -> DispatchResult;
-	/// Create new auction with specific startblock and endblock, return the id
-	/// of the auction
+	/// Creates a new auction.
+	///
+	/// Returns the ID of the new auction.
 	fn new_auction(start: BlockNumber, end: Option<BlockNumber>) -> result::Result<Self::AuctionId, DispatchError>;
-	/// Remove auction by `id`
+	/// Removes an auction.
 	fn remove_auction(id: Self::AuctionId);
 }
 
-/// The result of bid handling.
+/// The result of handling a new bid.
 pub struct OnNewBidResult<BlockNumber> {
-	/// Indicates if the bid was accepted
+	/// Whether the bid was accepted.
 	pub accept_bid: bool,
-	/// The auction end change.
+	/// A potential change to the auction's end time.
 	pub auction_end_change: Change<Option<BlockNumber>>,
 }
 
-/// Hooks for auction to handle bids.
+/// A trait for handling auction events.
 pub trait AuctionHandler<AccountId, Balance, BlockNumber, AuctionId> {
-	/// Called when new bid is received.
-	/// The return value determines if the bid should be accepted and update
-	/// auction end time. Implementation should reserve money from current
-	/// winner and refund previous winner.
+	/// Called when a new bid is received.
+	///
+	/// The return value determines whether the bid should be accepted and whether
+	/// the auction's end time should be updated. The implementation should
+	/// reserve funds from the new bidder and refund the previous bidder.
 	fn on_new_bid(
 		now: BlockNumber,
 		id: AuctionId,
 		new_bid: (AccountId, Balance),
 		last_bid: Option<(AccountId, Balance)>,
 	) -> OnNewBidResult<BlockNumber>;
-	/// End an auction with `winner`
+	/// Called when an auction has ended.
 	fn on_auction_ended(id: AuctionId, winner: Option<(AccountId, Balance)>);
 }

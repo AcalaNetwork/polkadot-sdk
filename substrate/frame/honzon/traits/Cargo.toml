@@ -6,6 +6,7 @@ edition.workspace = true
 license = "Apache-2.0"
 homepage.workspace = true
 repository.workspace = true
+description = "A collection of traits for the Honzon protocol and related pallets."
 
 [dependencies]
 impl-trait-for-tuples = { workspace = true }

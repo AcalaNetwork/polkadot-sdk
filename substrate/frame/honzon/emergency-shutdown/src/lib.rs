@@ -16,18 +16,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! # Emergency Shutdown Module
+//! # Emergency Shutdown
 //!
 //! ## Overview
 //!
-//! When a black swan occurs such as price plunge or fatal bug, the highest
-//! priority is to minimize user losses as much as possible. When the decision
-//! to shutdown system is made, emergency shutdown module needs to trigger all
-//! related module to halt, and start a series of operations including close
-//! some user entry, freeze feed prices, run offchain worker to settle
-//! CDPs has debit, cancel all active auctions module, when debits and gaps are
-//! settled, the stable currency holder are allowed to refund a basket of
-//! remaining collateral assets.
+//! When a black swan event occurs, such as a severe price plunge or a critical bug, the highest
+//! priority is to minimize user losses. If a decision to shut down the system is made, this
+//! pallet coordinates the shutdown process. It halts related modules, freezes the collateral
+//! price, and enables the settlement of all outstanding positions. Once all debts are settled and
+//! auctions are resolved, stablecoin holders can redeem their stablecoins for a proportional
+//! amount of the single native collateral asset.
+//!
+//! The emergency shutdown process consists of three main stages:
+//!
+//! 1.  **Shutdown:** Triggered by a privileged origin, this stage freezes the collateral price and
+//!     prevents new operations.
+//! 2.  **Settlement:** All outstanding CDPs are settled, and any ongoing collateral auctions are
+//!     canceled or resolved.
+//! 3.  **Refund:** Once the system is fully settled, stablecoin holders can burn their
+//!     stablecoins to claim a proportional share of the remaining collateral.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::unused_unit)]
@@ -52,68 +59,83 @@ pub mod pallet {
 	use super::*;
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_loans::Config {
+		/// The overarching event type.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 
-		/// The list of valid collateral currency types
+		/// The single collateral currency type. This should be the native currency.
 		type CollateralCurrencyId: Get<<Self as pallet_loans::Config>::CurrencyId>;
 
-		/// Price source to freeze currencies' price
+		/// The price source for the collateral currency, used to freeze the price during shutdown.
 		type PriceSource: LockablePrice<<Self as pallet_loans::Config>::CurrencyId>;
 
-		/// CDP treasury to escrow collateral assets after settlement
+		/// The CDP treasury, which holds the collateral assets post-settlement.
 		type CDPTreasury: CDPTreasury<Self::AccountId, Balance = pallet_loans::BalanceOf<Self>>;
 
-		/// Check the auction cancellation to decide whether to open the final
-		/// redemption
-		type AuctionManagerHandler: AuctionManager<Self::AccountId, Balance = pallet_loans::BalanceOf<Self>, CurrencyId = <Self as pallet_loans::Config>::CurrencyId>;
+		/// The auction manager, used to verify that all auctions are resolved before refunds can
+		/// be processed.
+		type AuctionManagerHandler: AuctionManager<
+			Self::AccountId,
+			Balance = pallet_loans::BalanceOf<Self>,
+			CurrencyId = <Self as pallet_loans::Config>::CurrencyId,
+		>;
 
-		/// The origin which may trigger emergency shutdown. Root can always do
-		/// this.
+		/// The origin that is allowed to trigger the emergency shutdown.
 		type ShutdownOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
-		/// Weight information for the extrinsics in this module.
+		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: WeightInfo;
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
-		/// System has already been shutdown
+		/// The system has already been shut down.
 		AlreadyShutdown,
-		/// Must after system shutdown
+		/// The operation can only be performed after the system has been shut down.
 		MustAfterShutdown,
-		/// Final redemption is still not opened
+		/// The final refund stage has not been opened yet.
 		CanNotRefund,
-		/// Exist potential surplus, means settlement has not been completed
+		/// Cannot open refunds while there is still collateral in auctions.
 		ExistPotentialSurplus,
-		/// Exist unhandled debit, means settlement has not been completed
+		/// Cannot open refunds while there are still outstanding debts.
 		ExistUnhandledDebit,
 	}
 
 	#[pallet::event]
 	#[pallet::generate_deposit(fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// Emergency shutdown occurs.
-		Shutdown { block_number: BlockNumberFor<T> },
-		/// The final redemption opened.
-		OpenRefund { block_number: BlockNumberFor<T> },
-		/// Refund info.
+		/// The system has entered emergency shutdown.
+		Shutdown {
+			/// The block number when the shutdown was triggered.
+			block_number: BlockNumberFor<T>,
+		},
+		/// The final refund stage has been opened.
+		OpenRefund {
+			/// The block number when the refund stage was opened.
+			block_number: BlockNumberFor<T>,
+		},
+		/// A user has refunded their stablecoin for collateral.
 		Refund {
+			/// The account that performed the refund.
 			who: T::AccountId,
+			/// The amount of stablecoin burned.
 			stable_coin_amount: pallet_loans::BalanceOf<T>,
-			refund_list: Vec<(<T as pallet_loans::Config>::CurrencyId, pallet_loans::BalanceOf<T>)>,
+			/// The ID of the refunded collateral currency.
+			refunded_collateral_currency_id: <T as pallet_loans::Config>::CurrencyId,
+			/// The amount of collateral refunded.
+			refunded_collateral_amount: pallet_loans::BalanceOf<T>,
 		},
 	}
 
-	/// Emergency shutdown flag
+	/// A flag indicating whether the emergency shutdown process has been initiated.
 	///
-	/// IsShutdown: bool
+	/// `true` if the system is in shutdown, `false` otherwise.
 	#[pallet::storage]
 	#[pallet::getter(fn is_shutdown)]
 	pub type IsShutdown<T: Config> = StorageValue<_, bool, ValueQuery>;
 
-	/// Open final redemption flag
+	/// A flag indicating whether the final refund stage has been opened.
 	///
-	/// CanRefund: bool
+	/// `true` if refunds are allowed, `false` otherwise.
 	#[pallet::storage]
 	#[pallet::getter(fn can_refund)]
 	pub type CanRefund<T: Config> = StorageValue<_, bool, ValueQuery>;
@@ -126,7 +148,10 @@ pub mod pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// Start emergency shutdown
+		/// Initiates an emergency shutdown of the system.
+		///
+		/// This extrinsic freezes the collateral price and transitions the system to a shutdown
+		/// state, preventing new operations.
 		///
 		/// The dispatch origin of this call must be `ShutdownOrigin`.
 		#[pallet::call_index(0)]
@@ -149,7 +174,10 @@ pub mod pallet {
 			Ok(())
 		}
 
-		/// Open final redemption if settlement is completed.
+		/// Enables the final refund stage once the system is fully settled.
+		///
+		/// This can only be called after the system has been shut down and all outstanding debts
+		/// and auctions have been resolved.
 		///
 		/// The dispatch origin of this call must be `ShutdownOrigin`.
 		#[pallet::call_index(1)]
@@ -182,12 +210,18 @@ pub mod pallet {
 			Ok(())
 		}
 
-		/// Refund a basket of remaining collateral assets to caller
+		/// Refunds a proportional amount of the single native collateral in exchange for the
+		/// stablecoin.
 		///
-		/// - `amount`: stable currency amount used to refund.
+		/// This is only available after the refund stage has been opened.
+		///
+		/// - `amount`: The amount of stablecoin to be burned in exchange for collateral.
 		#[pallet::call_index(2)]
 		#[pallet::weight(T::WeightInfo::refund_collaterals(1))]
-		pub fn refund_collaterals(origin: OriginFor<T>, #[pallet::compact] amount: pallet_loans::BalanceOf<T>) -> DispatchResult {
+		pub fn refund_collaterals(
+			origin: OriginFor<T>,
+			#[pallet::compact] amount: pallet_loans::BalanceOf<T>,
+		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
 			ensure!(Self::can_refund(), Error::<T>::CanNotRefund);
 
@@ -197,22 +231,19 @@ pub mod pallet {
 			// burn caller's stable currency by CDP treasury
 			<T as Config>::CDPTreasury::burn_debit(&who, amount)?;
 
-			let mut refund_assets: Vec<(<T as pallet_loans::Config>::CurrencyId, pallet_loans::BalanceOf<T>)> = vec![];
 			// refund collaterals to caller by CDP treasury
 			let refund_amount =
 				refund_ratio.saturating_mul_int(<T as Config>::CDPTreasury::get_total_collaterals());
 
 			if !refund_amount.is_zero() {
-				let res = <T as Config>::CDPTreasury::withdraw_collateral(&who, refund_amount);
-				if res.is_ok() {
-					refund_assets.push((currency_id, refund_amount));
-				}
+				<T as Config>::CDPTreasury::withdraw_collateral(&who, refund_amount)?;
 			}
 
 			Self::deposit_event(Event::Refund {
 				who,
 				stable_coin_amount: amount,
-				refund_list: refund_assets,
+				refunded_collateral_currency_id: currency_id,
+				refunded_collateral_amount: refund_amount,
 			});
 			Ok(())
 		}

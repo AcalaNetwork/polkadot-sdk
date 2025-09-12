@@ -16,14 +16,35 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! # Honzon Module
+//! # Honzon Pallet
 //!
 //! ## Overview
 //!
-//! The entry of the Honzon protocol for users, user can manipulate their CDP
-//! position to loan/payback`
+//! This pallet is the entry point for users to manage their Collateralized Debt Positions (now
+//! called `Position`s). It allows users to borrow a stablecoin against a collateral asset.
+//! Currently, the native currency is the only supported collateral type.
 //!
-//! After system shutdown, some operations will be restricted.
+//! This pallet is built on top of the following pallets:
+//! - `pallet-cdp-engine`: Manages the underlying mechanics of `Position`s, including liquidation and
+//!   stability fees.
+//! - `pallet-loans`: Handles the accounting of loans and collateral.
+//! - `pallet-oracle`: Provides the price feeds for collateral assets.
+//!
+//! ### Key Functions
+//!
+//! - `adjust_loan`: Allows users to adjust their `Position` by depositing or withdrawing collateral
+//!   and borrowing or repaying the stablecoin.
+//! - `close_loan_has_debit_by_dex`: Allows users to close their `Position` by selling a portion of
+//!   their collateral on a DEX to repay the outstanding debt.
+//!
+//! ### Not Yet Implemented
+//!
+//! The following functions are not yet implemented:
+//! - `expand_position_collateral`
+//! - `shrink_position_debit`
+//! - `close_loan_has_debit_by_dex`
+//!
+//! After a system shutdown, some operations will be restricted.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::unused_unit)]
@@ -121,15 +142,15 @@ pub mod pallet {
 	where
 		BalanceOf<T>: TryFrom<i128>,
 		i128: TryFrom<BalanceOf<T>>,
+		<T as pallet_cdp_engine::Config>::Balance: From<BalanceOf<T>>,
 	{
-		/// Adjust the loans by specific `collateral_adjustment` and
-		/// `debit_adjustment`
+		/// Adjusts a `Position` by changing the collateral and debit amounts.
 		///
-		/// - `collateral_adjustment`: signed amount, positive means to deposit collateral currency
-		///   into CDP, negative means withdraw collateral currency from CDP.
-		/// - `debit_adjustment`: signed amount, positive means to issue some amount of stablecoin
-		///   to caller according to the debit adjustment, negative means caller will payback some
-		///   amount of stablecoin to CDP according to the debit adjustment.
+		/// - `collateral_adjustment`: A signed amount representing the change in collateral.
+		///   A positive value deposits collateral, while a negative value withdraws it.
+		/// - `debit_adjustment`: A signed amount representing the change in debit.
+		///   A positive value issues more stablecoin to the caller, while a negative value
+		///   represents a repayment.
 		#[pallet::call_index(0)]
 		#[pallet::weight(<T as Config>::WeightInfo::adjust_loan())]
 		pub fn adjust_loan(
@@ -141,60 +162,74 @@ pub mod pallet {
 			Self::do_adjust_loan(&who, collateral_adjustment, debit_adjustment)
 		}
 
-		/// Close caller's CDP which has debit but still in safe by use collateral to swap
-		/// stable token on DEX for clearing debit.
+		/// Closes a `Position` that has outstanding debit by selling collateral on a DEX.
 		///
-		/// - `max_collateral_amount`: the max collateral amount which is used to swap enough
-		/// 	stable token to clear debit.
+		/// This function is used when the `Position` is still in a safe state (i.e., not
+		/// subject to liquidation).
+		///
+		/// - `max_collateral_amount`: The maximum amount of collateral to be sold to swap for
+		///   the stablecoin needed to clear the debit.
+		///
+		/// **Note:** This function is not yet implemented.
 		#[pallet::call_index(1)]
 		#[pallet::weight(<T as Config>::WeightInfo::close_loan_has_debit_by_dex())]
 		pub fn close_loan_has_debit_by_dex(
 			origin: OriginFor<T>,
-			#[pallet::compact] max_collateral_amount: T::Balance,
+			#[pallet::compact] max_collateral_amount: BalanceOf<T>,
 		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
-			Self::do_close_loan_by_dex(who, max_collateral_amount)
+			Self::do_close_loan_by_dex(who, max_collateral_amount.into())
 		}
 
-		/// Generate new debit in advance, buy collateral and deposit it into CDP.
+		/// Generates new debit in advance, buys collateral, and deposits it into the `Position`.
 		///
-		/// - `increase_debit_value`: the specific increased debit value for CDP
-		/// - `min_increase_collateral`: the minimal increased collateral amount for CDP
+		/// - `increase_debit_value`: The specific increased debit value for the `Position`.
+		/// - `min_increase_collateral`: The minimum amount of collateral to be added to the `Position`.
+		///
+		/// **Note:** This function is not yet implemented.
 		#[pallet::call_index(6)]
 		#[pallet::weight(<T as Config>::WeightInfo::expand_position_collateral())]
 		pub fn expand_position_collateral(
 			origin: OriginFor<T>,
-			increase_debit_value: T::Balance,
-			min_increase_collateral: T::Balance,
+			increase_debit_value: BalanceOf<T>,
+			min_increase_collateral: BalanceOf<T>,
 		) -> DispatchResult {
 			let _who = ensure_signed(origin)?;
 			// TODO: not implemented
 			Ok(())
 		}
 
-		/// Sell the collateral locked in CDP to get stable coin to repay the debit.
+		/// Sells the collateral locked in a `Position` to get stablecoin to repay the debit.
 		///
-		/// - `decrease_collateral`: the specific decreased collateral amount for CDP
-		/// - `min_decrease_debit_value`: the minimal decreased debit value for CDP
+		/// - `decrease_collateral`: The specific amount of collateral to be sold from the `Position`.
+		/// - `min_decrease_debit_value`: The minimum amount of debit to be repaid.
+		///
+		/// **Note:** This function is not yet implemented.
 		#[pallet::call_index(7)]
 		#[pallet::weight(<T as Config>::WeightInfo::shrink_position_debit())]
 		pub fn shrink_position_debit(
 			origin: OriginFor<T>,
-			decrease_collateral: T::Balance,
-			min_decrease_debit_value: T::Balance,
+			decrease_collateral: BalanceOf<T>,
+			min_decrease_debit_value: BalanceOf<T>,
 		) -> DispatchResult {
 			let _who = ensure_signed(origin)?;
 			// TODO: not implemented
 			Ok(())
 		}
 
-		/// Adjust the loans by specific `collateral_adjustment` and
-		/// `debit_value_adjustment`
+		/// Adjusts a `Position` by changing the collateral and debit amounts, where the debit
+		/// adjustment is specified as a value in terms of the stablecoin.
 		///
-		/// - `collateral_adjustment`: signed amount, positive means to deposit collateral currency
-		///   into CDP, negative means withdraw collateral currency from CDP.
-		/// - `debit_value_adjustment`: signed amount, positive means to issue some amount of
-		///   stablecoin, negative means caller will payback some amount of stablecoin to CDP.
+		/// This differs from `adjust_loan` where the debit adjustment is a direct amount of
+		/// the stablecoin.
+		///
+		/// - `collateral_adjustment`: A signed amount representing the change in collateral.
+		///   A positive value deposits collateral, while a negative value withdraws it.
+		/// - `debit_value_adjustment`: A signed amount representing the change in the debit's
+		///   value. A positive value issues more stablecoin, while a negative value represents
+		///   a repayment.
+		///
+		/// **Note:** This function is not yet implemented.
 		#[pallet::call_index(8)]
 		#[pallet::weight(<T as Config>::WeightInfo::adjust_loan())]
 		pub fn adjust_loan_by_debit_value(
@@ -234,7 +269,7 @@ pub mod pallet {
 
 	fn do_close_loan_by_dex(
 		who: <T as frame_system::Config>::AccountId,
-		max_collateral_amount: T::Balance,
+		max_collateral_amount: <T as pallet_cdp_engine::Config>::Balance,
 	) -> DispatchResult {
 		ensure!(!T::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
 		// TODO: not implemented

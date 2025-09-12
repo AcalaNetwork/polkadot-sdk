@@ -315,6 +315,7 @@ parameter_types! {
 impl pallet_cdp_engine::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
+	type CurrencyId = CurrencyId;
 	type UpdateOrigin = EnsureSignedBy<One, AccountId>;
 	type DefaultLiquidationRatio = DefaultLiquidationRatio;
 	type MinimumDebitValue = MinimumDebitValue;

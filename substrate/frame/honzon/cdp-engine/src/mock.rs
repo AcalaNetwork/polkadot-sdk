@@ -85,6 +85,7 @@ impl UnixTime for MockUnixTime {
 impl Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = u64;
+	type CurrencyId = u32;
 	type UpdateOrigin = frame_system::EnsureRoot<Self::AccountId>;
 	type DefaultLiquidationRatio = ConstRatio150;
 	type MinimumDebitValue = ConstU64<100>;
