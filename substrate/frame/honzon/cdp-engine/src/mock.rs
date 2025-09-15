@@ -102,10 +102,9 @@ parameter_types! {
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut storage = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
-	
+
 	crate::GenesisConfig::<Test> {
 		collateral_params: RiskManagementParams {
-			maximum_total_debit_value: 1_000_000u64,
 			liquidation_ratio: Some(Ratio::from_inner(1_500_000_000_000_000_000u128)), // 1.5
 			required_collateral_ratio: Some(Ratio::from_inner(2_000_000_000_000_000_000u128)), // 2.0
 		},

@@ -308,7 +308,6 @@ where
 		let params = <pallet_cdp_engine::Pallet<T>>::collateral_params().unwrap_or_default();
 
 		vec![
-			params.maximum_total_debit_value.into(),
 			Ratio::one().into_inner().into(),
 			params.liquidation_ratio.unwrap_or_default().into_inner().into(),
 			Ratio::one().into_inner().into(),

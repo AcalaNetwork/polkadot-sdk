@@ -70,10 +70,6 @@ pub use weights::WeightInfo;
 #[derive(Encode, Decode, Clone, RuntimeDebug, PartialEq, Eq, Default, TypeInfo, MaxEncodedLen)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct RiskManagementParams<Balance> {
-	/// The maximum total debit value that can be generated from this collateral type.
-	/// When this hard cap is reached, no more stablecoin can be issued against this collateral.
-	pub maximum_total_debit_value: Balance,
-
 	/// The liquidation ratio for CDPs of this collateral type.
 	/// If a CDP's collateral ratio falls below this value, it is considered unsafe and
 	/// can be liquidated.
@@ -312,40 +308,31 @@ pub mod pallet {
 		/// - `liquidation_ratio`: The new liquidation ratio. If `None`, it remains unchanged.
 		/// - `required_collateral_ratio`: The new required collateral ratio. If `None`, it
 		///   remains unchanged.
-		/// - `maximum_total_debit_value`: The new maximum total debit value.
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::set_collateral_params())]
 		pub fn set_collateral_params(
 			origin: OriginFor<T>,
 			liquidation_ratio: Option<Ratio>,
 			required_collateral_ratio: Option<Ratio>,
-			maximum_total_debit_value: T::Balance,
 		) -> DispatchResult {
 			T::UpdateOrigin::ensure_origin(origin)?;
 
 			let mut collateral_params = Self::collateral_params().unwrap_or_default();
-			
+
 			if liquidation_ratio != collateral_params.liquidation_ratio {
 				collateral_params.liquidation_ratio = liquidation_ratio;
 				Self::deposit_event(Event::LiquidationRatioUpdated {
 					new_liquidation_ratio: liquidation_ratio,
 				});
 			}
-			
+
 			if required_collateral_ratio != collateral_params.required_collateral_ratio {
 				collateral_params.required_collateral_ratio = required_collateral_ratio;
 				Self::deposit_event(Event::RequiredCollateralRatioUpdated {
 					new_required_collateral_ratio: required_collateral_ratio,
 				});
 			}
-			
-			if maximum_total_debit_value != collateral_params.maximum_total_debit_value {
-				collateral_params.maximum_total_debit_value = maximum_total_debit_value;
-				Self::deposit_event(Event::MaximumTotalDebitValueUpdated {
-					new_total_debit_value: maximum_total_debit_value,
-				});
-			}
-			
+
 			CollateralParams::<T>::put(collateral_params);
 			Ok(())
 		}
@@ -379,14 +366,14 @@ pub mod pallet {
 			debit_adjustment: T::Balance,
 		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
-			
+
 			ensure!(
 				CollateralParams::<T>::exists(),
 				Error::<T>::InvalidCollateralType,
 			);
 
 			let mut position = Self::positions(&who);
-			
+
 			// Apply adjustments
 			position.collateral = position.collateral.saturating_add(collateral_adjustment);
 			position.debit = position.debit.saturating_add(debit_adjustment);
@@ -422,12 +409,6 @@ impl<T: Config> Pallet<T> {
 		Ok(params.required_collateral_ratio)
 	}
 
-	/// Gets the maximum total debit value for the collateral type.
-	pub fn maximum_total_debit_value() -> Result<T::Balance, DispatchError> {
-		let params = Self::collateral_params().ok_or(Error::<T>::InvalidCollateralType)?;
-		Ok(params.maximum_total_debit_value)
-	}
-
 	/// Calculates the collateral ratio of a CDP.
 	///
 	/// The collateral ratio is the ratio of the value of the collateral to the value of the debit.
@@ -442,7 +423,7 @@ impl<T: Config> Pallet<T> {
 		if debit_balance.is_zero() {
 			return Ratio::max_value();
 		}
-		
+
 		Ratio::checked_from_rational(collateral_balance, debit_balance)
 			.unwrap_or_else(Ratio::max_value)
 	}
@@ -549,7 +530,7 @@ impl<T: Config> Pallet<T> {
 	/// - `who`: The owner of the CDP to be settled.
 	pub fn settle_cdp_has_debit(who: &T::AccountId) -> DispatchResult {
 		ensure!(Self::is_shutdown(), Error::<T>::MustAfterShutdown);
-		
+
 		let position = Self::positions(who);
 		ensure!(!position.debit.is_zero(), Error::<T>::NoDebitValue);
 
