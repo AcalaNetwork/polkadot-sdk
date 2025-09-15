@@ -1,0 +1,17 @@
+[package]
+name = "pvq-extension-fungibles"
+description = "Fungibles extension for PVQ"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+codec = { workspace = true }
+pvq-extension = { workspace = true }
+scale-info = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["codec/std", "pvq-extension/std", "scale-info/std"]

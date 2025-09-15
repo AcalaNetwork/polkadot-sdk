@@ -1,0 +1,18 @@
+[package]
+name = "sum-balance"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+cfg-if = { workspace = true }
+codec = { workspace = true }
+polkavm-derive = { workspace = true }
+pvq-program = { workspace = true }
+
+[features]
+option_version_1 = []
+option_version_2 = []

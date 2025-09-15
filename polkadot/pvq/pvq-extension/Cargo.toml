@@ -1,0 +1,36 @@
+[package]
+name = "pvq-extension"
+description = "Extension system for PVQ"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+codec = { workspace = true }
+fortuples = { workspace = true }
+polkavm = { workspace = true }
+pvq-executor = { workspace = true }
+pvq-extension-procedural = { path = "procedural" }
+pvq-primitives = { workspace = true }
+scale-info = { workspace = true, features = ["serde"] }
+serde = { workspace = true }
+thiserror = { workspace = true, optional = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"polkavm/std",
+	"pvq-executor/std",
+	"pvq-primitives/std",
+	"scale-info/std",
+	"serde/std",
+	"thiserror",
+	"tracing/std",
+]

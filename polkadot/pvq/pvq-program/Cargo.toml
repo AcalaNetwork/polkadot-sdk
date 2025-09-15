@@ -1,0 +1,21 @@
+[package]
+name = "pvq-program"
+description = "PVQ program utils"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+codec = { workspace = true }
+polkavm-derive = { workspace = true }
+pvq-program-procedural = { path = "procedural" }
+scale-info = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"scale-info/std",
+]

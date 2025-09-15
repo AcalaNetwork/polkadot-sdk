@@ -1388,6 +1388,13 @@ dependencies = [
  "polkadot-parachain-primitives",
  "polkadot-runtime-common",
  "primitive-types 0.13.1",
+ "pvq-executor",
+ "pvq-extension",
+ "pvq-extension-core",
+ "pvq-extension-fungibles",
+ "pvq-extension-swap",
+ "pvq-primitives",
+ "pvq-runtime-api",
  "scale-info",
  "serde_json",
  "snowbridge-outbound-queue-primitives",
@@ -6551,6 +6558,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13624c2627564efccf4934284bdd98cbaa14e79b0b5a141218e507b3a823456"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fortuples"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87630a8087e9cac4b7edfb6ee5e250ddca9112b57b6b17d8f5107375a3a8eace"
+dependencies = [
+ "proc-macro2 1.0.95",
+ "quote 1.0.40",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -17841,6 +17859,127 @@ dependencies = [
  "proc-macro2 1.0.95",
  "quote 1.0.40",
  "syn 2.0.98",
+]
+
+[[package]]
+name = "pvq-executor"
+version = "0.1.0"
+dependencies = [
+ "polkavm 0.26.0",
+ "pvq-primitives",
+ "thiserror 1.0.65",
+ "tracing",
+]
+
+[[package]]
+name = "pvq-extension"
+version = "0.1.0"
+dependencies = [
+ "fortuples",
+ "parity-scale-codec",
+ "polkavm 0.26.0",
+ "pvq-executor",
+ "pvq-extension-procedural",
+ "pvq-primitives",
+ "scale-info",
+ "serde",
+ "thiserror 1.0.65",
+ "tracing",
+ "tracing-subscriber 0.3.18",
+]
+
+[[package]]
+name = "pvq-extension-core"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "pvq-extension",
+ "scale-info",
+]
+
+[[package]]
+name = "pvq-extension-fungibles"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "pvq-extension",
+ "scale-info",
+]
+
+[[package]]
+name = "pvq-extension-procedural"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "proc-macro-crate 3.1.0",
+ "proc-macro2 1.0.95",
+ "pvq-extension",
+ "quote 1.0.40",
+ "scale-info",
+ "syn 2.0.98",
+ "trybuild",
+ "twox-hash 1.6.3",
+]
+
+[[package]]
+name = "pvq-extension-swap"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "pvq-extension",
+ "scale-info",
+]
+
+[[package]]
+name = "pvq-primitives"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+]
+
+[[package]]
+name = "pvq-program"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "polkavm-derive 0.26.0",
+ "pvq-program-procedural",
+ "scale-info",
+]
+
+[[package]]
+name = "pvq-program-metadata-gen"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "parity-scale-codec",
+ "proc-macro2 1.0.95",
+ "quote 1.0.40",
+ "scale-info",
+ "syn 2.0.98",
+ "tempfile",
+ "toml",
+ "tracing",
+ "tracing-subscriber 0.3.18",
+]
+
+[[package]]
+name = "pvq-program-procedural"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-crate 3.1.0",
+ "proc-macro2 1.0.95",
+ "quote 1.0.40",
+ "syn 2.0.98",
+]
+
+[[package]]
+name = "pvq-runtime-api"
+version = "0.1.0"
+dependencies = [
+ "pvq-primitives",
+ "sp-api",
 ]
 
 [[package]]

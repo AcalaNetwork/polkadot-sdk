@@ -35,6 +35,8 @@ pub mod governance;
 mod staking;
 use governance::{pallet_custom_origins, FellowshipAdmin, GeneralAdmin, StakingAdmin, Treasurer};
 
+mod pvq;
+
 extern crate alloc;
 
 use alloc::{vec, vec::Vec};
@@ -2594,6 +2596,15 @@ pallet_revive::impl_runtime_apis_plus_revive!(
 
 		fn preset_names() -> Vec<sp_genesis_builder::PresetId> {
 			genesis_config_presets::preset_names()
+		}
+	}
+
+	impl pvq_runtime_api::PvqApi<Block> for Runtime {
+		fn execute_query(program: Vec<u8>, args: Vec<u8>, gas_limit: Option<i64>) -> pvq_primitives::PvqResult {
+			pvq::execute_query(&program, &args, gas_limit.unwrap_or(1000_000_000 * 2))
+		}
+		fn metadata() -> Vec<u8> {
+			pvq::metadata().encode()
 		}
 	}
 );

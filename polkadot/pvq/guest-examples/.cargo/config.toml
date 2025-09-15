@@ -1,0 +1,7 @@
+[build]
+target = "../vendor/polkavm/crates/polkavm-linker/riscv32emac-unknown-none-polkavm.json"
+
+rustflags = ["--cfg", "-D", "substrate_runtime", "warnings"]
+
+[unstable]
+build-std = ["alloc", "core"]

@@ -221,6 +221,16 @@ members = [
 	"polkadot/parachain/test-parachains/undying/collator",
 	"polkadot/primitives",
 	"polkadot/primitives/test-helpers",
+	"polkadot/pvq/pvq-executor",
+	"polkadot/pvq/pvq-extension",
+	"polkadot/pvq/pvq-extension-core",
+	"polkadot/pvq/pvq-extension-fungibles",
+	"polkadot/pvq/pvq-extension-swap",
+	"polkadot/pvq/pvq-primitives",
+	"polkadot/pvq/pvq-program",
+	"polkadot/pvq/pvq-program-metadata-gen",
+	"polkadot/pvq/pvq-program/procedural",
+	"polkadot/pvq/pvq-runtime-api",
 	"polkadot/rpc",
 	"polkadot/runtime/common",
 	"polkadot/runtime/common/slot_range_helper",
@@ -810,6 +820,7 @@ flate2 = { version = "1.0" }
 fnv = { version = "1.0.6" }
 foldhash = { version = "0.1.5", default-features = false }
 fork-tree = { path = "substrate/utils/fork-tree", default-features = false }
+fortuples = { version = "0.9.1" }
 forwarded-header-value = { version = "0.1.1" }
 fraction = { version = "0.13.1" }
 frame = { path = "substrate/frame", default-features = false, package = "polkadot-sdk-frame" }
@@ -1164,7 +1175,9 @@ polkavm-derive = "0.26.0"
 polkavm-linker = "0.26.0"
 portpicker = { version = "0.1.1" }
 pretty_assertions = { version = "1.3.0" }
-primitive-types = { version = "0.13.1", default-features = false, features = ["num-traits"] }
+primitive-types = { version = "0.13.1", default-features = false, features = [
+	"num-traits",
+] }
 proc-macro-crate = { version = "3.0.0" }
 proc-macro-warning = { version = "1.0.0", default-features = false }
 proc-macro2 = { version = "1.0.86" }
@@ -1174,6 +1187,15 @@ prometheus-endpoint = { path = "substrate/utils/prometheus", default-features = 
 prometheus-parse = { version = "0.2.2" }
 prost = { version = "0.12.4" }
 prost-build = { version = "0.13.2" }
+pvq-executor = { path = "polkadot/pvq/pvq-executor", default-features = false }
+pvq-extension = { path = "polkadot/pvq/pvq-extension", default-features = false }
+pvq-extension-core = { path = "polkadot/pvq/pvq-extension-core", default-features = false }
+pvq-extension-fungibles = { path = "polkadot/pvq/pvq-extension-fungibles", default-features = false }
+pvq-extension-swap = { path = "polkadot/pvq/pvq-extension-swap", default-features = false }
+pvq-primitives = { path = "polkadot/pvq/pvq-primitives", default-features = false }
+pvq-program = { path = "polkadot/pvq/pvq-program", default-features = false }
+pvq-program-metadata-gen = { path = "polkadot/pvq/pvq-program-metadata-gen" }
+pvq-runtime-api = { path = "polkadot/pvq/pvq-runtime-api", default-features = false }
 pyroscope = { version = "0.5.8" }
 pyroscope_pprofrs = { version = "0.2.8" }
 quick_cache = { version = "0.3" }
@@ -1416,9 +1438,7 @@ testnet-parachains-constants = { path = "cumulus/parachains/runtimes/constants",
 thiserror = { version = "1.0.64" }
 thousands = { version = "0.2.0" }
 threadpool = { version = "1.7" }
-tikv-jemalloc-ctl = { version = "0.6.0", features = [
-	"stats",
-] }
+tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"] }
 tikv-jemallocator = { version = "0.6.0" }
 time = { version = "0.3" }
 tiny-keccak = { version = "2.0.2" }
