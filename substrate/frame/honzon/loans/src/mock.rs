@@ -28,7 +28,7 @@ use frame_support::{
 };
 use frame_system::EnsureSignedBy;
 use pallet_cdp_treasury::CDPTreasury;
-use pallet_traits::{AuctionManager, RiskManager};
+use pallet_traits::{AuctionManager, PriceProvider, RiskManager};
 use sp_core::H256;
 use sp_runtime::{
 	testing::Header,
@@ -54,6 +54,7 @@ construct_runtime!(
 		Loans: pallet,
 		PalletBalances: pallet_balances,
 		CDPTreasuryModule: pallet_cdp_treasury,
+		IssuanceBuffer: pallet_issuance_buffer,
 	}
 );
 
@@ -135,6 +136,34 @@ impl pallet_cdp_treasury::Config for Runtime {
 	type CurrencyId = CurrencyId;
 }
 
+pub struct MockPriceProvider;
+impl PriceProvider<CurrencyId> for MockPriceProvider {
+	type Price = Balance;
+	fn get_price(currency_id: CurrencyId) -> Option<Self::Price> {
+		if currency_id == CurrencyId::Native {
+			Some(2)
+		} else {
+			None
+		}
+	}
+}
+
+parameter_types! {
+	pub const IssuanceBufferPalletId: PalletId = PalletId(*b"isncbufr");
+	pub const StableCurrencyIdValue: CurrencyId = CurrencyId::Stable;
+}
+
+impl pallet_issuance_buffer::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type AdminOrigin = EnsureSignedBy<One, AccountId>;
+	type Currency = PalletBalances;
+	type PriceProvider = MockPriceProvider;
+	type Loans = Loans;
+	type CollateralCurrencyId = CollateralCurrencyIdValue;
+	type StableCurrencyId = StableCurrencyIdValue;
+	type PalletId = IssuanceBufferPalletId;
+}
+
 // mock risk manager
 pub struct MockRiskManager;
 impl RiskManager<AccountId, CurrencyId, Balance, Balance> for MockRiskManager {
@@ -208,6 +237,7 @@ impl Config for Runtime {
 		type OnUpdateLoan = MockOnUpdateLoan;
 	type CurrencyId = CurrencyId;
 	type CollateralCurrencyId = CollateralCurrencyIdValue;
+	type LiquidationStrategy = IssuanceBuffer;
 }
 
 pub struct ExtBuilder {

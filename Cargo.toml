@@ -18,6 +18,7 @@ members = [
 	"substrate/frame/honzon/cdp-engine",
 	"substrate/frame/honzon/emergency-shutdown",
 	"substrate/frame/honzon/honzon",
+	"substrate/frame/honzon/issuance-buffer",
 	"bridges/bin/runtime-common",
 	"bridges/chains/chain-cumulus",
 	"bridges/chains/chain-polkadot-bulletin",
@@ -644,6 +645,8 @@ pallet-auction-manager = { path = "substrate/frame/honzon/auction-manager", defa
 pallet-cdp-engine = { path = "substrate/frame/honzon/cdp-engine", default-features = false }
 pallet-emergency-shutdown = { path = "substrate/frame/honzon/emergency-shutdown", default-features = false }
 pallet-honzon = { path = "substrate/frame/honzon/honzon", default-features = false }
+pallet-loans = { path = "substrate/frame/honzon/loans", default-features = false }
+pallet-issuance-buffer = { path = "substrate/frame/honzon/issuance-buffer", default-features = false }
 
 Inflector = { version = "0.11.4" }
 aes-gcm = { version = "0.10" }

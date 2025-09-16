@@ -43,6 +43,10 @@ pub use crate::dex::*;
 pub use crate::honzon::*;
 pub use crate::data_provider::*;
 
+pub mod liquidation;
+
+pub use crate::liquidation::*;
+
 /// The price of a currency, represented as a `FixedU128`.
 pub type Price = FixedU128;
 /// The exchange rate between two currencies, represented as a `FixedU128`.

@@ -21,6 +21,7 @@ sp-core = { workspace = true, features = ["std"] }
 sp-io = { workspace = true, features = ["std"] }
 pallet-balances = { workspace = true, features = ["std"] }
 pallet-cdp-treasury = { workspace = true, features = ["std"] }
+pallet-issuance-buffer = { path = "../issuance-buffer", features = ["std"] }
 
 [features]
 default = ["std"]

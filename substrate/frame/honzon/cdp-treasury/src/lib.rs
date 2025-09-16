@@ -33,7 +33,6 @@ use frame_support::{
 	traits::{
 		fungibles::{Inspect, Mutate},
 		tokens::{Balance as BalanceT, Preservation, Precision, Fortitude},
-		Currency,
 	},
 	transactional, PalletId,
 };

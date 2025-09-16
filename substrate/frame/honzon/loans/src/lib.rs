@@ -36,9 +36,9 @@ pub mod pallet {
 		traits::{Currency, ExistenceRequirement, ReservableCurrency},
 		transactional, PalletId,
 	};
-	use pallet_traits::{CDPTreasury, Handler, Position, RiskManager};
+	use pallet_traits::{CDPTreasury, Handler, Position, RiskManager, LiquidationTarget};
 	use sp_runtime::{
-		traits::{AccountIdConversion, Zero},
+		traits::{AccountIdConversion, Zero, Saturating},
 		ArithmeticError, DispatchResult,
 	};
 	use sp_std::prelude::*;
@@ -48,8 +48,6 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
-		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
 		/// Currency type for deposit/withdraw collateral assets to/from loans
 		/// module
 		type Currency: ReservableCurrency<Self::AccountId>;
@@ -74,6 +72,8 @@ pub mod pallet {
 
 		/// Event handler which calls when update loan.
 		type OnUpdateLoan: Handler<(Self::AccountId, Amount, BalanceOf<Self>)>;
+
+		type LiquidationStrategy: LiquidationTarget<Self::AccountId, Self::CurrencyId, BalanceOf<Self>>;
 	}
 
 	#[pallet::error]
@@ -138,16 +138,30 @@ pub mod pallet {
 			collateral_confiscate: BalanceOf<T>,
 			debit_decrease: BalanceOf<T>,
 		) -> DispatchResult {
+			let (liquidated_collateral, covered_debit) = T::LiquidationStrategy::liquidate(
+				&Self::account_id(),
+				T::CollateralCurrencyId::get(),
+				collateral_confiscate,
+				debit_decrease,
+			)?;
+
+			let remaining_collateral = collateral_confiscate.saturating_sub(liquidated_collateral);
+			let remaining_debit = debit_decrease.saturating_sub(covered_debit);
+
 			// convert balance type to amount type
 			let collateral_adjustment = Self::amount_try_from_balance(collateral_confiscate)?;
 			let debit_adjustment = Self::amount_try_from_balance(debit_decrease)?;
 
-			// transfer collateral to cdp treasury
-			T::CDPTreasury::deposit_collateral(&Self::account_id(), collateral_confiscate)?;
+			if !remaining_collateral.is_zero() {
+				// transfer remaining collateral to cdp treasury
+				T::CDPTreasury::deposit_collateral(&Self::account_id(), remaining_collateral)?;
+			}
 
-			// deposit debit to cdp treasury
-			let bad_debt_value = T::RiskManager::get_debit_value(T::CollateralCurrencyId::get(), debit_decrease);
-			T::CDPTreasury::on_system_debit(bad_debt_value)?;
+			if !remaining_debit.is_zero() {
+				// deposit remaining debit to cdp treasury
+				let bad_debt_value = T::RiskManager::get_debit_value(T::CollateralCurrencyId::get(), remaining_debit);
+				T::CDPTreasury::on_system_debit(bad_debt_value)?;
+			}
 
 			// update loan
 			Self::update_loan(
