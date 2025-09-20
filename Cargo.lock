@@ -13027,14 +13027,23 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "pallet-traits",
+ "impl-trait-for-tuples",
  "parity-scale-codec",
  "scale-info",
  "serde",
  "sp-application-crypto",
- "sp-core 28.0.0",
  "sp-io",
  "sp-runtime",
+ "sp-std 14.0.0",
+]
+
+[[package]]
+name = "pallet-oracle-runtime-api"
+version = "1.0.0"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api",
  "sp-std 14.0.0",
 ]
 

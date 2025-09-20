@@ -12,20 +12,17 @@
 //!
 //! ### Key Concepts
 //!
-//! *   **Oracle Operators**: A set of trusted accounts that are authorized to
-//!     submit data to the oracle. The module uses the
-//!     `frame_support::traits::SortedMembers` trait to manage the set of
-//!     operators. This allows using pallets like `pallet-membership` to manage
-//!     the oracle members.
-//! *   **Data Feeds**: Operators feed data as key-value pairs. The `OracleKey`
-//!     is used to identify the data being fed (e.g., a specific currency pair),
-//!     and the `OracleValue` is the data itself (e.g., the price).
-//! *   **Data Aggregation**: The module can be configured with a `CombineData`
-//!     implementation to aggregate the raw values submitted by individual
-//!     operators into a single, trusted value. A default implementation
-//!     `DefaultCombineData` is provided, which takes the median of the values.
-//! *   **Timestamped Data**: All data submitted to the oracle is timestamped,
-//!     allowing consumers of the data to know how fresh it is.
+//! * **Oracle Operators**: A set of trusted accounts that are authorized to submit data to the
+//!   oracle. The module uses the `frame_support::traits::SortedMembers` trait to manage the set of
+//!   operators. This allows using pallets like `pallet-membership` to manage the oracle members.
+//! * **Data Feeds**: Operators feed data as key-value pairs. The `OracleKey` is used to identify
+//!   the data being fed (e.g., a specific currency pair), and the `OracleValue` is the data itself
+//!   (e.g., the price).
+//! * **Data Aggregation**: The module can be configured with a `CombineData` implementation to
+//!   aggregate the raw values submitted by individual operators into a single, trusted value. A
+//!   default implementation `DefaultCombineData` is provided, which takes the median of the values.
+//! * **Timestamped Data**: All data submitted to the oracle is timestamped, allowing consumers of
+//!   the data to know how fresh it is.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 // Disable the following two lints since they originate from an external macro (namely decl_storage)
@@ -34,7 +31,6 @@
 
 use codec::{Decode, Encode, MaxEncodedLen};
 
-#[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 
 use frame_support::{
@@ -45,24 +41,25 @@ use frame_support::{
 	weights::Weight,
 	Parameter,
 };
-use frame_system::{ensure_root, ensure_signed, pallet_prelude::*};
-use pallet_traits::OnNewData;
-pub use pallet_traits::{CombineData, DataFeeder, DataProvider, DataProviderExtended};
+use frame_system::pallet_prelude::*;
 use scale_info::TypeInfo;
 use sp_runtime::{traits::Member, DispatchResult, RuntimeDebug};
 use sp_std::{prelude::*, vec};
-
-pub use crate::default_combine_data::DefaultCombineData;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
 mod default_combine_data;
+pub use default_combine_data::DefaultCombineData;
+mod traits;
+pub use traits::{CombineData, DataFeeder, DataProvider, DataProviderExtended, OnNewData};
+#[cfg(test)]
 mod mock;
+#[cfg(test)]
 mod tests;
 mod weights;
 
-pub use module::*;
+pub use pallet::*;
 pub use weights::WeightInfo;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -84,15 +81,29 @@ impl<OracleKey, OracleValue, L: Get<u32>> BenchmarkHelper<OracleKey, OracleValue
 }
 
 #[frame_support::pallet]
-pub mod module {
+pub mod pallet {
 	use super::*;
 
 	pub(crate) type MomentOf<T, I = ()> = <<T as Config<I>>::Time as Time>::Moment;
-	pub(crate) type TimestampedValueOf<T, I = ()> = TimestampedValue<<T as Config<I>>::OracleValue, MomentOf<T, I>>;
+	pub(crate) type TimestampedValueOf<T, I = ()> =
+		TimestampedValue<<T as Config<I>>::OracleValue, MomentOf<T, I>>;
 
 	/// A wrapper for a value with a timestamp.
-	#[derive(Encode, Decode, RuntimeDebug, Eq, PartialEq, Clone, Copy, Ord, PartialOrd, TypeInfo, MaxEncodedLen)]
-	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
+	#[derive(
+		Encode,
+		Decode,
+		RuntimeDebug,
+		Eq,
+		PartialEq,
+		Clone,
+		Copy,
+		Ord,
+		PartialOrd,
+		TypeInfo,
+		MaxEncodedLen,
+		Serialize,
+		Deserialize,
+	)]
 	pub struct TimestampedValue<Value, Moment> {
 		/// The value.
 		pub value: Value,
@@ -139,7 +150,11 @@ pub mod module {
 
 		/// A helper trait for benchmarking.
 		#[cfg(feature = "runtime-benchmarks")]
-		type BenchmarkHelper: BenchmarkHelper<Self::OracleKey, Self::OracleValue, Self::MaxFeedValues>;
+		type BenchmarkHelper: BenchmarkHelper<
+			Self::OracleKey,
+			Self::OracleValue,
+			Self::MaxFeedValues,
+		>;
 	}
 
 	#[pallet::error]
@@ -149,6 +164,8 @@ pub mod module {
 		NoPermission,
 		/// The oracle member has already fed data in the current block.
 		AlreadyFeeded,
+		/// Exceeds the maximum number of `HasDispatched` size.
+		ExceedsMaxHasDispatchedSize,
 	}
 
 	#[pallet::event]
@@ -168,8 +185,14 @@ pub mod module {
 	/// Maps `(AccountId, OracleKey)` to `TimestampedValue`.
 	#[pallet::storage]
 	#[pallet::getter(fn raw_values)]
-	pub type RawValues<T: Config<I>, I: 'static = ()> =
-		StorageDoubleMap<_, Twox64Concat, T::AccountId, Twox64Concat, T::OracleKey, TimestampedValueOf<T, I>>;
+	pub type RawValues<T: Config<I>, I: 'static = ()> = StorageDoubleMap<
+		_,
+		Twox64Concat,
+		T::AccountId,
+		Twox64Concat,
+		T::OracleKey,
+		TimestampedValueOf<T, I>,
+	>;
 
 	/// The aggregated values for each oracle key.
 	///
@@ -217,16 +240,14 @@ pub mod module {
 			origin: OriginFor<T>,
 			values: BoundedVec<(T::OracleKey, T::OracleValue), T::MaxFeedValues>,
 		) -> DispatchResultWithPostInfo {
-			let feeder = ensure_signed(origin.clone())
-				.map(Some)
-				.or_else(|_| ensure_root(origin).map(|_| None))?;
+			let feeder = ensure_signed_or_root(origin.clone())?;
 
 			let who = Self::ensure_account(feeder)?;
 
 			// ensure account hasn't dispatched an updated yet
 			<HasDispatched<T, I>>::try_mutate(|set| {
 				set.try_insert(who.clone())
-					.map_err(|_| Error::<T, I>::AlreadyFeeded)?
+					.map_err(|_| Error::<T, I>::ExceedsMaxHasDispatchedSize)?
 					.then_some(())
 					.ok_or(Error::<T, I>::AlreadyFeeded)
 			})?;
@@ -273,13 +294,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 		}
 	}
 
-	fn do_feed_values(who: T::AccountId, values: Vec<(T::OracleKey, T::OracleValue)>) -> DispatchResult {
+	fn do_feed_values(
+		who: T::AccountId,
+		values: Vec<(T::OracleKey, T::OracleValue)>,
+	) -> DispatchResult {
 		let now = T::Time::now();
 		for (key, value) in &values {
-			let timestamped = TimestampedValue {
-				value: value.clone(),
-				timestamp: now,
-			};
+			let timestamped = TimestampedValue { value: value.clone(), timestamp: now };
 			RawValues::<T, I>::insert(&who, key, timestamped);
 
 			// Update `Values` storage if `combined` yielded result.
@@ -295,7 +316,11 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 }
 
 impl<T: Config<I>, I: 'static> ChangeMembers<T::AccountId> for Pallet<T, I> {
-	fn change_members_sorted(_incoming: &[T::AccountId], outgoing: &[T::AccountId], _new: &[T::AccountId]) {
+	fn change_members_sorted(
+		_incoming: &[T::AccountId],
+		outgoing: &[T::AccountId],
+		_new: &[T::AccountId],
+	) {
 		// remove values
 		for removed in outgoing {
 			let _ = RawValues::<T, I>::clear_prefix(removed, u32::MAX, None);
@@ -312,7 +337,9 @@ impl<T: Config<I>, I: 'static> DataProvider<T::OracleKey, T::OracleValue> for Pa
 		Self::get(key).map(|timestamped_value| timestamped_value.value)
 	}
 }
-impl<T: Config<I>, I: 'static> DataProviderExtended<T::OracleKey, TimestampedValueOf<T, I>> for Pallet<T, I> {
+impl<T: Config<I>, I: 'static> DataProviderExtended<T::OracleKey, TimestampedValueOf<T, I>>
+	for Pallet<T, I>
+{
 	fn get_no_op(key: &T::OracleKey) -> Option<TimestampedValueOf<T, I>> {
 		Self::get(key)
 	}
@@ -323,8 +350,14 @@ impl<T: Config<I>, I: 'static> DataProviderExtended<T::OracleKey, TimestampedVal
 	}
 }
 
-impl<T: Config<I>, I: 'static> DataFeeder<T::OracleKey, T::OracleValue, T::AccountId> for Pallet<T, I> {
-	fn feed_value(who: Option<T::AccountId>, key: T::OracleKey, value: T::OracleValue) -> DispatchResult {
+impl<T: Config<I>, I: 'static> DataFeeder<T::OracleKey, T::OracleValue, T::AccountId>
+	for Pallet<T, I>
+{
+	fn feed_value(
+		who: Option<T::AccountId>,
+		key: T::OracleKey,
+		value: T::OracleValue,
+	) -> DispatchResult {
 		Self::do_feed_values(Self::ensure_account(who)?, vec![(key, value)])
 	}
 }

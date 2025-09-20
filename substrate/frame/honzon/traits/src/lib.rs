@@ -25,9 +25,9 @@
 #![allow(clippy::type_complexity)]
 
 use codec::{Decode, Encode, MaxEncodedLen};
+use scale_info::TypeInfo;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
-use scale_info::TypeInfo;
 use sp_runtime::{traits::CheckedDiv, DispatchError, DispatchResult, FixedU128, RuntimeDebug};
 use sp_std::prelude::*;
 
@@ -35,13 +35,8 @@ pub mod auction;
 pub mod bounded;
 pub mod dex;
 pub mod honzon;
-pub mod data_provider;
 
-pub use crate::auction::*;
-pub use crate::bounded::*;
-pub use crate::dex::*;
-pub use crate::honzon::*;
-pub use crate::data_provider::*;
+pub use crate::{auction::*, bounded::*, dex::*, honzon::*};
 
 pub mod liquidation;
 
@@ -70,7 +65,6 @@ impl<T> Handler<T> for Tuple {
 	}
 }
 
-
 /// Represents a potential change to a value.
 #[derive(Encode, Decode, Clone, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 pub enum Change<Value> {
@@ -89,25 +83,6 @@ pub struct TimestampedValue<Value: Ord + PartialOrd, Moment> {
 	/// The timestamp.
 	pub timestamp: Moment,
 }
-
-
-/// Used to combine data from multiple providers.
-pub trait CombineData<Key, TimestampedValue> {
-	/// Combine data provided by operators
-	fn combine_data(
-		key: &Key,
-		values: Vec<TimestampedValue>,
-		prev_value: Option<TimestampedValue>,
-	) -> Option<TimestampedValue>;
-}
-
-/// A handler for new data events.
-#[impl_trait_for_tuples::impl_for_tuples(30)]
-pub trait OnNewData<AccountId, Key, Value> {
-	/// New data is available
-	fn on_new_data(who: &AccountId, key: &Key, value: &Value);
-}
-
 
 /// A trait for providing the price of a currency.
 pub trait PriceProvider<CurrencyId> {

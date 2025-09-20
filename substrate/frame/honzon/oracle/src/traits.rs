@@ -49,7 +49,7 @@ macro_rules! create_median_value_data_provider {
 						values.push(v);
 					}
 				)*
-				$crate::data_provider::median(values)
+				$crate::traits::median(values)
 			}
 		}
 		impl $crate::DataProviderExtended<$key, $timestamped_value> for $name {
@@ -60,7 +60,7 @@ macro_rules! create_median_value_data_provider {
 						values.push(v);
 					}
 				)*
-				$crate::data_provider::median(values)
+				$crate::traits::median(values)
 			}
 			fn get_all_values() -> Vec<($key, Option<$timestamped_value>)> {
 				let mut keys = sp_std::collections::btree_set::BTreeSet::new();
@@ -73,6 +73,23 @@ macro_rules! create_median_value_data_provider {
 			}
 		}
 	}
+}
+
+/// Used to combine data from multiple providers.
+pub trait CombineData<Key, TimestampedValue> {
+	/// Combine data provided by operators
+	fn combine_data(
+		key: &Key,
+		values: Vec<TimestampedValue>,
+		prev_value: Option<TimestampedValue>,
+	) -> Option<TimestampedValue>;
+}
+
+/// A handler for new data events.
+#[impl_trait_for_tuples::impl_for_tuples(30)]
+pub trait OnNewData<AccountId, Key, Value> {
+	/// New data is available
+	fn on_new_data(who: &AccountId, key: &Key, value: &Value);
 }
 
 #[cfg(test)]
@@ -116,7 +133,13 @@ mod tests {
 	mock_data_provider!(Provider3, MOCK_PRICE_3);
 	mock_data_provider!(Provider4, MOCK_PRICE_4);
 
-	create_median_value_data_provider!(Providers, u8, u8, u8, [Provider1, Provider2, Provider3, Provider4]);
+	create_median_value_data_provider!(
+		Providers,
+		u8,
+		u8,
+		u8,
+		[Provider1, Provider2, Provider3, Provider4]
+	);
 
 	#[test]
 	fn median_value_data_provider_works() {

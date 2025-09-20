@@ -11,35 +11,34 @@ repository.workspace = true
 [dependencies]
 codec = { workspace = true }
 scale-info = { workspace = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true }
 
+frame-benchmarking = { workspace = true, optional = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
+impl-trait-for-tuples = { workspace = true }
 sp-application-crypto = { workspace = true }
 sp-io = { workspace = true }
 sp-runtime = { workspace = true }
 sp-std = { workspace = true }
-frame-benchmarking = { workspace = true, optional = true }
-pallet-traits = { workspace = true }
 
 
-[dev-dependencies]
-sp-core = { workspace = true }
+# [dev-dependencies]
+# sp-core = { workspace = true }
 
 [features]
-default = [ "std" ]
+default = ["std"]
 std = [
+	"codec/std",
 	"frame-benchmarking?/std",
 	"frame-support/std",
 	"frame-system/std",
-	"codec/std",
 	"scale-info/std",
-	"serde",
+	"serde/std",
 	"sp-application-crypto/std",
 	"sp-io/std",
 	"sp-runtime/std",
 	"sp-std/std",
-	"pallet-traits/std",
 ]
 try-runtime = [
 	"frame-support/try-runtime",
