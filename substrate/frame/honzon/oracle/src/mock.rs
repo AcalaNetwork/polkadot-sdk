@@ -1,5 +1,3 @@
-//! Test utilities
-use super::*;
 use crate as pallet_oracle;
 
 use frame_support::{

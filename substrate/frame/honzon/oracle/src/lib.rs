@@ -57,7 +57,7 @@ pub use traits::{CombineData, DataFeeder, DataProvider, DataProviderExtended, On
 mod mock;
 #[cfg(test)]
 mod tests;
-mod weights;
+pub mod weights;
 
 pub use pallet::*;
 pub use weights::WeightInfo;
