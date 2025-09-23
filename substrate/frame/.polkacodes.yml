@@ -1,0 +1,12 @@
+scripts:
+  check: cargo check -p pallet-cdp-engine
+rules: |
+  You are migrate some pallets from other repo into here.
+  All the pallets are located in substrate/frame.
+  Your job is to update the code to make it compile anad make necessary migration.
+  parity_scale_codec is renamed to codec
+  Only two currencies are supported: native and stable
+  Make Balance a generic type
+  orml-* / module-* pallets are now pallet-*
+  We only support a single collateral type: the native currency
+  Remove / Replace multi collateral related code

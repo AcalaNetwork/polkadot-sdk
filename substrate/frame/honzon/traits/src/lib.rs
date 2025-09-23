@@ -42,6 +42,10 @@ pub mod liquidation;
 
 pub use crate::liquidation::*;
 
+pub trait GetByKey<Key, Value> {
+	fn get(key: &Key) -> Value;
+}
+
 /// The price of a currency, represented as a `FixedU128`.
 pub type Price = FixedU128;
 /// The exchange rate between two currencies, represented as a `FixedU128`.
