@@ -27,15 +27,19 @@ use mock::{RuntimeEvent, *};
 #[test]
 fn debits_key() {
 	ExtBuilder::default().build().execute_with(|| {
+		let hold_reason = RuntimeHoldReason::from(HoldReason::Collateral);
 		assert_eq!(PalletBalances::free_balance(&ALICE), 10000);
 		assert_eq!(PalletBalances::free_balance(&Loans::account_id()), 0);
+		assert_eq!(PalletBalances::balance_on_hold(&hold_reason, &ALICE), 0);
 		assert_eq!(Loans::positions(&ALICE).debit, 0);
 		assert_ok!(Loans::adjust_position(&ALICE, 200, 100));
 		assert_eq!(Loans::positions(&ALICE).debit, 100);
 		assert_eq!(PalletBalances::free_balance(&ALICE), 9800);
-		assert_eq!(PalletBalances::free_balance(&Loans::account_id()), 200);
+		assert_eq!(PalletBalances::free_balance(&Loans::account_id()), 0);
+		assert_eq!(PalletBalances::balance_on_hold(&hold_reason, &ALICE), 200);
 		assert_ok!(Loans::adjust_position(&ALICE, -100, -50));
 		assert_eq!(Loans::positions(&ALICE).debit, 50);
+		assert_eq!(PalletBalances::balance_on_hold(&hold_reason, &ALICE), 100);
 	});
 }
 
@@ -59,7 +63,9 @@ fn check_update_loan_underflow_work() {
 #[test]
 fn adjust_position_should_work() {
 	ExtBuilder::default().build().execute_with(|| {
+		let hold_reason = RuntimeHoldReason::from(HoldReason::Collateral);
 		assert_eq!(PalletBalances::free_balance(&ALICE), 10000);
+		assert_eq!(PalletBalances::balance_on_hold(&hold_reason, &ALICE), 0);
 
 		// balance too low
 		assert_noop!(
@@ -81,6 +87,7 @@ fn adjust_position_should_work() {
 
 		assert_eq!(PalletBalances::free_balance(&ALICE), 10000);
 		assert_eq!(PalletBalances::free_balance(&Loans::account_id()), 0);
+		assert_eq!(PalletBalances::balance_on_hold(&hold_reason, &ALICE), 0);
 		assert_eq!(Loans::total_positions().debit, 0);
 		assert_eq!(Loans::total_positions().collateral, 0);
 		assert_eq!(Loans::positions(&ALICE).debit, 0);
@@ -89,7 +96,8 @@ fn adjust_position_should_work() {
 		// success
 		assert_ok!(Loans::adjust_position(&ALICE, 500, 200));
 		assert_eq!(PalletBalances::free_balance(&ALICE), 9500);
-		assert_eq!(PalletBalances::free_balance(&Loans::account_id()), 500);
+		assert_eq!(PalletBalances::free_balance(&Loans::account_id()), 0);
+		assert_eq!(PalletBalances::balance_on_hold(&hold_reason, &ALICE), 500);
 		assert_eq!(Loans::total_positions().debit, 200);
 		assert_eq!(Loans::total_positions().collateral, 500);
 		assert_eq!(Loans::positions(&ALICE).debit, 200);
@@ -101,9 +109,10 @@ fn adjust_position_should_work() {
 		}));
 
 		// collateral_adjustment is negatives
-		assert_eq!(PalletBalances::total_balance(&Loans::account_id()), 500);
 		assert_ok!(Loans::adjust_position(&ALICE, -500, 0));
 		assert_eq!(PalletBalances::free_balance(&Loans::account_id()), 0);
+		assert_eq!(PalletBalances::balance_on_hold(&hold_reason, &ALICE), 0);
+		assert_eq!(PalletBalances::free_balance(&ALICE), 10000);
 	});
 }
 
@@ -174,6 +183,7 @@ fn transfer_loan_should_work() {
 #[test]
 fn confiscate_collateral_and_debit_work() {
 	ExtBuilder::default().build().execute_with(|| {
+		let hold_reason = RuntimeHoldReason::from(HoldReason::Collateral);
 		assert_ok!(Loans::update_loan(&BOB, 5000, 1000));
 		assert_eq!(PalletBalances::free_balance(&Loans::account_id()), 0);
 
@@ -188,12 +198,14 @@ fn confiscate_collateral_and_debit_work() {
 		assert_eq!(CDPTreasuryModule::get_debit_pool(), 0);
 		assert_eq!(Loans::positions(&ALICE).debit, 200);
 		assert_eq!(Loans::positions(&ALICE).collateral, 500);
+		assert_eq!(PalletBalances::balance_on_hold(&hold_reason, &ALICE), 500);
 
 		assert_ok!(Loans::confiscate_collateral_and_debit(&ALICE, 300, 200));
 		assert_eq!(CDPTreasuryModule::get_total_collaterals(CurrencyId::Native), 300);
 		assert_eq!(CDPTreasuryModule::get_debit_pool(), 100);
 		assert_eq!(Loans::positions(&ALICE).debit, 0);
 		assert_eq!(Loans::positions(&ALICE).collateral, 200);
+		assert_eq!(PalletBalances::balance_on_hold(&hold_reason, &ALICE), 200);
 		System::assert_last_event(RuntimeEvent::Loans(crate::Event::ConfiscateCollateralAndDebit {
 			owner: ALICE,
 			confiscated_collateral_amount: 300,

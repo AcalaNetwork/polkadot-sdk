@@ -33,7 +33,10 @@ pub use pallet::*;
 pub mod pallet {
 	use frame_support::{
 		pallet_prelude::*,
-		traits::{Currency, ExistenceRequirement, ReservableCurrency},
+		traits::{
+			fungible::{hold::Mutate as HoldMutate, Inspect},
+			tokens::{Fortitude, Precision, Restriction},
+		},
 		transactional, PalletId,
 	};
 	use pallet_traits::{CDPTreasury, Handler, Position, RiskManager, LiquidationTarget};
@@ -44,13 +47,19 @@ pub mod pallet {
 	use sp_std::prelude::*;
 
 	pub type Amount = i128;
-	pub type BalanceOf<T> = <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+	pub type BalanceOf<T> =
+		<<T as Config>::Currency as Inspect<<T as frame_system::Config>::AccountId>>::Balance;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
-		/// Currency type for deposit/withdraw collateral assets to/from loans
-		/// module
-		type Currency: ReservableCurrency<Self::AccountId>;
+		/// Currency type for handling collateral holds on user accounts.
+		type Currency: HoldMutate<
+			Self::AccountId,
+			Reason = Self::RuntimeHoldReason,
+		>;
+
+		/// Runtime hold reason type that can represent this pallet's reasons.
+		type RuntimeHoldReason: From<HoldReason>;
 
 		/// The currency ID type
 		type CurrencyId: Parameter + Member + Copy + MaybeSerializeDeserialize + Ord;
@@ -115,6 +124,14 @@ pub mod pallet {
 	#[pallet::getter(fn total_positions)]
 	pub type TotalPositions<T: Config> = StorageValue<_, Position<BalanceOf<T>>, ValueQuery>;
 
+	/// Reasons for placing holds on user collateral.
+	#[pallet::composite_enum]
+	pub enum HoldReason {
+		/// Collateral locked to back a loan position.
+		#[codec(index = 0)]
+		Collateral,
+	}
+
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
 
@@ -138,8 +155,21 @@ pub mod pallet {
 			collateral_confiscate: BalanceOf<T>,
 			debit_decrease: BalanceOf<T>,
 		) -> DispatchResult {
+			let module_account = Self::account_id();
+			// Move the collateral from the user's held balance into the pallet account before
+			// liquidating or forwarding the remainder to the treasury.
+			let _ = T::Currency::transfer_on_hold(
+				&HoldReason::Collateral.into(),
+				who,
+				&module_account,
+				collateral_confiscate,
+				Precision::Exact,
+				Restriction::Free,
+				Fortitude::Force,
+			)?;
+
 			let (liquidated_collateral, covered_debit) = T::LiquidationStrategy::liquidate(
-				&Self::account_id(),
+				&module_account,
 				T::CollateralCurrencyId::get(),
 				collateral_confiscate,
 				debit_decrease,
@@ -154,7 +184,7 @@ pub mod pallet {
 
 			if !remaining_collateral.is_zero() {
 				// transfer remaining collateral to cdp treasury
-				T::CDPTreasury::deposit_collateral(&Self::account_id(), remaining_collateral)?;
+				T::CDPTreasury::deposit_collateral(&module_account, remaining_collateral)?;
 			}
 
 			if !remaining_debit.is_zero() {
@@ -193,21 +223,19 @@ pub mod pallet {
 
 			let collateral_balance_adjustment = Self::balance_try_from_amount_abs(collateral_adjustment)?;
 			let debit_balance_adjustment = Self::balance_try_from_amount_abs(debit_adjustment)?;
-			let module_account = Self::account_id();
 
 			if collateral_adjustment.is_positive() {
-				T::Currency::transfer(
+				T::Currency::hold(
+					&HoldReason::Collateral.into(),
 					who,
-					&module_account,
 					collateral_balance_adjustment,
-					ExistenceRequirement::AllowDeath,
 				)?;
 			} else if collateral_adjustment.is_negative() {
-				T::Currency::transfer(
-					&module_account,
+				let _ = T::Currency::release(
+					&HoldReason::Collateral.into(),
 					who,
 					collateral_balance_adjustment,
-					ExistenceRequirement::AllowDeath,
+					Precision::Exact,
 				)?;
 			}
 

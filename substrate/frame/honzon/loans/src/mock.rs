@@ -231,6 +231,7 @@ parameter_types! {
 impl Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Currency = PalletBalances;
+	type RuntimeHoldReason = RuntimeHoldReason;
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = CDPTreasuryModule;
 	type PalletId = LoansPalletId;
