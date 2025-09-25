@@ -29,7 +29,7 @@ use frame_support::{
 use frame_system::EnsureRoot;
 use pallet_traits::{PriceProvider, AuctionManager, Swap, AggregatedSwapPath};
 use sp_runtime::{
-	BuildStorage, FixedU128, DispatchError, DispatchResult,
+	BuildStorage, DispatchError, DispatchResult, FixedU128, Permill,
 };
 use sp_core::H256;
 use sp_std::{result, marker::PhantomData};
@@ -200,6 +200,8 @@ parameter_types! {
 	pub const StableCurrencyId: CurrencyId = STABLE;
 	pub const IssuanceBufferPalletId: PalletId = PalletId(*b"fr/issub");
     pub const CDPTreasuryPalletId: PalletId = PalletId(*b"fr/cdpty");
+    pub DiscountParam: Permill = Permill::from_percent(100);
+    pub IssuanceQuotaParam: Balance = 0;
 }
 
 pub struct MockConvert;
@@ -214,6 +216,8 @@ impl Config for Test {
 	type PriceProvider = MockPriceProvider;
 	type CollateralCurrencyId = CollateralCurrencyId;
 	type StableCurrencyId = StableCurrencyId;
+	type Discount = DiscountParam;
+	type IssuanceQuota = IssuanceQuotaParam;
 	type PalletId = IssuanceBufferPalletId;
     type CDPTreasury = CDPTreasury;
 }

@@ -30,7 +30,8 @@ pub use pallet::*;
 pub mod pallet {
     use frame_support::{
         pallet_prelude::*,
-        traits::{Currency, ReservableCurrency, Get}, PalletId,
+        traits::{Currency, Get, ReservableCurrency},
+        PalletId,
     };
     use frame_system::pallet_prelude::*;
     use sp_runtime::{traits::{Zero, AccountIdConversion, Saturating}, Permill};
@@ -60,6 +61,12 @@ pub mod pallet {
         #[pallet::constant]
         type StableCurrencyId: Get<Self::CurrencyId>;
 
+        /// Discount applied when purchasing collateral during liquidation.
+        type Discount: Get<Permill>;
+
+        /// Maximum amount of stable currency the issuance buffer can mint.
+        type IssuanceQuota: Get<BalanceOf<Self>>;
+
         /// The pallet ID for the issuance buffer, used for deriving its account ID.
         #[pallet::constant]
         type PalletId: Get<PalletId>;
@@ -67,14 +74,6 @@ pub mod pallet {
         /// The CDP treasury pallet.
         type CDPTreasury: CDPTreasury<Self::AccountId, Balance = BalanceOf<Self>, CurrencyId = Self::CurrencyId>;
     }
-
-    #[pallet::storage]
-    #[pallet::getter(fn discount)]
-    pub type Discount<T> = StorageValue<_, Permill, ValueQuery>; // default: Permill::from_percent(100)
-
-    #[pallet::storage]
-    #[pallet::getter(fn issuance_quota)]
-    pub type IssuanceQuota<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>; // max PDD debt
 
     #[pallet::storage]
     #[pallet::getter(fn issuance_used)]
@@ -87,10 +86,6 @@ pub mod pallet {
         Funded { amount: BalanceOf<T> },
         /// Buffer defunded
         Defunded { amount: BalanceOf<T> },
-        /// Discount rate updated
-        DiscountUpdated { discount: Permill },
-        /// Issuance quota updated
-        IssuanceQuotaUpdated { quota: BalanceOf<T> },
     }
 
     #[pallet::error]
@@ -141,38 +136,21 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Set the discount factor used to price bids vs oracle. For example,
-        /// discount = 95% means bid = 0.95 * oracle_price (a 5% discount).
-        #[pallet::call_index(2)]
-        #[pallet::weight(T::DbWeight::get().writes(1))]
-        pub fn set_discount(origin: OriginFor<T>, discount: Permill) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
-
-            Discount::<T>::put(discount);
-
-            Self::deposit_event(Event::DiscountUpdated { discount });
-            Ok(())
-        }
-
-        /// Set the maximum additional PDD the buffer may issue (as debt on its CDP).
-        #[pallet::call_index(3)]
-        #[pallet::weight(T::DbWeight::get().writes(1))]
-        pub fn set_issuance_quota(
-            origin: OriginFor<T>,
-            #[pallet::compact] quota: BalanceOf<T>,
-        ) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
-
-            IssuanceQuota::<T>::put(quota);
-
-            Self::deposit_event(Event::IssuanceQuotaUpdated { quota });
-            Ok(())
-        }
     }
 
     impl<T: Config> Pallet<T> {
         pub fn account_id() -> T::AccountId {
             <T as Config>::PalletId::get().into_account_truncating()
+        }
+
+        /// Current discount applied when purchasing collateral.
+        pub fn discount() -> Permill {
+            T::Discount::get()
+        }
+
+        /// Maximum additional stable currency that can be issued by the buffer.
+        pub fn issuance_quota() -> BalanceOf<T> {
+            T::IssuanceQuota::get()
         }
     }
 
