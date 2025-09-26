@@ -57,7 +57,6 @@ construct_runtime!(
 		System: frame_system,
 		Loans: pallet,
 		Assets: pallet_assets,
-		AssetsHolder: pallet_assets_holder,
 		PalletBalances: pallet_balances,
 		CDPTreasuryModule: pallet_cdp_treasury,
 		IssuanceBuffer: pallet_issuance_buffer,
@@ -89,10 +88,7 @@ impl pallet_balances::Config for Runtime {
 	type DoneSlashHandler = ();
 }
 
-impl pallet_assets_holder::Config for Runtime {
-	type RuntimeHoldReason = RuntimeHoldReason;
-	type RuntimeEvent = RuntimeEvent;
-}
+
 
 impl pallet_assets::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
@@ -113,7 +109,7 @@ impl pallet_assets::Config for Runtime {
 	type WeightInfo = ();
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
-	type Holder = AssetsHolder;
+	type Holder = ();
 }
 
 
@@ -221,6 +217,8 @@ impl PriceProvider<CurrencyId> for MockPriceProvider {
 	fn get_price(currency_id: CurrencyId) -> Option<Price> {
 		if currency_id == CurrencyId::Native {
 			Some(FixedU128::from_inner(2))
+		} else if currency_id == CurrencyId::Stable {
+			Some(FixedU128::from_inner(1))
 		} else {
 			None
 		}
@@ -297,7 +295,7 @@ parameter_types! {
 	pub const CollateralCurrencyIdValue: CurrencyId = CurrencyId::Native;
 }
 
-pub type Collateral = fungible::ItemOf<AssetsHolder, CollateralCurrencyIdValue, AccountId>;
+pub type Collateral = PalletBalances;
 
 impl Config for Runtime {
 	type Amount = Amount;
@@ -321,8 +319,6 @@ impl Default for ExtBuilder {
 	fn default() -> Self {
 		Self {
 			balances: vec![
-				(ALICE, CurrencyId::Native, 10000),
-				(BOB, CurrencyId::Native, 10000),
 				(ALICE, CurrencyId::Stable, 10000),
 				(BOB, CurrencyId::Stable, 10000),
 			],
@@ -345,14 +341,8 @@ impl ExtBuilder {
 		.unwrap();
 
 		pallet_assets::GenesisConfig::<Runtime> {
-			assets: vec![
-				(CurrencyId::Native, ALICE, true, 1),
-				(CurrencyId::Stable, ALICE, true, 1),
-			],
-			metadata: vec![
-				(CurrencyId::Native, b"Native".to_vec(), b"NTV".to_vec(), 12),
-				(CurrencyId::Stable, b"Stable".to_vec(), b"STB".to_vec(), 12),
-			],
+			assets: vec![(CurrencyId::Stable, ALICE, true, 1)],
+			metadata: vec![(CurrencyId::Stable, b"Stable".to_vec(), b"STB".to_vec(), 12)],
 			accounts: self.balances.into_iter().map(|(account, asset, balance)| (asset, account, balance)).collect(),
 			next_asset_id: Some(CurrencyId::Asset(1)),
 		}

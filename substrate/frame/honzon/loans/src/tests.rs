@@ -24,7 +24,7 @@ use super::*;
 use frame_support::{assert_noop, assert_ok};
 use mock::{RuntimeEvent, *};
 use pallet_traits::{Rate, Ratio};
-use sp_runtime::{ArithmeticError, DispatchError};
+use sp_runtime::{ArithmeticError, DispatchError, TokenError};
 use frame_support::traits::fungible::Inspect;
 use frame_support::traits::fungible::hold::Inspect as HoldInspect;
 use sp_arithmetic::traits::{One, Zero};
@@ -75,7 +75,7 @@ fn adjust_position_should_work() {
 		// balance too low
 		assert_noop!(
 			Loans::adjust_position(&ALICE, 20000, 0, None),
-			pallet_assets::Error::<Runtime>::BalanceLow
+			DispatchError::Token(TokenError::FundsUnavailable)
 		);
 
 		// mock can't pass required ratio check
@@ -115,7 +115,7 @@ fn adjust_position_should_work() {
 		}));
 
 		// collateral_adjustment is negatives
-		assert_ok!(Loans::adjust_position(&ALICE, -500, 0, None));
+		assert_ok!(Loans::adjust_position(&ALICE, -500, -200, None));
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 0);
 		assert_eq!(Collateral::balance(&ALICE), 10000);
@@ -170,13 +170,13 @@ fn update_loan_should_work() {
 #[test]
 fn transfer_loan_should_work() {
 	ExtBuilder::default().build().execute_with(|| {
-		assert_ok!(Loans::update_loan(&ALICE, 400, 500, Some(Rate::one())));
-		assert_ok!(Loans::update_loan(&BOB, 100, 600, Some(Rate::one())));
+		assert_ok!(Loans::update_loan(&ALICE, 1000, 500, Some(Rate::one())));
+		assert_ok!(Loans::update_loan(&BOB, 1200, 600, Some(Rate::one())));
 		assert_eq!(Loans::positions(&ALICE).debit, 500);
-		assert_eq!(Loans::positions(&ALICE).collateral, 400);
+		assert_eq!(Loans::positions(&ALICE).collateral, 1000);
 		assert_eq!(Loans::positions(&ALICE).stability_fee, Rate::one());
 		assert_eq!(Loans::positions(&BOB).debit, 600);
-		assert_eq!(Loans::positions(&BOB).collateral, 100);
+		assert_eq!(Loans::positions(&BOB).collateral, 1200);
 		assert_eq!(Loans::positions(&BOB).stability_fee, Rate::one());
 
 		assert_ok!(Loans::transfer_loan(&ALICE, &BOB));
@@ -184,7 +184,7 @@ fn transfer_loan_should_work() {
 		assert_eq!(Loans::positions(&ALICE).collateral, 0);
 		assert_eq!(Loans::positions(&ALICE).stability_fee, Ratio::zero());
 		assert_eq!(Loans::positions(&BOB).debit, 1100);
-		assert_eq!(Loans::positions(&BOB).collateral, 500);
+		assert_eq!(Loans::positions(&BOB).collateral, 2200);
 		assert_eq!(Loans::positions(&BOB).stability_fee, Rate::one());
 		assert_eq!(Loans::total_debit_by_stability_fee(Rate::one()), 1100);
 		System::assert_last_event(RuntimeEvent::Loans(Event::TransferLoan { from: ALICE, to: BOB }));
@@ -195,15 +195,22 @@ fn transfer_loan_should_work() {
 fn confiscate_collateral_and_debit_work() {
 	ExtBuilder::default().build().execute_with(|| {
 		let hold_reason = RuntimeHoldReason::from(HoldReason::Collateral);
-		assert_ok!(Loans::update_loan(&BOB, 5000, 1000, Some(Rate::one())));
+		assert_ok!(Loans::adjust_position(&BOB, 5000, 1000, Some(Rate::one())));
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 
 		// have no sufficient balance in loans account to confiscate
 		assert_noop!(
 			Loans::confiscate_collateral_and_debit(&BOB, 5000, 1000),
-			pallet_assets::Error::<Runtime>::BalanceLow
+			DispatchError::Token(TokenError::FundsUnavailable)
 		);
 
+	});
+}
+
+#[test]
+fn confiscate_collateral_and_debit_work_success() {
+	ExtBuilder::default().build().execute_with(|| {
+		let hold_reason = RuntimeHoldReason::from(HoldReason::Collateral);
 		assert_ok!(Loans::adjust_position(&ALICE, 500, 200, Some(Rate::one())));
 		assert_eq!(CDPTreasuryModule::total_collaterals(), 0);
 		assert_eq!(CDPTreasuryModule::debit_pool(), 0);
