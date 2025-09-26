@@ -21,6 +21,7 @@
 use super::*;
 use frame_support::{assert_err, assert_ok, traits::Hooks};
 use mock::*;
+use pallet_loans::Pallet as Loans;
 
 #[test]
 fn set_collateral_params_works() {
@@ -43,16 +44,17 @@ fn set_collateral_params_works() {
 fn adjust_position_works() {
 	new_test_ext().execute_with(|| {
 		let account_id = 1u64;
-		
 		assert_ok!(CDPEngine::adjust_position(
-			RuntimeOrigin::signed(account_id),
-			1000u64, // collateral
-			150u64,  // debit (should pass minimum debit value)
+			&account_id,
+			1000i128,
+			150i128,
+			Some(Rate::one()),
 		));
 
-		let position = CDPEngine::positions(account_id);
-		assert_eq!(position.collateral, 1000u64);
-		assert_eq!(position.debit, 150u64);
+		let position = Loans::positions(&account_id);
+		assert_eq!(position.collateral, 1000u128);
+		assert_eq!(position.debit, 150u128);
+		assert_eq!(position.stability_fee, Rate::one());
 	});
 }
 
@@ -64,9 +66,10 @@ fn adjust_position_fails_with_insufficient_collateral_ratio() {
 		// Try to create a position with low collateral ratio
 		assert_err!(
 			CDPEngine::adjust_position(
-				RuntimeOrigin::signed(account_id),
-				100u64, // low collateral
-				150u64, // high debit
+				&account_id,
+				100i128, // low collateral
+				150i128, // high debit
+				Some(Rate::one()),
 			),
 			Error::<Test>::BelowRequiredCollateralRatio
 		);
@@ -88,15 +91,15 @@ fn emergency_shutdown_works() {
 fn check_cdp_status_works() {
 	new_test_ext().execute_with(|| {
 		// Safe CDP
-		let status = CDPEngine::check_cdp_status(2000u64, 1000u64);
+		let status = CDPEngine::check_cdp_status(2000u128, 1000u128, Rate::one());
 		assert_eq!(status, CDPStatus::Safe);
 		
 		// Unsafe CDP
-		let status = CDPEngine::check_cdp_status(100u64, 1000u64);
+		let status = CDPEngine::check_cdp_status(100u128, 1000u128, Rate::one());
 		assert_eq!(status, CDPStatus::Unsafe);
 		
 		// Zero debit should be safe
-		let status = CDPEngine::check_cdp_status(100u64, 0u64);
+		let status = CDPEngine::check_cdp_status(100u128, 0u128, Rate::one());
 		assert_eq!(status, CDPStatus::Safe);
 	});
 }
@@ -108,17 +111,20 @@ fn liquidate_unsafe_cdp_works() {
 		
 		// First create an unsafe position directly in storage
 		let unsafe_position = Position {
-			collateral: 100u64,
-			debit: 1000u64,
+			collateral: 100u128,
+			debit: 1000u128,
+			stability_fee: Ratio::one(),
 		};
-		Positions::<Test>::insert(account_id, unsafe_position);
+		pallet_loans::Positions::<Test>::insert(account_id, unsafe_position);
+		pallet_loans::TotalPositions::<Test>::put(unsafe_position);
+		pallet_loans::TotalDebitByStabilityFee::<Test>::insert(Rate::one(), unsafe_position.debit);
 		
-		assert_ok!(CDPEngine::liquidate_unsafe_cdp(&account_id));
+		assert_ok!(CDPEngine::liquidate_unsafe_cdp(account_id));
 		
 		// Position should be cleared
-		let position = CDPEngine::positions(account_id);
-		assert_eq!(position.collateral, 0u64);
-		assert_eq!(position.debit, 0u64);
+		let position = Loans::positions(&account_id);
+		assert_eq!(position.collateral, 0u128);
+		assert_eq!(position.debit, 0u128);
 	});
 }
 
@@ -131,18 +137,14 @@ fn settle_cdp_works() {
 		IsShutdown::<Test>::put(true);
 		
 		// Create a position with debit
-		let position = Position {
-			collateral: 1000u64,
-			debit: 500u64,
-		};
-		Positions::<Test>::insert(account_id, position);
+		assert_ok!(Loans::update_loan(&account_id, 1000i128, 500i128, Some(Rate::one())));
 		
-		assert_ok!(CDPEngine::settle_cdp_has_debit(&account_id));
+		assert_ok!(CDPEngine::settle_cdp_has_debit(account_id));
 		
 		// Position should be cleared
-		let position = CDPEngine::positions(account_id);
-		assert_eq!(position.collateral, 0u64);
-		assert_eq!(position.debit, 0u64);
+		let position = Loans::positions(&account_id);
+		assert_eq!(position.collateral, 0u128);
+		assert_eq!(position.debit, 0u128);
 	});
 }
 

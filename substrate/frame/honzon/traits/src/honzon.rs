@@ -39,6 +39,8 @@ pub struct Position<Balance> {
 	pub collateral: Balance,
 	/// The amount of debit.
 	pub debit: Balance,
+	/// The stability fee used for this position.
+	pub stability_fee: Ratio,
 }
 
 /// A trait for managing the risk of the protocol.

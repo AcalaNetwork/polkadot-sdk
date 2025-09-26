@@ -19,22 +19,35 @@
 //! Mock runtime for CDP Engine pallet
 
 use super::*;
+use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{ConstU128, ConstU32, ConstU64, Everything, UnixTime, fungibles::Mutate},
+	traits::{ConstU128, ConstU32, ConstU64, Everything, Nothing, UnixTime},
 };
+use pallet_loans::Pallet as Loans;
+use pallet_traits::{
+	AggregatedSwapPath, CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager,
+	EmergencyShutdown, ExchangeRate, FractionalRate, GetByKey, LiquidateCollateral,
+	LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager, Swap, SwapLimit,
+};
+use scale_info::TypeInfo;
 use sp_runtime::{
 	traits::{BlakeTwo256, IdentityLookup, One, Zero},
-	BuildStorage, Perbill,
+	BuildStorage, DispatchError, DispatchResult, Perbill, RuntimeDebug,
 };
+use sp_std::{cell::RefCell, collections::btree_map::BTreeMap, marker::PhantomData};
 
-use pallet_traits::{
-	CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager, EmergencyShutdown, ExchangeRate,
-	FractionalRate, GetByKey, LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio,
-	RiskManager, Swap, SwapLimit,
-};
-use sp_std::{cell::RefCell, collections::btree_map::BTreeMap};
+pub type CurrencyId = u32;
+#[derive(Clone, Copy, Encode, Decode, Eq, PartialEq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+pub enum RuntimeHoldReason {
+	Loans(pallet_loans::HoldReason),
+}
 
+impl From<pallet_loans::HoldReason> for RuntimeHoldReason {
+	fn from(reason: pallet_loans::HoldReason) -> Self {
+		RuntimeHoldReason::Loans(reason)
+	}
+}
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -43,6 +56,7 @@ construct_runtime!(
 	pub enum Test
 	{
 		System: frame_system,
+		Loans: pallet_loans,
 		CDPEngine: crate,
 		Balances: pallet_balances,
 	}
@@ -119,7 +133,7 @@ impl pallet_balances::Config for Test {
 	type MaxLocks = ();
 	type MaxReserves = ();
 	type ReserveIdentifier = [u8; 8];
-	type RuntimeHoldReason = ();
+	type RuntimeHoldReason = RuntimeHoldReason;
 	type RuntimeFreezeReason = ();
 	type FreezeIdentifier = ();
 	type MaxFreezes = ();
@@ -133,9 +147,58 @@ parameter_types! {
 	pub const DefaultDebitExchangeRate: ExchangeRate = ExchangeRate::from_inner(1_000_000_000_000_000_000);
 	pub const DefaultLiquidationPenalty: Rate = Rate::from_inner(1_050_000_000_000_000_000);
 	pub const MinimumCollateralAmount: u128 = 100;
-	pub const GetNativeCurrencyId: u32 = 1;
-	pub const GetStableCurrencyId: u32 = 2;
+	pub const GetNativeCurrencyId: CurrencyId = 1;
+	pub const GetStableCurrencyId: CurrencyId = 2;
 	pub const MaxSwapSlippageCompareToOracle: Ratio = Ratio::from_rational(10, 100);
+}
+
+pub struct MockRiskManager;
+impl RiskManager<u64, CurrencyId, Balance, Balance> for MockRiskManager {
+	fn get_debit_value(_currency_id: CurrencyId, debit_balance: Balance) -> Balance {
+		debit_balance
+	}
+
+	fn check_position_valid(
+		_currency_id: CurrencyId,
+		_collateral_balance: Balance,
+		_debit_balance: Balance,
+		_check_required_ratio: bool,
+	) -> DispatchResult {
+		Ok(())
+	}
+
+	fn check_debit_cap(_currency_id: CurrencyId, _total_debit_balance: Balance) -> DispatchResult {
+		Ok(())
+	}
+}
+
+pub struct MockLiquidationStrategy;
+impl LiquidationTarget<u64, CurrencyId, Balance> for MockLiquidationStrategy {
+	fn liquidate(
+		_who: &u64,
+		_currency_id: CurrencyId,
+		_collateral_to_sell: Balance,
+		_debit_to_cover: Balance,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((Zero::zero(), Zero::zero()))
+	}
+}
+
+impl pallet_loans::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type Currency = Balances;
+	type RuntimeHoldReason = RuntimeHoldReason;
+	type CurrencyId = CurrencyId;
+	type RiskManager = MockRiskManager;
+	type CDPTreasury = MockCDPTreasury;
+	type PalletId = LoansPalletId;
+	type CollateralCurrencyId = GetNativeCurrencyId;
+	type OnUpdateLoan = Nothing<(
+		Self::AccountId,
+		i128,
+		pallet_loans::BalanceOf<Self>,
+	)>;
+	type LiquidationStrategy = MockLiquidationStrategy;
 }
 
 pub struct MockPriceProvider;
@@ -157,15 +220,47 @@ impl EmergencyShutdown for MockEmergencyShutdown {
 }
 
 pub struct MockDEXManager;
-impl<AccountId, CurrencyId, Balance> DEXManager<AccountId, CurrencyId, Balance> for MockDEXManager
+impl<AccountId, Balance, CurrencyId> DEXManager<AccountId, Balance, CurrencyId> for MockDEXManager
 where
-	Balance: From<u128>,
+	Balance: From<u128> + Copy,
 {
+	fn get_liquidity_pool(
+		_currency_id_a: CurrencyId,
+		_currency_id_b: CurrencyId,
+	) -> (Balance, Balance) {
+		(Balance::from(1u128), Balance::from(1u128))
+	}
+
 	fn get_liquidity_token_address(
 		_currency_id_a: CurrencyId,
 		_currency_id_b: CurrencyId,
-	) -> Result<AccountId, DispatchError> {
-		unimplemented!()
+	) -> Option<sp_core::H160> {
+		None
+	}
+
+	fn get_swap_amount(
+		_path: &[CurrencyId],
+		_limit: SwapLimit<Balance>,
+	) -> Option<(Balance, Balance)> {
+		let _ = (_path, _limit);
+		Some((Balance::from(1u128), Balance::from(1u128)))
+	}
+
+	fn get_best_price_swap_path(
+		_supply_currency_id: CurrencyId,
+		_target_currency_id: CurrencyId,
+		_limit: SwapLimit<Balance>,
+		_alternative_path_joint_list: Vec<Vec<CurrencyId>>,
+	) -> Option<(Vec<CurrencyId>, Balance, Balance)> {
+		Some((Vec::new(), Balance::from(1u128), Balance::from(1u128)))
+	}
+
+	fn swap_with_specific_path(
+		_who: &AccountId,
+		_path: &[CurrencyId],
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((Balance::from(1u128), Balance::from(1u128)))
 	}
 
 	fn add_liquidity(
@@ -174,78 +269,65 @@ where
 		_currency_id_b: CurrencyId,
 		_max_amount_a: Balance,
 		_max_amount_b: Balance,
-		_min_share_amount: Balance,
-		_receiver: &AccountId,
-	) -> Result<Balance, DispatchError> {
-		unimplemented!()
+		_min_share_increment: Balance,
+		_stake_increment_share: bool,
+	) -> Result<(Balance, Balance, Balance), DispatchError> {
+		Ok((Balance::from(0u128), Balance::from(0u128), Balance::from(0u128)))
 	}
 
 	fn remove_liquidity(
 		_who: &AccountId,
 		_currency_id_a: CurrencyId,
 		_currency_id_b: CurrencyId,
-		_remove_amount: Balance,
-		_min_amount_a: Balance,
-		_min_amount_b: Balance,
-		_withdraw_receiver: &AccountId,
+		_remove_share: Balance,
+		_min_withdrawn_a: Balance,
+		_min_withdrawn_b: Balance,
+		_by_unstake: bool,
 	) -> Result<(Balance, Balance), DispatchError> {
-		unimplemented!()
-	}
-
-	fn get_liquidity_pool(
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> Option<(Balance, Balance)> {
-		Some((1000000000000000000u128.into(), 1000000000000000000u128.into()))
-	}
-
-	fn get_swap_amount(
-		_supply_amount: Balance,
-		_path: &[CurrencyId],
-	) -> Result<Balance, DispatchError> {
-		unimplemented!()
-	}
-
-	fn get_best_price_swap_path(
-		_amount: Balance,
-		_path: Vec<CurrencyId>,
-	) -> Result<Vec<CurrencyId>, DispatchError> {
-		unimplemented!()
-	}
-
-	fn swap_with_specific_path(
-		_who: &AccountId,
-		_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<Balance, DispatchError> {
-		unimplemented!()
+		Ok((Balance::from(0u128), Balance::from(0u128)))
 	}
 }
 
-impl<AccountId, CurrencyId, Balance> Swap<AccountId, CurrencyId, Balance> for MockDEXManager where Balance: From<u128> + Into<u128> {
-    fn get_swap_amount(
-        _supply_amount: Balance,
-        _path: &[CurrencyId],
-    ) -> Result<Balance, DispatchError> {
-        unimplemented!()
-    }
+impl<AccountId, Balance, CurrencyId> Swap<AccountId, Balance, CurrencyId> for MockDEXManager
+where
+	Balance: From<u128> + Copy,
+	CurrencyId: Clone,
+{
+	fn get_swap_amount(
+		supply_currency_id: CurrencyId,
+		target_currency_id: CurrencyId,
+		limit: SwapLimit<Balance>,
+	) -> Option<(Balance, Balance)> {
+		let _ = (supply_currency_id, target_currency_id, limit);
+		Some((Balance::from(1u128), Balance::from(1u128)))
+	}
 
-    fn swap_by_path(
-        _who: &AccountId,
-        _path: &[CurrencyId],
-        _limit: SwapLimit<Balance>,
-    ) -> Result<Balance, DispatchError> {
-        unimplemented!()
-    }
+	fn swap(
+		_who: &AccountId,
+		_supply_currency_id: CurrencyId,
+		_target_currency_id: CurrencyId,
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((Balance::from(1u128), Balance::from(1u128)))
+	}
 
-    fn swap_by_aggregated_path(
-        _who: &AccountId,
-        _paths: &[&[CurrencyId]],
-        _swap_limits: &[SwapLimit<Balance>],
-        _total_limit: SwapLimit<Balance>,
-    ) -> Result<Balance, DispatchError> {
-        unimplemented!()
-    }
+	fn swap_by_path(
+		_who: &AccountId,
+		swap_path: &[CurrencyId],
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		let _ = (swap_path, _limit);
+		Ok((Balance::from(1u128), Balance::from(1u128)))
+	}
+
+	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
+		_who: &AccountId,
+		swap_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		let _ = (swap_path, _limit);
+		Ok((Balance::from(1u128), Balance::from(1u128)))
+	}
 }
 
 impl Config for Test {
@@ -284,7 +366,7 @@ impl<AccountId: Clone> CDPTreasuryT<AccountId> for MockCDPTreasury {
 	type Balance = Balance;
 
 	fn account_id() -> AccountId {
-		unimplemented!()
+		Default::default()
 	}
 
 	fn get_debit_pool() -> Self::Balance {
@@ -313,7 +395,6 @@ impl<AccountId: Clone> CDPTreasuryT<AccountId> for MockCDPTreasury {
 
 	fn deposit_collateral(
 		_from: &AccountId,
-		_collateral_id: Self::CurrencyId,
 		_amount: Self::Balance,
 	) -> DispatchResult {
 		Ok(())
@@ -329,7 +410,6 @@ impl<AccountId: Clone> CDPTreasuryT<AccountId> for MockCDPTreasury {
 
 	fn withdraw_collateral(
 		_to: &AccountId,
-		_collateral_id: Self::CurrencyId,
 		_amount: Self::Balance,
 	) -> DispatchResult {
 		Ok(())
@@ -354,7 +434,6 @@ impl<AccountId: Clone> CDPTreasuryT<AccountId> for MockCDPTreasury {
 
 impl<AccountId: Clone> CDPTreasuryExtended<AccountId> for MockCDPTreasury {
 	fn swap_collateral_to_stable(
-		_collateral_id: Self::CurrencyId,
 		_swap_limit: SwapLimit<Self::Balance>,
 		_collateral_in_auction: bool,
 	) -> Result<(Self::Balance, Self::Balance), DispatchError> {
@@ -362,12 +441,12 @@ impl<AccountId: Clone> CDPTreasuryExtended<AccountId> for MockCDPTreasury {
 	}
 
 	fn create_collateral_auctions(
-		_collateral_id: Self::CurrencyId,
 		_amount: Self::Balance,
-		_target: Self::Balance,
+		target: Self::Balance,
 		_refund_receiver: AccountId,
-		_split: bool,
+		split: bool,
 	) -> Result<u32, DispatchError> {
+		let _ = (amount, target, split);
 		Ok(0)
 	}
 
@@ -392,6 +471,10 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	}
 	.assimilate_storage(&mut storage)
 	.unwrap();
+
+	pallet_loans::TotalPositions::<Test>::put(Position::default());
+	pallet_loans::TotalDebitByStabilityFee::<Test>::remove_all(None);
+	pallet_loans::Positions::<Test>::remove_all(None);
 
 	storage.into()
 }

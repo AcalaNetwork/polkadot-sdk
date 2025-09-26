@@ -55,10 +55,13 @@ use frame_support::{
 	pallet_prelude::*,
 	traits::{Get, NamedReservableCurrency},
 };
-use sp_core::U256;
 use frame_system::pallet_prelude::*;
 use pallet_loans::{Amount, BalanceOf};
-use pallet_traits::{EmergencyShutdown, ExchangeRate, HonzonManager, Position, PriceProvider, Ratio};
+use pallet_traits::Rate;
+use pallet_traits::{
+	EmergencyShutdown, ExchangeRate, HonzonManager, Position, PriceProvider, Ratio,
+};
+use sp_core::U256;
 use sp_runtime::{
 	traits::{AtLeast32BitUnsigned, MaybeSerializeDeserialize, StaticLookup, Zero},
 	ArithmeticError, DispatchResult,
@@ -81,9 +84,7 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config:
-		frame_system::Config
-		+ pallet_cdp_engine::Config
-		+ pallet_loans::Config
+		frame_system::Config + pallet_cdp_engine::Config + pallet_loans::Config
 	{
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 
@@ -124,18 +125,14 @@ pub mod pallet {
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
-	pub enum Event<T: Config>
-	{
-
-	}
+	pub enum Event<T: Config> {}
 
 	#[pallet::pallet]
 	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
 
 	#[pallet::hooks]
-	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T>
-	{}
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T>
@@ -249,11 +246,11 @@ pub mod pallet {
 	}
 }
 
-	impl<T: Config> Pallet<T>
-	where
-		BalanceOf<T>: TryFrom<i128>,
-		i128: TryFrom<BalanceOf<T>>,
-	{
+impl<T: Config> Pallet<T>
+where
+	BalanceOf<T>: TryFrom<i128>,
+	i128: TryFrom<BalanceOf<T>>,
+{
 	fn do_adjust_loan(
 		who: &<T as frame_system::Config>::AccountId,
 		collateral_adjustment: Amount,
@@ -263,7 +260,17 @@ pub mod pallet {
 		if !debit_adjustment.is_zero() {
 			ensure!(!T::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
 		}
-		<pallet_loans::Pallet<T>>::adjust_position(who, collateral_adjustment, debit_adjustment)?;
+		let maybe_new_stability_fee = if debit_adjustment.is_positive() {
+			Some(<pallet_cdp_engine::Pallet<T>>::get_interest_rate_per_sec()?)
+		} else {
+			None
+		};
+		<pallet_loans::Pallet<T>>::adjust_position(
+			who,
+			collateral_adjustment,
+			debit_adjustment,
+			maybe_new_stability_fee,
+		)?;
 		Ok(())
 	}
 
@@ -277,7 +284,12 @@ pub mod pallet {
 	}
 }
 
-impl<T: Config> HonzonManager<<T as frame_system::Config>::AccountId, Amount, <T as pallet_cdp_engine::Config>::Balance> for Pallet<T>
+impl<T: Config>
+	HonzonManager<
+		<T as frame_system::Config>::AccountId,
+		Amount,
+		<T as pallet_cdp_engine::Config>::Balance,
+	> for Pallet<T>
 where
 	<T as pallet_cdp_engine::Config>::Balance: From<BalanceOf<T>>,
 	U256: From<<T as pallet_cdp_engine::Config>::Balance>,
@@ -292,15 +304,22 @@ where
 		Self::do_adjust_loan(who, collateral_adjustment, debit_adjustment)
 	}
 
-	fn close_loan_by_dex(who: <T as frame_system::Config>::AccountId, max_collateral_amount: <T as pallet_cdp_engine::Config>::Balance) -> DispatchResult {
+	fn close_loan_by_dex(
+		who: <T as frame_system::Config>::AccountId,
+		max_collateral_amount: <T as pallet_cdp_engine::Config>::Balance,
+	) -> DispatchResult {
 		Self::do_close_loan_by_dex(who, max_collateral_amount)
 	}
 
-	fn get_position(who: &<T as frame_system::Config>::AccountId) -> pallet_traits::Position<<T as pallet_cdp_engine::Config>::Balance> {
-		let position: pallet_traits::Position<BalanceOf<T>> = <pallet_loans::Pallet<T>>::positions(who);
+	fn get_position(
+		who: &<T as frame_system::Config>::AccountId,
+	) -> pallet_traits::Position<<T as pallet_cdp_engine::Config>::Balance> {
+		let position: pallet_traits::Position<BalanceOf<T>> =
+			<pallet_loans::Pallet<T>>::positions(who);
 		pallet_traits::Position {
 			collateral: position.collateral.into(),
 			debit: position.debit.into(),
+			stability_fee: position.stability_fee,
 		}
 	}
 
@@ -317,11 +336,20 @@ where
 
 	fn get_current_collateral_ratio(who: &<T as frame_system::Config>::AccountId) -> Option<Ratio> {
 		let currency_id = <T as crate::Config>::CollateralCurrencyId::get();
-		let position: pallet_traits::Position<BalanceOf<T>> = <pallet_loans::Pallet<T>>::positions(who);
+		let position: pallet_traits::Position<BalanceOf<T>> =
+			<pallet_loans::Pallet<T>>::positions(who);
 		let stable_currency_id = T::GetStableCurrencyId::get();
+		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
 
 		T::PriceSource::get_relative_price(currency_id, stable_currency_id).map(|price| {
-			<pallet_cdp_engine::Pallet<T>>::calculate_collateral_ratio(position.collateral.into(), position.debit.into())
+			let exchange_rate =
+				<pallet_cdp_engine::Pallet<T>>::get_debit_exchange_rate(stability_fee);
+			<pallet_cdp_engine::Pallet<T>>::calculate_collateral_ratio(
+				position.collateral.into(),
+				position.debit.into(),
+				price,
+				exchange_rate,
+			)
 		})
 	}
 

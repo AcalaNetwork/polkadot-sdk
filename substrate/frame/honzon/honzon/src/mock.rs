@@ -33,8 +33,8 @@ use frame_support::{
 use sp_runtime::RuntimeDebug;
 use frame_system::{EnsureRoot, EnsureSignedBy};
 use pallet_traits::{
-	AuctionManager, CDPTreasury as CDPTreasuryTrait, EmergencyShutdown, LockablePrice,
-	PriceProvider, RiskManager, Swap, SwapLimit, AggregatedSwapPath,
+	AggregatedSwapPath, AuctionManager, CDPTreasury as CDPTreasuryTrait, EmergencyShutdown,
+	LiquidationTarget, LockablePrice, PriceProvider, RiskManager, Swap, SwapLimit,
 };
 use scale_info::TypeInfo;
 use sp_core::H256;
@@ -199,15 +199,33 @@ parameter_types! {
 	pub const GetNativeCurrencyId: CurrencyId = NATIVE;
 }
 
+pub struct MockLiquidationStrategy;
+impl LiquidationTarget<AccountId, CurrencyId, Balance> for MockLiquidationStrategy {
+	fn liquidate(
+		_who: &AccountId,
+		_currency: CurrencyId,
+		_collateral_to_sell: Balance,
+		_debit_to_cover: Balance,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((0, 0))
+	}
+}
+
 impl pallet_loans::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Currency = PalletBalances;
+	type RuntimeHoldReason = RuntimeHoldReason;
 	type CurrencyId = CurrencyId;
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = CDPTreasury;
 	type PalletId = LoansPalletId;
 	type CollateralCurrencyId = GetNativeCurrencyId;
-	type OnUpdateLoan = ();
+	type OnUpdateLoan = Nothing<(
+		Self::AccountId,
+		Amount,
+		pallet_loans::BalanceOf<Self>,
+	)>;
+	type LiquidationStrategy = MockLiquidationStrategy;
 }
 
 pub struct MockPriceProvider;
