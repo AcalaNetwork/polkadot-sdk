@@ -22,33 +22,21 @@ use super::*;
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{ConstU128, ConstU32, ConstU64, Everything, Nothing, UnixTime},
+	traits::{ConstU128, ConstU32, ConstU64, Nothing, UnixTime},
 };
-use pallet_loans::Pallet as Loans;
 use pallet_traits::{
 	AggregatedSwapPath, CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager,
-	EmergencyShutdown, ExchangeRate, FractionalRate, GetByKey, LiquidateCollateral,
-	LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager, Swap, SwapLimit,
+	EmergencyShutdown, ExchangeRate, LiquidationTarget, Position, Price, PriceProvider, Rate,
+	Ratio, RiskManager, Swap, SwapLimit,
 };
 use scale_info::TypeInfo;
 use sp_runtime::{
-	traits::{BlakeTwo256, IdentityLookup, One, Zero},
-	BuildStorage, DispatchError, DispatchResult, Perbill, RuntimeDebug,
+	traits::{BlakeTwo256, IdentityLookup, Zero},
+	BuildStorage, DispatchError, DispatchResult, RuntimeDebug,
 };
-use sp_std::{cell::RefCell, collections::btree_map::BTreeMap, marker::PhantomData};
+use sp_std::marker::PhantomData;
 
 pub type CurrencyId = u32;
-#[derive(Clone, Copy, Encode, Decode, Eq, PartialEq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
-pub enum RuntimeHoldReason {
-	Loans(pallet_loans::HoldReason),
-}
-
-impl From<pallet_loans::HoldReason> for RuntimeHoldReason {
-	fn from(reason: pallet_loans::HoldReason) -> Self {
-		RuntimeHoldReason::Loans(reason)
-	}
-}
-
 type Block = frame_system::mocking::MockBlock<Test>;
 
 // Configure a mock runtime to test the pallet.
@@ -99,7 +87,9 @@ impl<LocalCall> frame_system::offchain::CreateSignedTransaction<LocalCall> for T
 where
 	RuntimeCall: From<LocalCall>,
 {
-	fn create_signed_transaction<C: frame_system::offchain::AppCrypto<Self::Public, Self::Signature>>(
+	fn create_signed_transaction<
+		C: frame_system::offchain::AppCrypto<Self::Public, Self::Signature>,
+	>(
 		_call: RuntimeCall,
 		_public: Self::Public,
 		_account: Self::AccountId,
@@ -133,14 +123,12 @@ impl pallet_balances::Config for Test {
 	type MaxLocks = ();
 	type MaxReserves = ();
 	type ReserveIdentifier = [u8; 8];
-	type RuntimeHoldReason = RuntimeHoldReason;
+	type RuntimeHoldReason = pallet_loans::HoldReason;
 	type RuntimeFreezeReason = ();
 	type FreezeIdentifier = ();
 	type MaxFreezes = ();
 	type DoneSlashHandler = ();
 }
-
-
 
 parameter_types! {
 	pub const LoansPalletId: PalletId = PalletId(*b"aca/loan");
@@ -185,19 +173,14 @@ impl LiquidationTarget<u64, CurrencyId, Balance> for MockLiquidationStrategy {
 }
 
 impl pallet_loans::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
 	type Currency = Balances;
-	type RuntimeHoldReason = RuntimeHoldReason;
+	type RuntimeHoldReason = pallet_loans::HoldReason;
 	type CurrencyId = CurrencyId;
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = MockCDPTreasury;
 	type PalletId = LoansPalletId;
 	type CollateralCurrencyId = GetNativeCurrencyId;
-	type OnUpdateLoan = Nothing<(
-		Self::AccountId,
-		i128,
-		pallet_loans::BalanceOf<Self>,
-	)>;
+	type OnUpdateLoan = Nothing<(Self::AccountId, i128, pallet_loans::BalanceOf<Self>)>;
 	type LiquidationStrategy = MockLiquidationStrategy;
 }
 
@@ -393,10 +376,7 @@ impl<AccountId: Clone> CDPTreasuryT<AccountId> for MockCDPTreasury {
 		Ok(())
 	}
 
-	fn deposit_collateral(
-		_from: &AccountId,
-		_amount: Self::Balance,
-	) -> DispatchResult {
+	fn deposit_collateral(_from: &AccountId, _amount: Self::Balance) -> DispatchResult {
 		Ok(())
 	}
 
@@ -408,10 +388,7 @@ impl<AccountId: Clone> CDPTreasuryT<AccountId> for MockCDPTreasury {
 		Ok(())
 	}
 
-	fn withdraw_collateral(
-		_to: &AccountId,
-		_amount: Self::Balance,
-	) -> DispatchResult {
+	fn withdraw_collateral(_to: &AccountId, _amount: Self::Balance) -> DispatchResult {
 		Ok(())
 	}
 
@@ -442,11 +419,10 @@ impl<AccountId: Clone> CDPTreasuryExtended<AccountId> for MockCDPTreasury {
 
 	fn create_collateral_auctions(
 		_amount: Self::Balance,
-		target: Self::Balance,
+		_target: Self::Balance,
 		_refund_receiver: AccountId,
-		split: bool,
+		_split: bool,
 	) -> Result<u32, DispatchError> {
-		let _ = (amount, target, split);
 		Ok(0)
 	}
 

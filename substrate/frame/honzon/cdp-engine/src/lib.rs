@@ -28,27 +28,25 @@
 //!
 //! ### Key Concepts
 //!
-//! *   **Collateralized Debt Position (CDP):** A CDP is a loan where a user locks up collateral
-//!     (e.g., DOT) to borrow a stablecoin (e.g., aUSD).
-//! *   **Liquidation:** If the value of the collateral drops and the collateral-to-debt ratio
-//!     falls below a certain threshold (the liquidation ratio), the CDP is considered unsafe
-//!     and can be liquidated. During liquidation, the collateral is sold to cover the debt,
-//!     plus a penalty.
-//! *   **Settlement:** In the case of a global shutdown of the system, this pallet handles the
-//!     settlement of all outstanding CDPs.
-//! *   **Risk Management:** The pallet includes several parameters to manage the risk of the
-//!     system, such as liquidation ratios, liquidation penalties, and debt ceilings for each
-//!     collateral type.
+//! * **Collateralized Debt Position (CDP):** A CDP is a loan where a user locks up collateral
+//!   (e.g., DOT) to borrow a stablecoin (e.g., aUSD).
+//! * **Liquidation:** If the value of the collateral drops and the collateral-to-debt ratio falls
+//!   below a certain threshold (the liquidation ratio), the CDP is considered unsafe and can be
+//!   liquidated. During liquidation, the collateral is sold to cover the debt, plus a penalty.
+//! * **Settlement:** In the case of a global shutdown of the system, this pallet handles the
+//!   settlement of all outstanding CDPs.
+//! * **Risk Management:** The pallet includes several parameters to manage the risk of the system,
+//!   such as liquidation ratios, liquidation penalties, and debt ceilings for each collateral type.
 //!
 //! ## Interface
 //!
 //! ### Dispatchable Functions
 //!
-//! *   `liquidate` - Liquidates an unsafe CDP. This is an unsigned extrinsic that can be called
-//!     by anyone, and is typically triggered by an offchain worker.
-//! *   `settle` - Settles a CDP after a global shutdown. This is also an unsigned extrinsic.
-//! *   `set_collateral_params` - Updates the risk management parameters for a collateral type.
-//!     This is a privileged extrinsic that can only be called by a specified origin.
+//! * `liquidate` - Liquidates an unsafe CDP. This is an unsigned extrinsic that can be called by
+//!   anyone, and is typically triggered by an offchain worker.
+//! * `settle` - Settles a CDP after a global shutdown. This is also an unsigned extrinsic.
+//! * `set_collateral_params` - Updates the risk management parameters for a collateral type. This
+//!   is a privileged extrinsic that can only be called by a specified origin.
 //!
 //! ### Offchain Worker
 //!
@@ -62,8 +60,11 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use codec::MaxEncodedLen;
-use frame_support::traits::fungibles;
-use frame_support::{pallet_prelude::*, traits::UnixTime, transactional, PalletId};
+use frame_support::{
+	pallet_prelude::*,
+	traits::{fungibles, UnixTime},
+	transactional, PalletId,
+};
 use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
 use pallet_loans::BalanceOf;
 use pallet_traits::{
@@ -78,7 +79,9 @@ use sp_runtime::{
 		storage_lock::{StorageLock, Time},
 		Duration,
 	},
-	traits::{AccountIdConversion, Bounded, One, Saturating, StaticLookup, UniqueSaturatedInto, Zero},
+	traits::{
+		AccountIdConversion, Bounded, One, Saturating, StaticLookup, UniqueSaturatedInto, Zero,
+	},
 	transaction_validity::{
 		InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
 		ValidTransaction,
@@ -468,9 +471,8 @@ pub mod pallet {
 			let mut collateral_params = Self::collateral_params();
 			if let Change::NewValue(maybe_rate) = interest_rate_per_sec {
 				match (collateral_params.interest_rate_per_sec.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) => {
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
-					},
+					(Some(existing), Some(rate)) =>
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -490,9 +492,8 @@ pub mod pallet {
 			}
 			if let Change::NewValue(maybe_rate) = liquidation_penalty {
 				match (collateral_params.liquidation_penalty.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) => {
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
-					},
+					(Some(existing), Some(rate)) =>
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -692,8 +693,20 @@ impl<T: Config> Pallet<T> {
 		#[allow(clippy::while_let_on_iterator)]
 		while let Some((who, Position { collateral, debit, stability_fee })) = map_iterator.next() {
 			let stability_fee = Rate::from_inner(stability_fee.into_inner());
-			if !is_shutdown
-				&& matches!(
+			let stability_fee = match Self::get_effective_stability_fee(stability_fee) {
+				Ok(fee) => fee,
+				Err(e) => {
+					log::debug!(
+						target: "cdp-engine offchain worker",
+						"skip position {:?} due to stability fee error: {:?}",
+						who,
+						e
+					);
+					continue;
+				},
+			};
+			if !is_shutdown &&
+				matches!(
 					Self::check_cdp_status(collateral, debit, stability_fee),
 					CDPStatus::Unsafe
 				) {
@@ -749,6 +762,10 @@ impl<T: Config> Pallet<T> {
 		if let Some(feed_price) =
 			T::PriceSource::get_relative_price(currency_id, stable_currency_id)
 		{
+			let stability_fee = match Self::get_effective_stability_fee(stability_fee) {
+				Ok(fee) => fee,
+				Err(e) => return CDPStatus::ChecksFailed(e),
+			};
 			let exchange_rate = Self::get_debit_exchange_rate(stability_fee);
 			let collateral_ratio = Self::calculate_collateral_ratio(
 				collateral_amount,
@@ -757,13 +774,12 @@ impl<T: Config> Pallet<T> {
 				exchange_rate,
 			);
 			match Self::get_liquidation_ratio() {
-				Ok(liquidation_ratio) => {
+				Ok(liquidation_ratio) =>
 					if collateral_ratio < liquidation_ratio {
 						CDPStatus::Unsafe
 					} else {
 						CDPStatus::Safe
-					}
-				},
+					},
 				Err(e) => CDPStatus::ChecksFailed(e),
 			}
 		} else {
@@ -787,6 +803,11 @@ impl<T: Config> Pallet<T> {
 			.interest_rate_per_sec
 			.map(|v| v.into_inner())
 			.ok_or_else(|| Error::<T>::InvalidRate.into())
+	}
+
+	pub fn get_effective_stability_fee(stability_fee: Rate) -> Result<Rate, DispatchError> {
+		let current_stability_fee = Self::get_interest_rate_per_sec()?;
+		Ok(sp_std::cmp::min(stability_fee, current_stability_fee))
 	}
 
 	pub fn compound_interest_rate(rate_per_sec: Rate, secs: u64) -> Rate {
@@ -892,12 +913,13 @@ impl<T: Config> Pallet<T> {
 		let debit_value_adjustment_abs =
 			<LoansOf<T>>::balance_try_from_amount_abs(debit_value_adjustment)?;
 		let Position { debit, stability_fee, .. } = <LoansOf<T>>::positions(who);
-		let current_stability_fee = Rate::from_inner(stability_fee.into_inner());
+		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
+		let effective_stability_fee = Self::get_effective_stability_fee(position_stability_fee)?;
 
 		if debit_value_adjustment.is_negative() {
 			let debit_adjustment_abs = Self::try_convert_to_debit_balance(
 				debit_value_adjustment_abs,
-				current_stability_fee,
+				effective_stability_fee,
 			)
 			.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
 			let actual_adjustment_abs = debit.min(debit_adjustment_abs);
@@ -963,12 +985,12 @@ impl<T: Config> Pallet<T> {
 			Some(new_stability_fee),
 		)?;
 
-			let Position { collateral, debit, .. } = <LoansOf<T>>::positions(who);
-			// check the CDP if is still at valid risk
-			Self::check_position_valid(currency_id, collateral, debit, false)?;
+		let Position { collateral, debit, .. } = <LoansOf<T>>::positions(who);
+		// check the CDP if is still at valid risk
+		Self::check_position_valid(currency_id, collateral, debit, false)?;
 		// debit cap check due to new issued stable coin
-			let Position { debit: total_debit, .. } = <LoansOf<T>>::total_positions();
-			Self::check_debit_cap(currency_id, total_debit)?;
+		let Position { debit: total_debit, .. } = <LoansOf<T>>::total_positions();
+		Self::check_debit_cap(currency_id, total_debit)?;
 		Ok(())
 	}
 
@@ -983,8 +1005,9 @@ impl<T: Config> Pallet<T> {
 		let currency_id = T::GetNativeCurrencyId::get();
 		let loans_module_account = <LoansOf<T>>::account_id();
 		let stable_currency_id = T::GetStableCurrencyId::get();
-			let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(who);
+		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(who);
 		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
+		let effective_stability_fee = Self::get_effective_stability_fee(position_stability_fee)?;
 
 		// ensure collateral of CDP is enough
 		ensure!(decrease_collateral <= collateral, Error::<T>::CollateralNotEnough);
@@ -1000,9 +1023,9 @@ impl<T: Config> Pallet<T> {
 		// update CDP state
 		let collateral_adjustment =
 			<LoansOf<T>>::amount_try_from_balance(decrease_collateral)?.saturating_neg();
-		let previous_debit_value = Self::convert_to_debit_value(debit, position_stability_fee);
-		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount
-			>= previous_debit_value
+		let previous_debit_value = Self::convert_to_debit_value(debit, effective_stability_fee);
+		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount >=
+			previous_debit_value
 		{
 			// refund extra stable coin to the CDP owner
 			<T as Config>::Currency::transfer(
@@ -1017,7 +1040,7 @@ impl<T: Config> Pallet<T> {
 		} else {
 			(
 				actual_stable_amount,
-				Self::try_convert_to_debit_balance(actual_stable_amount, position_stability_fee)
+				Self::try_convert_to_debit_balance(actual_stable_amount, effective_stability_fee)
 					.ok_or(Error::<T>::ConvertDebitBalanceFailed)?,
 			)
 		};
@@ -1030,19 +1053,18 @@ impl<T: Config> Pallet<T> {
 		<T as Config>::CDPTreasury::burn_debit(&loans_module_account, decrease_debit_value)?;
 
 		// check the CDP if is still at valid risk.
-				let Position {
-					collateral: updated_collateral,
-					debit: updated_debit,
-					..
-				} = <LoansOf<T>>::positions(who);
-			Self::check_position_valid(currency_id, updated_collateral, updated_debit, false)?;
+		let Position { collateral: updated_collateral, debit: updated_debit, .. } =
+			<LoansOf<T>>::positions(who);
+		Self::check_position_valid(currency_id, updated_collateral, updated_debit, false)?;
 		Ok(())
 	}
 
 	// settle cdp has debit when emergency shutdown
 	pub fn settle_cdp_has_debit(who: T::AccountId) -> DispatchResult {
+		let currency_id = T::GetNativeCurrencyId::get();
 		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
 		let stability_fee = Rate::from_inner(stability_fee.into_inner());
+		let stability_fee = Self::get_effective_stability_fee(stability_fee)?;
 		ensure!(!debit.is_zero(), Error::<T>::NoDebitValue);
 
 		// confiscate collateral in cdp to cdp treasury
@@ -1075,6 +1097,7 @@ impl<T: Config> Pallet<T> {
 			matches!(Self::check_cdp_status(collateral, debit, stability_fee), CDPStatus::Safe),
 			Error::<T>::MustBeSafe
 		);
+		let stability_fee = Self::get_effective_stability_fee(stability_fee)?;
 
 		// confiscate all collateral and debit of unsafe cdp to cdp treasury
 		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit)?;
@@ -1089,10 +1112,10 @@ impl<T: Config> Pallet<T> {
 		)?;
 
 		// refund remain collateral to CDP owner
-	let refund_collateral_amount = collateral
-		.checked_sub(&actual_supply_collateral)
-		.expect("swap success means collateral >= actual_supply_collateral; qed");
-	<T as Config>::CDPTreasury::withdraw_collateral(&who, refund_collateral_amount)?;
+		let refund_collateral_amount = collateral
+			.checked_sub(&actual_supply_collateral)
+			.expect("swap success means collateral >= actual_supply_collateral; qed");
+		<T as Config>::CDPTreasury::withdraw_collateral(&who, refund_collateral_amount)?;
 
 		Self::deposit_event(Event::CloseCDPInDebitByDEX {
 			owner: who,
@@ -1114,6 +1137,7 @@ impl<T: Config> Pallet<T> {
 			matches!(Self::check_cdp_status(collateral, debit, stability_fee), CDPStatus::Unsafe),
 			Error::<T>::MustBeUnsafe
 		);
+		let stability_fee = Self::get_effective_stability_fee(stability_fee)?;
 
 		// confiscate all collateral and debit of unsafe cdp to cdp treasury
 		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit)?;

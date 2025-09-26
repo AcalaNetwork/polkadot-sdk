@@ -21,15 +21,23 @@
 #![cfg(test)]
 
 use super::pallet::Error;
-use crate::mock::{RuntimeEvent, ALICE, BOB, CAROL, NATIVE, STABLE, ExtBuilder, AuctionManagerModule, AuctionModule, System, CDPTreasuryModule, Assets, Balance, RuntimeOrigin, mock_shutdown, MockPriceSource, TreasuryAccount, Runtime, BlockNumber, AuctionId};
-use frame_support::{assert_noop, assert_ok, traits::{OnInitialize, OriginTrait}};
-use pallet_traits::{AuctionManager, AuctionHandler, Rate, CDPTreasury};
-use sp_runtime::traits::{BadOrigin, One};
-use sp_runtime::{FixedPointNumber};
-use crate::mock::AccountId;
-use crate::pallet::Event;
-use crate::mock::CurrencyId;
-use crate::pallet::{CollateralAuctions, TotalCollateralInAuction, TotalTargetInAuction};
+use crate::{
+	mock::{
+		mock_shutdown, AccountId, Assets, AuctionId, AuctionManagerModule, AuctionModule, Balance,
+		BlockNumber, CDPTreasuryModule, CurrencyId, ExtBuilder, MockPriceSource, Runtime,
+		RuntimeEvent, RuntimeOrigin, System, TreasuryAccount, ALICE, BOB, CAROL, NATIVE, STABLE,
+	},
+	pallet::{CollateralAuctions, Event, TotalCollateralInAuction, TotalTargetInAuction},
+};
+use frame_support::{
+	assert_noop, assert_ok,
+	traits::{OnInitialize, OriginTrait},
+};
+use pallet_traits::{AuctionHandler, AuctionManager, CDPTreasury, Rate};
+use sp_runtime::{
+	traits::{BadOrigin, One},
+	FixedPointNumber,
+};
 
 // #[test]
 // fn get_auction_time_to_close_work() {
@@ -43,36 +51,52 @@ use crate::pallet::{CollateralAuctions, TotalCollateralInAuction, TotalTargetInA
 fn collateral_auction_methods() {
 	ExtBuilder::default().build().execute_with(|| {
 		assert_ok!(<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(
-			&ALICE,
-			NATIVE,
-			10,
-			100,
+			&ALICE, NATIVE, 10, 100,
 		));
 		let auction = AuctionModule::auctions(0).unwrap();
 		assert_eq!(auction.bid, None);
 		assert_eq!(auction.start, 0);
 		assert_eq!(auction.end, None);
-		let collateral_auction_with_positive_target = CollateralAuctions::<Runtime>::get(0).unwrap();
+		let collateral_auction_with_positive_target =
+			CollateralAuctions::<Runtime>::get(0).unwrap();
 		assert!(!collateral_auction_with_positive_target.always_forward());
-		assert!(!collateral_auction_with_positive_target.in_reverse_stage(Rate::from_rational(9, 1)));
-		assert!(collateral_auction_with_positive_target.in_reverse_stage(Rate::from_rational(10, 1)));
-		assert!(collateral_auction_with_positive_target.in_reverse_stage(Rate::from_rational(11, 1)));
-		assert_eq!(collateral_auction_with_positive_target.payment_amount(Rate::from_rational(9, 1)), 90);
-		assert_eq!(collateral_auction_with_positive_target.payment_amount(Rate::from_rational(10, 1)), 100);
-		assert_eq!(collateral_auction_with_positive_target.payment_amount(Rate::from_rational(11, 1)), 100);
+		assert!(
+			!collateral_auction_with_positive_target.in_reverse_stage(Rate::from_rational(9, 1))
+		);
+		assert!(
+			collateral_auction_with_positive_target.in_reverse_stage(Rate::from_rational(10, 1))
+		);
+		assert!(
+			collateral_auction_with_positive_target.in_reverse_stage(Rate::from_rational(11, 1))
+		);
+		assert_eq!(
+			collateral_auction_with_positive_target.payment_amount(Rate::from_rational(9, 1)),
+			90
+		);
+		assert_eq!(
+			collateral_auction_with_positive_target.payment_amount(Rate::from_rational(10, 1)),
+			100
+		);
+		assert_eq!(
+			collateral_auction_with_positive_target.payment_amount(Rate::from_rational(11, 1)),
+			100
+		);
 
 		assert_ok!(<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(
-			&ALICE,
-			NATIVE,
-			10,
-			0,
+			&ALICE, NATIVE, 10, 0,
 		));
 		let collateral_auction_with_zero_target = CollateralAuctions::<Runtime>::get(1).unwrap();
 		assert!(collateral_auction_with_zero_target.always_forward());
 		assert!(!collateral_auction_with_zero_target.in_reverse_stage(Rate::from_rational(0, 1)));
 		assert!(!collateral_auction_with_zero_target.in_reverse_stage(Rate::from_rational(100, 1)));
-		assert_eq!(collateral_auction_with_zero_target.payment_amount(Rate::from_rational(99, 1)), 990);
-		assert_eq!(collateral_auction_with_zero_target.payment_amount(Rate::from_rational(101, 1)), 1010);
+		assert_eq!(
+			collateral_auction_with_zero_target.payment_amount(Rate::from_rational(99, 1)),
+			990
+		);
+		assert_eq!(
+			collateral_auction_with_zero_target.payment_amount(Rate::from_rational(101, 1)),
+			1010
+		);
 	});
 }
 
@@ -82,15 +106,14 @@ fn new_collateral_auction_work() {
 		frame_system::Pallet::<Runtime>::set_block_number(1);
 		let ref_count_0 = frame_system::Pallet::<Runtime>::consumers(&ALICE);
 		assert_noop!(
-			<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(&ALICE, NATIVE, 0, 100),
+			<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(
+				&ALICE, NATIVE, 0, 100
+			),
 			Error::<Runtime>::InvalidAmount,
 		);
 
 		assert_ok!(<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(
-			&ALICE,
-			NATIVE,
-			10,
-			100,
+			&ALICE, NATIVE, 10, 100,
 		));
 		System::assert_last_event(RuntimeEvent::AuctionManagerModule(
 			Event::NewCollateralAuction {
@@ -128,10 +151,7 @@ fn collateral_auction_bid_handler_work() {
 		);
 
 		assert_ok!(<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(
-			&ALICE,
-			NATIVE,
-			10,
-			100,
+			&ALICE, NATIVE, 10, 100,
 		));
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 0);
 		assert_eq!(Assets::balance(STABLE, &BOB), 1000);
@@ -163,10 +183,7 @@ fn bid_when_soft_cap_for_collateral_auction_work() {
 	ExtBuilder::default().build().execute_with(|| {
 		frame_system::Pallet::<Runtime>::set_block_number(1);
 		assert_ok!(<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(
-			&ALICE,
-			NATIVE,
-			10,
-			100,
+			&ALICE, NATIVE, 10, 100,
 		));
 		assert_ok!(AuctionModule::bid(RuntimeOrigin::signed(BOB), 0, 100));
 		assert_eq!(AuctionModule::auctions(0).unwrap().end, Some(101));
@@ -252,14 +269,12 @@ fn always_forward_collateral_auction_dealt() {
 	});
 }
 
-
-
-
-
 #[test]
 fn cancel_collateral_auction_failed() {
 	ExtBuilder::default().build().execute_with(|| {
-		assert_ok!(<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(&ALICE, NATIVE, 10, 100));
+		assert_ok!(<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(
+			&ALICE, NATIVE, 10, 100
+		));
 
 		assert_noop!(
 			<AuctionManagerModule as AuctionManager<AccountId>>::cancel_auction(0),
@@ -280,10 +295,12 @@ fn cancel_collateral_auction_failed() {
 }
 
 #[test]
-	fn cancel_collateral_auction_work() {
+fn cancel_collateral_auction_work() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);
-		assert_ok!(<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(&ALICE, NATIVE, 10, 100));
+		assert_ok!(<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(
+			&ALICE, NATIVE, 10, 100
+		));
 		assert_eq!(TotalCollateralInAuction::<Runtime>::get(), 10);
 		assert_eq!(TotalTargetInAuction::<Runtime>::get(), 100);
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 0);

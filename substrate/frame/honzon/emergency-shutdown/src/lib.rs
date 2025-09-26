@@ -29,20 +29,19 @@
 //!
 //! The emergency shutdown process consists of three main stages:
 //!
-//! 1.  **Shutdown:** Triggered by a privileged origin, this stage freezes the collateral price and
-//!     prevents new operations.
-//! 2.  **Settlement:** All outstanding CDPs are settled, and any ongoing collateral auctions are
-//!     canceled or resolved.
-//! 3.  **Refund:** Once the system is fully settled, stablecoin holders can burn their
-//!     stablecoins to claim a proportional share of the remaining collateral.
+//! 1. **Shutdown:** Triggered by a privileged origin, this stage freezes the collateral price and
+//!    prevents new operations.
+//! 2. **Settlement:** All outstanding CDPs are settled, and any ongoing collateral auctions are
+//!    canceled or resolved.
+//! 3. **Refund:** Once the system is fully settled, stablecoin holders can burn their stablecoins
+//!    to claim a proportional share of the remaining collateral.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::unused_unit)]
 
 use frame_support::pallet_prelude::*;
 use frame_system::{ensure_signed, pallet_prelude::*};
-use pallet_traits::{LockablePrice, Ratio};
-use pallet_traits::{AuctionManager, CDPTreasury, EmergencyShutdown};
+use pallet_traits::{AuctionManager, CDPTreasury, EmergencyShutdown, LockablePrice, Ratio};
 
 use sp_runtime::{traits::Zero, FixedPointNumber};
 use sp_std::prelude::*;
@@ -193,7 +192,8 @@ pub mod pallet {
 			let currency_id = <T as pallet::Config>::CollateralCurrencyId::get();
 			// there's no collateral auction
 			ensure!(
-				<T as Config>::AuctionManagerHandler::get_total_collateral_in_auction(currency_id).is_zero(),
+				<T as Config>::AuctionManagerHandler::get_total_collateral_in_auction(currency_id)
+					.is_zero(),
 				Error::<T>::ExistPotentialSurplus,
 			);
 			// there's on debit in CDP
@@ -232,8 +232,8 @@ pub mod pallet {
 			<T as Config>::CDPTreasury::burn_debit(&who, amount)?;
 
 			// refund collaterals to caller by CDP treasury
-			let refund_amount =
-				refund_ratio.saturating_mul_int(<T as Config>::CDPTreasury::get_total_collaterals());
+			let refund_amount = refund_ratio
+				.saturating_mul_int(<T as Config>::CDPTreasury::get_total_collaterals());
 
 			if !refund_amount.is_zero() {
 				<T as Config>::CDPTreasury::withdraw_collateral(&who, refund_amount)?;

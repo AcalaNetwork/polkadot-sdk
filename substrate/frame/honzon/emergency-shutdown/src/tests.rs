@@ -67,12 +67,10 @@ fn open_collateral_refund_work() {
 			EmergencyShutdownModule::open_collateral_refund(RuntimeOrigin::signed(5)),
 			BadOrigin,
 		);
-		assert_ok!(EmergencyShutdownModule::open_collateral_refund(RuntimeOrigin::signed(
-			1
-		)));
-		System::assert_last_event(RuntimeEvent::EmergencyShutdownModule(crate::Event::OpenRefund {
-			block_number: 1,
-		}));
+		assert_ok!(EmergencyShutdownModule::open_collateral_refund(RuntimeOrigin::signed(1)));
+		System::assert_last_event(RuntimeEvent::EmergencyShutdownModule(
+			crate::Event::OpenRefund { block_number: 1 },
+		));
 		assert!(EmergencyShutdownModule::can_refund());
 	});
 }

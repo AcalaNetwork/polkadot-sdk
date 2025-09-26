@@ -20,7 +20,7 @@
 
 #![cfg(test)]
 
-use super::{*, module::Pallet};
+use super::{module::Pallet, *};
 use frame_support::{assert_noop, assert_ok};
 use mock::*;
 use sp_runtime::{traits::BadOrigin, ArithmeticError};
@@ -284,10 +284,7 @@ fn extract_surplus_to_treasury_work() {
 			Pallet::<Test>::extract_surplus_to_treasury(RuntimeOrigin::signed(5), 200),
 			BadOrigin
 		);
-		assert_ok!(Pallet::<Test>::extract_surplus_to_treasury(
-			RuntimeOrigin::signed(1),
-			200
-		));
+		assert_ok!(Pallet::<Test>::extract_surplus_to_treasury(RuntimeOrigin::signed(1), 200));
 		assert_eq!(Pallet::<Test>::surplus_pool(), 800);
 		assert_eq!(Assets::balance(STABLE, &Pallet::<Test>::account_id()), 800);
 		assert_eq!(Assets::balance(STABLE, &TreasuryAccount::get()), 200);
@@ -315,12 +312,7 @@ fn auction_collateral_work() {
 			Error::<Test>::CollateralNotEnough,
 		);
 
-		assert_ok!(Pallet::<Test>::auction_collateral(
-			RuntimeOrigin::signed(1),
-			1000,
-			1000,
-			false
-		));
+		assert_ok!(Pallet::<Test>::auction_collateral(RuntimeOrigin::signed(1), 1000, 1000, false));
 		assert_eq!(total_collateral_auction(), 1);
 		assert_eq!(total_collateral_in_auction(), 1000);
 
@@ -342,10 +334,7 @@ fn set_debit_offset_buffer_work() {
 			Pallet::<Test>::set_debit_offset_buffer(RuntimeOrigin::signed(5), 200),
 			BadOrigin
 		);
-		assert_ok!(Pallet::<Test>::set_debit_offset_buffer(
-			RuntimeOrigin::signed(1),
-			200
-		));
+		assert_ok!(Pallet::<Test>::set_debit_offset_buffer(RuntimeOrigin::signed(1), 200));
 		System::assert_last_event(RuntimeEvent::CDPTreasuryModule(
 			crate::Event::DebitOffsetBufferUpdated { amount: 200 },
 		));
@@ -367,10 +356,7 @@ fn offset_surplus_and_debit_limited_by_debit_offset_buffer() {
 		assert_eq!(Pallet::<Test>::debit_pool(), 1000);
 		assert_eq!(Pallet::<Test>::debit_offset_buffer(), 0);
 
-		assert_ok!(Pallet::<Test>::set_debit_offset_buffer(
-			RuntimeOrigin::signed(1),
-			100
-		));
+		assert_ok!(Pallet::<Test>::set_debit_offset_buffer(RuntimeOrigin::signed(1), 100));
 		assert_eq!(Pallet::<Test>::debit_offset_buffer(), 100);
 		assert_ok!(Pallet::<Test>::on_system_surplus(2000));
 		assert_eq!(Pallet::<Test>::surplus_pool(), 2000);
@@ -381,10 +367,7 @@ fn offset_surplus_and_debit_limited_by_debit_offset_buffer() {
 		assert_eq!(Pallet::<Test>::debit_pool(), 100);
 		assert_eq!(Pallet::<Test>::debit_offset_buffer(), 100);
 
-		assert_ok!(Pallet::<Test>::set_debit_offset_buffer(
-			RuntimeOrigin::signed(1),
-			200
-		));
+		assert_ok!(Pallet::<Test>::set_debit_offset_buffer(RuntimeOrigin::signed(1), 200));
 		assert_eq!(Pallet::<Test>::debit_offset_buffer(), 200);
 		assert_ok!(Pallet::<Test>::on_system_debit(1400));
 		assert_eq!(Pallet::<Test>::debit_pool(), 1500);

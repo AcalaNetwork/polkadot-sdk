@@ -30,8 +30,8 @@ use frame_support::{
 	},
 	PalletId,
 };
-use sp_runtime::RuntimeDebug;
 use frame_system::{EnsureRoot, EnsureSignedBy};
+use pallet_cdp_engine::Ratio;
 use pallet_traits::{
 	AggregatedSwapPath, AuctionManager, CDPTreasury as CDPTreasuryTrait, EmergencyShutdown,
 	LiquidationTarget, LockablePrice, PriceProvider, RiskManager, Swap, SwapLimit,
@@ -39,14 +39,13 @@ use pallet_traits::{
 use scale_info::TypeInfo;
 use sp_core::H256;
 use sp_runtime::{
+	serde,
 	traits::{
 		AccountIdConversion, AtLeast32BitUnsigned, BlakeTwo256, Bounded, CheckedAdd, CheckedSub,
 		IdentityLookup, Saturating, Zero,
 	},
-	BuildStorage, DispatchError, DispatchResult, FixedU128,
+	BuildStorage, DispatchError, DispatchResult, FixedU128, RuntimeDebug,
 };
-use pallet_cdp_engine::Ratio;
-use sp_runtime::serde;
 use sp_std::ops::{Add, AddAssign, Div, Mul, Sub};
 
 pub type AccountId = u128;
@@ -156,8 +155,8 @@ impl pallet_assets::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
 	type AssetId = CurrencyId;
-		type AssetIdParameter = u32;
-		type Currency = PalletBalances;
+	type AssetIdParameter = u32;
+	type Currency = PalletBalances;
 	type CreateOrigin = AsEnsureOriginWithArg<EnsureSignedBy<OneMember, AccountId>>;
 	type ForceOrigin = EnsureRoot<AccountId>;
 	type AssetDeposit = AssetDeposit;
@@ -220,11 +219,7 @@ impl pallet_loans::Config for Runtime {
 	type CDPTreasury = CDPTreasury;
 	type PalletId = LoansPalletId;
 	type CollateralCurrencyId = GetNativeCurrencyId;
-	type OnUpdateLoan = Nothing<(
-		Self::AccountId,
-		Amount,
-		pallet_loans::BalanceOf<Self>,
-	)>;
+	type OnUpdateLoan = Nothing<(Self::AccountId, Amount, pallet_loans::BalanceOf<Self>)>;
 	type LiquidationStrategy = MockLiquidationStrategy;
 }
 
@@ -349,7 +344,6 @@ impl pallet_timestamp::Config for Runtime {
 	type WeightInfo = ();
 }
 
-
 pub struct MockEmergencyShutdown;
 impl EmergencyShutdown for MockEmergencyShutdown {
 	fn is_shutdown() -> bool {
@@ -378,20 +372,13 @@ pub struct ExtBuilder {
 
 impl Default for ExtBuilder {
 	fn default() -> Self {
-		Self {
-			balances: vec![
-				(ALICE, NATIVE, 1000),
-				(BOB, NATIVE, 1000),
-			],
-		}
+		Self { balances: vec![(ALICE, NATIVE, 1000), (BOB, NATIVE, 1000)] }
 	}
 }
 
 impl ExtBuilder {
 	pub fn build(self) -> sp_io::TestExternalities {
-		let mut t = frame_system::GenesisConfig::<Runtime>::default()
-			.build_storage()
-			.unwrap();
+		let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
 
 		pallet_assets::GenesisConfig::<Runtime> {
 			assets: vec![
@@ -399,7 +386,11 @@ impl ExtBuilder {
 				(NATIVE, CDPTreasury::account_id(), true, 1),
 			],
 			metadata: vec![],
-			accounts: self.balances.into_iter().map(|(id, asset, balance)| (asset, id, balance)).collect(),
+			accounts: self
+				.balances
+				.into_iter()
+				.map(|(id, asset, balance)| (asset, id, balance))
+				.collect(),
 			next_asset_id: None,
 		}
 		.assimilate_storage(&mut t)

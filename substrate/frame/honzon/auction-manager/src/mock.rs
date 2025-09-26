@@ -22,11 +22,18 @@
 
 use super::{pallet, *};
 use frame_support::{
-	construct_runtime, derive_impl, ord_parameter_types, parameter_types, PalletId, defensive,
-	traits::{ConstU128, ConstU32, ConstU64, AsEnsureOriginWithArg,tokens::fungibles::Mutate, ConstBool, Everything, tokens::fungibles, tokens::{Preservation, Fortitude, Provenance, DepositConsequence, WithdrawConsequence, Precision}}
+	construct_runtime, defensive, derive_impl, ord_parameter_types, parameter_types,
+	traits::{
+		tokens::{
+			fungibles, fungibles::Mutate, DepositConsequence, Fortitude, Precision, Preservation,
+			Provenance, WithdrawConsequence,
+		},
+		AsEnsureOriginWithArg, ConstBool, ConstU128, ConstU32, ConstU64, Everything,
+	},
+	PalletId,
 };
 use frame_system::EnsureSignedBy;
-use pallet_traits::{EmergencyShutdown, PriceProvider, Rate, Swap, SwapLimit, AggregatedSwapPath};
+use pallet_traits::{AggregatedSwapPath, EmergencyShutdown, PriceProvider, Rate, Swap, SwapLimit};
 use sp_core::H256;
 use sp_runtime::{
 	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup, One as OneT},
@@ -72,7 +79,18 @@ impl From<crate::HoldReason> for MockHoldReason {
 }
 
 #[derive(
-	Encode, Decode, Eq, PartialEq, Copy, Clone, RuntimeDebug, PartialOrd, Ord, TypeInfo, MaxEncodedLen, codec::DecodeWithMemTracking
+	Encode,
+	Decode,
+	Eq,
+	PartialEq,
+	Copy,
+	Clone,
+	RuntimeDebug,
+	PartialOrd,
+	Ord,
+	TypeInfo,
+	MaxEncodedLen,
+	codec::DecodeWithMemTracking,
 )]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub enum CurrencyId {
@@ -179,7 +197,7 @@ impl pallet_assets::Config for Runtime {
 impl pallet_auction::Config for Runtime {
 	type AuctionId = AuctionId;
 	type Handler = AuctionManagerModule;
-		type WeightInfo = ();
+	type WeightInfo = ();
 	type Balance = Balance;
 }
 
@@ -253,17 +271,17 @@ impl pallet_traits::CDPTreasury<AccountId> for MockCDPTreasury {
 	fn withdraw_collateral(_to: &AccountId, _amount: Self::Balance) -> DispatchResult {
 		Ok(())
 	}
-    fn pay_surplus(_amount: Self::Balance) -> DispatchResult {
-        Ok(())
-    }
-    fn refund_surplus(_amount: Self::Balance) -> DispatchResult {
-        Ok(())
-    }
+	fn pay_surplus(_amount: Self::Balance) -> DispatchResult {
+		Ok(())
+	}
+	fn refund_surplus(_amount: Self::Balance) -> DispatchResult {
+		Ok(())
+	}
 }
 
 pub struct MockSwap;
 impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
-    fn get_swap_amount(
+	fn get_swap_amount(
 		_supply_currency_id: CurrencyId,
 		_target_currency_id: CurrencyId,
 		_limit: SwapLimit<Balance>,
@@ -280,21 +298,21 @@ impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
 		Err(DispatchError::Other("Not implemented"))
 	}
 
-    fn swap_by_path(
+	fn swap_by_path(
 		_who: &AccountId,
 		_swap_path: &[CurrencyId],
 		_limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError> {
-        Err(DispatchError::Other("Not implemented"))
-    }
+		Err(DispatchError::Other("Not implemented"))
+	}
 
-    fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
+	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
 		_who: &AccountId,
 		_swap_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
 		_limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError> {
-        Err(DispatchError::Other("Not implemented"))
-    }
+		Err(DispatchError::Other("Not implemented"))
+	}
 }
 
 parameter_types! {
@@ -386,18 +404,13 @@ impl Default for ExtBuilder {
 
 impl ExtBuilder {
 	pub fn with_treasury_collateral(mut self, amount: Balance) -> Self {
-		self.balances.push((
-			CDPTreasuryPalletId::get().into_account_truncating(),
-			NATIVE,
-			amount,
-		));
+		self.balances
+			.push((CDPTreasuryPalletId::get().into_account_truncating(), NATIVE, amount));
 		self
 	}
 
 	pub fn build(self) -> sp_io::TestExternalities {
-		let mut t = frame_system::GenesisConfig::<Runtime>::default()
-			.build_storage()
-			.unwrap();
+		let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
 
 		let mut accounts = self.balances.iter().map(|(id, _, _)| *id).collect::<Vec<_>>();
 		accounts.sort();
@@ -429,70 +442,62 @@ impl ExtBuilder {
 }
 
 impl fungibles::Inspect<AccountId> for MockCurrency {
-    type AssetId = CurrencyId;
-    type Balance = Balance;
+	type AssetId = CurrencyId;
+	type Balance = Balance;
 
-    fn total_issuance(asset: Self::AssetId) -> Self::Balance {
-        pallet_assets::Pallet::<Runtime>::total_issuance(asset)
-    }
+	fn total_issuance(asset: Self::AssetId) -> Self::Balance {
+		pallet_assets::Pallet::<Runtime>::total_issuance(asset)
+	}
 
-    fn minimum_balance(asset: Self::AssetId) -> Self::Balance {
-        pallet_assets::Pallet::<Runtime>::minimum_balance(asset)
-    }
+	fn minimum_balance(asset: Self::AssetId) -> Self::Balance {
+		pallet_assets::Pallet::<Runtime>::minimum_balance(asset)
+	}
 
-    fn balance(asset: Self::AssetId, who: &AccountId) -> Self::Balance {
-        pallet_assets::Pallet::<Runtime>::balance(asset, who)
-    }
+	fn balance(asset: Self::AssetId, who: &AccountId) -> Self::Balance {
+		pallet_assets::Pallet::<Runtime>::balance(asset, who)
+	}
 
-    fn total_balance(asset: Self::AssetId, who: &AccountId) -> Self::Balance {
-        pallet_assets::Pallet::<Runtime>::total_balance(asset, who)
-    }
+	fn total_balance(asset: Self::AssetId, who: &AccountId) -> Self::Balance {
+		pallet_assets::Pallet::<Runtime>::total_balance(asset, who)
+	}
 
-    fn reducible_balance(
-        asset: Self::AssetId,
-        who: &AccountId,
-        preservation: Preservation,
-        fortitude: Fortitude,
-    ) -> Self::Balance {
-        pallet_assets::Pallet::<Runtime>::reducible_balance(asset, who, preservation, fortitude)
-    }
+	fn reducible_balance(
+		asset: Self::AssetId,
+		who: &AccountId,
+		preservation: Preservation,
+		fortitude: Fortitude,
+	) -> Self::Balance {
+		pallet_assets::Pallet::<Runtime>::reducible_balance(asset, who, preservation, fortitude)
+	}
 
-    fn can_deposit(
-        asset: Self::AssetId,
-        who: &AccountId,
-        amount: Self::Balance,
-        provenance: Provenance,
-    ) -> DepositConsequence {
-        pallet_assets::Pallet::<Runtime>::can_deposit(asset, who, amount, provenance)
-    }
+	fn can_deposit(
+		asset: Self::AssetId,
+		who: &AccountId,
+		amount: Self::Balance,
+		provenance: Provenance,
+	) -> DepositConsequence {
+		pallet_assets::Pallet::<Runtime>::can_deposit(asset, who, amount, provenance)
+	}
 
-    fn can_withdraw(
-        asset: Self::AssetId,
-        who: &AccountId,
-        amount: Self::Balance,
-    ) -> WithdrawConsequence<Self::Balance> {
-        pallet_assets::Pallet::<Runtime>::can_withdraw(asset, who, amount)
-    }
+	fn can_withdraw(
+		asset: Self::AssetId,
+		who: &AccountId,
+		amount: Self::Balance,
+	) -> WithdrawConsequence<Self::Balance> {
+		pallet_assets::Pallet::<Runtime>::can_withdraw(asset, who, amount)
+	}
 
-    fn asset_exists(asset: Self::AssetId) -> bool {
-        pallet_assets::Pallet::<Runtime>::asset_exists(asset)
-    }
+	fn asset_exists(asset: Self::AssetId) -> bool {
+		pallet_assets::Pallet::<Runtime>::asset_exists(asset)
+	}
 }
 
 impl fungibles::Mutate<AccountId> for MockCurrency {
-    fn done_mint_into(
-		asset_id: Self::AssetId,
-		beneficiary: &AccountId,
-		amount: Self::Balance,
-	) {
+	fn done_mint_into(asset_id: Self::AssetId, beneficiary: &AccountId, amount: Self::Balance) {
 		pallet_assets::Pallet::<Runtime>::done_mint_into(asset_id, beneficiary, amount)
 	}
 
-	fn done_burn_from(
-		asset_id: Self::AssetId,
-		target: &AccountId,
-		balance: Self::Balance,
-	) {
+	fn done_burn_from(asset_id: Self::AssetId, target: &AccountId, balance: Self::Balance) {
 		pallet_assets::Pallet::<Runtime>::done_burn_from(asset_id, target, balance)
 	}
 
@@ -507,44 +512,38 @@ impl fungibles::Mutate<AccountId> for MockCurrency {
 }
 
 impl fungibles::Balanced<AccountId> for MockCurrency {
-    type OnDropCredit = <pallet_assets::Pallet<Runtime> as fungibles::Balanced<AccountId>>::OnDropCredit;
-    type OnDropDebt = <pallet_assets::Pallet<Runtime> as fungibles::Balanced<AccountId>>::OnDropDebt;
+	type OnDropCredit =
+		<pallet_assets::Pallet<Runtime> as fungibles::Balanced<AccountId>>::OnDropCredit;
+	type OnDropDebt =
+		<pallet_assets::Pallet<Runtime> as fungibles::Balanced<AccountId>>::OnDropDebt;
 
-    fn done_deposit(
-		asset_id: Self::AssetId,
-		who: &AccountId,
-		amount: Self::Balance,
-	) {
+	fn done_deposit(asset_id: Self::AssetId, who: &AccountId, amount: Self::Balance) {
 		pallet_assets::Pallet::<Runtime>::done_deposit(asset_id, who, amount)
 	}
 
-	fn done_withdraw(
-		asset_id: Self::AssetId,
-		who: &AccountId,
-		amount: Self::Balance,
-	) {
+	fn done_withdraw(asset_id: Self::AssetId, who: &AccountId, amount: Self::Balance) {
 		pallet_assets::Pallet::<Runtime>::done_withdraw(asset_id, who, amount)
 	}
 }
 
 impl fungibles::hold::Inspect<AccountId> for MockCurrency {
-    type Reason = MockHoldReason;
+	type Reason = MockHoldReason;
 
-    fn total_balance_on_hold(asset: Self::AssetId, who: &AccountId) -> Self::Balance {
-        pallet_assets_holder::Pallet::<Runtime>::total_balance_on_hold(asset, who)
-    }
+	fn total_balance_on_hold(asset: Self::AssetId, who: &AccountId) -> Self::Balance {
+		pallet_assets_holder::Pallet::<Runtime>::total_balance_on_hold(asset, who)
+	}
 
-    fn balance_on_hold(
+	fn balance_on_hold(
 		asset: Self::AssetId,
 		reason: &Self::Reason,
 		who: &AccountId,
 	) -> Self::Balance {
-        pallet_assets_holder::Pallet::<Runtime>::balance_on_hold(asset, reason, who)
-    }
+		pallet_assets_holder::Pallet::<Runtime>::balance_on_hold(asset, reason, who)
+	}
 }
 
 impl fungibles::hold::Mutate<AccountId> for MockCurrency {
-    fn done_hold(
+	fn done_hold(
 		asset_id: Self::AssetId,
 		reason: &Self::Reason,
 		who: &AccountId,
@@ -562,34 +561,34 @@ impl fungibles::hold::Mutate<AccountId> for MockCurrency {
 		pallet_assets_holder::Pallet::<Runtime>::done_release(asset_id, reason, who, amount)
 	}
 
-    fn done_burn_held(
+	fn done_burn_held(
 		asset_id: Self::AssetId,
 		reason: &Self::Reason,
 		who: &AccountId,
 		amount: Self::Balance,
 	) {
-        pallet_assets_holder::Pallet::<Runtime>::done_burn_held(asset_id, reason, who, amount)
-    }
+		pallet_assets_holder::Pallet::<Runtime>::done_burn_held(asset_id, reason, who, amount)
+	}
 }
 
 impl fungibles::Unbalanced<AccountId> for MockCurrency {
-    fn handle_raw_dust(_: Self::AssetId, _: Self::Balance) {
-        defensive!("`decrease_balance` and `increase_balance` have non-default impls; nothing else calls this; qed");
-    }
-    fn handle_dust(_: fungibles::Dust<AccountId, Self>) {
-        defensive!("`decrease_balance` and `increase_balance` have non-default impls; nothing else calls this; qed");
-    }
-    fn write_balance(
+	fn handle_raw_dust(_: Self::AssetId, _: Self::Balance) {
+		defensive!("`decrease_balance` and `increase_balance` have non-default impls; nothing else calls this; qed");
+	}
+	fn handle_dust(_: fungibles::Dust<AccountId, Self>) {
+		defensive!("`decrease_balance` and `increase_balance` have non-default impls; nothing else calls this; qed");
+	}
+	fn write_balance(
 		asset: Self::AssetId,
 		who: &AccountId,
 		balance: Self::Balance,
 	) -> Result<Option<Self::Balance>, DispatchError> {
-        pallet_assets::Pallet::<Runtime>::write_balance(asset, who, balance)
-    }
-    fn set_total_issuance(asset: Self::AssetId, amount: Self::Balance) {
-        pallet_assets::Pallet::<Runtime>::set_total_issuance(asset, amount)
-    }
-    fn decrease_balance(
+		pallet_assets::Pallet::<Runtime>::write_balance(asset, who, balance)
+	}
+	fn set_total_issuance(asset: Self::AssetId, amount: Self::Balance) {
+		pallet_assets::Pallet::<Runtime>::set_total_issuance(asset, amount)
+	}
+	fn decrease_balance(
 		asset: Self::AssetId,
 		who: &AccountId,
 		amount: Self::Balance,
@@ -597,25 +596,32 @@ impl fungibles::Unbalanced<AccountId> for MockCurrency {
 		preservation: Preservation,
 		fortitude: Fortitude,
 	) -> Result<Self::Balance, DispatchError> {
-        pallet_assets::Pallet::<Runtime>::decrease_balance(asset, who, amount, precision, preservation, fortitude)
-    }
-    fn increase_balance(
+		pallet_assets::Pallet::<Runtime>::decrease_balance(
+			asset,
+			who,
+			amount,
+			precision,
+			preservation,
+			fortitude,
+		)
+	}
+	fn increase_balance(
 		asset: Self::AssetId,
 		who: &AccountId,
 		amount: Self::Balance,
 		precision: Precision,
 	) -> Result<Self::Balance, DispatchError> {
-        pallet_assets::Pallet::<Runtime>::increase_balance(asset, who, amount, precision)
-    }
+		pallet_assets::Pallet::<Runtime>::increase_balance(asset, who, amount, precision)
+	}
 }
 
 impl fungibles::hold::Unbalanced<AccountId> for MockCurrency {
-    fn set_balance_on_hold(
-        asset: Self::AssetId,
-        reason: &Self::Reason,
-        who: &AccountId,
-        amount: Self::Balance,
-    ) -> DispatchResult {
-        pallet_assets_holder::Pallet::<Runtime>::set_balance_on_hold(asset, reason, who, amount)
-    }
+	fn set_balance_on_hold(
+		asset: Self::AssetId,
+		reason: &Self::Reason,
+		who: &AccountId,
+		amount: Self::Balance,
+	) -> DispatchResult {
+		pallet_assets_holder::Pallet::<Runtime>::set_balance_on_hold(asset, reason, who, amount)
+	}
 }

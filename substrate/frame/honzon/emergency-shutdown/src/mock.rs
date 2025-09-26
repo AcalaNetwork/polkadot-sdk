@@ -23,14 +23,19 @@
 use super::*;
 use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types, parameter_types,
-	traits::{AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, Everything, SortedMembers, Nothing},
+	traits::{
+		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, Everything, Nothing, SortedMembers,
+	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_traits::{AuctionManager, CDPTreasury, LockablePrice, PriceProvider, RiskManager, Swap, SwapLimit, AggregatedSwapPath};
+use pallet_traits::{
+	AggregatedSwapPath, AuctionManager, CDPTreasury, LockablePrice, PriceProvider, RiskManager,
+	Swap, SwapLimit,
+};
 use sp_runtime::{
 	traits::{AccountIdConversion, IdentityLookup},
-	BuildStorage, DispatchResult, FixedU128, DispatchError,
+	BuildStorage, DispatchError, DispatchResult, FixedU128,
 };
 
 pub type AccountId = u128;
@@ -107,8 +112,8 @@ impl pallet_assets::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
 	type AssetId = CurrencyId;
-		type AssetIdParameter = u32;
-		type Currency = PalletBalances;
+	type AssetIdParameter = u32;
+	type Currency = PalletBalances;
 	type CreateOrigin = AsEnsureOriginWithArg<EnsureSignedBy<OneMember, AccountId>>;
 	type ForceOrigin = EnsureRoot<AccountId>;
 	type AssetDeposit = ConstU128<1>;
@@ -288,20 +293,13 @@ pub struct ExtBuilder {
 
 impl Default for ExtBuilder {
 	fn default() -> Self {
-		Self {
-			balances: vec![
-				(ALICE, NATIVE, 1000),
-				(BOB, NATIVE, 1000),
-			],
-		}
+		Self { balances: vec![(ALICE, NATIVE, 1000), (BOB, NATIVE, 1000)] }
 	}
 }
 
 impl ExtBuilder {
 	pub fn build(self) -> sp_io::TestExternalities {
-		let mut t = frame_system::GenesisConfig::<Test>::default()
-			.build_storage()
-			.unwrap();
+		let mut t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
 
 		pallet_assets::GenesisConfig::<Test> {
 			assets: vec![
@@ -309,7 +307,11 @@ impl ExtBuilder {
 				(NATIVE, CDPTreasuryModule::account_id(), true, 1),
 			],
 			metadata: vec![],
-			accounts: self.balances.into_iter().map(|(id, asset, balance)| (asset, id, balance)).collect(),
+			accounts: self
+				.balances
+				.into_iter()
+				.map(|(id, asset, balance)| (asset, id, balance))
+				.collect(),
 			next_asset_id: None,
 		}
 		.assimilate_storage(&mut t)

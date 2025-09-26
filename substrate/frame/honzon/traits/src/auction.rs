@@ -28,18 +28,33 @@ pub struct AuctionInfo<AccountId, Balance, BlockNumber> {
 /// A trait for managing auctions.
 pub trait Auction<AccountId, BlockNumber> {
 	/// The type used to identify an auction.
-	type AuctionId: FullCodec + Default + Copy + Eq + PartialEq + MaybeSerializeDeserialize + Bounded + Debug;
+	type AuctionId: FullCodec
+		+ Default
+		+ Copy
+		+ Eq
+		+ PartialEq
+		+ MaybeSerializeDeserialize
+		+ Bounded
+		+ Debug;
 	/// The type used to represent the bid price.
 	type Balance: AtLeast32Bit + FullCodec + Copy + MaybeSerializeDeserialize + Debug + Default;
 
 	/// Returns the information for a given auction.
-	fn auction_info(id: Self::AuctionId) -> Option<AuctionInfo<AccountId, Self::Balance, BlockNumber>>;
+	fn auction_info(
+		id: Self::AuctionId,
+	) -> Option<AuctionInfo<AccountId, Self::Balance, BlockNumber>>;
 	/// Updates the information for a given auction.
-	fn update_auction(id: Self::AuctionId, info: AuctionInfo<AccountId, Self::Balance, BlockNumber>) -> DispatchResult;
+	fn update_auction(
+		id: Self::AuctionId,
+		info: AuctionInfo<AccountId, Self::Balance, BlockNumber>,
+	) -> DispatchResult;
 	/// Creates a new auction.
 	///
 	/// Returns the ID of the new auction.
-	fn new_auction(start: BlockNumber, end: Option<BlockNumber>) -> result::Result<Self::AuctionId, DispatchError>;
+	fn new_auction(
+		start: BlockNumber,
+		end: Option<BlockNumber>,
+	) -> result::Result<Self::AuctionId, DispatchError>;
 	/// Removes an auction.
 	fn remove_auction(id: Self::AuctionId);
 }

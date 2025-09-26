@@ -28,184 +28,206 @@ pub use pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
-    use frame_support::{
-        pallet_prelude::*,
-        traits::{Currency, Get, ReservableCurrency},
-        PalletId,
-    };
-    use frame_system::pallet_prelude::*;
-    use sp_runtime::{traits::{Zero, AccountIdConversion, Saturating}, Permill};
-    use sp_arithmetic::FixedPointNumber;
-    use pallet_traits::{LiquidationTarget, PriceProvider, CDPTreasury};
-    use sp_std::result;
+	use frame_support::{
+		pallet_prelude::*,
+		traits::{Currency, Get, ReservableCurrency},
+		PalletId,
+	};
+	use frame_system::pallet_prelude::*;
+	use pallet_traits::{CDPTreasury, LiquidationTarget, PriceProvider};
+	use sp_arithmetic::FixedPointNumber;
+	use sp_runtime::{
+		traits::{AccountIdConversion, Saturating, Zero},
+		Permill,
+	};
+	use sp_std::result;
 
-    type BalanceOf<T> = <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+	type BalanceOf<T> =
+		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
 
-    #[pallet::config]
-    pub trait Config: frame_system::Config + pallet_cdp_treasury::Config {
-        /// The origin which can update parameters of the module.
-        type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+	#[pallet::config]
+	pub trait Config: frame_system::Config + pallet_cdp_treasury::Config {
+		/// The origin which can update parameters of the module.
+		type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
-        /// Currency type for deposit/withdraw collateral assets to/from loans
-        /// module
-        type Currency: ReservableCurrency<Self::AccountId>;
+		/// Currency type for deposit/withdraw collateral assets to/from loans
+		/// module
+		type Currency: ReservableCurrency<Self::AccountId>;
 
-        /// Price provider for collateral assets.
-        type PriceProvider: PriceProvider<Self::CurrencyId>;
+		/// Price provider for collateral assets.
+		type PriceProvider: PriceProvider<Self::CurrencyId>;
 
-        /// The currency ID of the collateral managed by this buffer.
-        #[pallet::constant]
-        type CollateralCurrencyId: Get<Self::CurrencyId>;
+		/// The currency ID of the collateral managed by this buffer.
+		#[pallet::constant]
+		type CollateralCurrencyId: Get<Self::CurrencyId>;
 
-        /// The currency ID of the stablecoin.
-        #[pallet::constant]
-        type StableCurrencyId: Get<Self::CurrencyId>;
+		/// The currency ID of the stablecoin.
+		#[pallet::constant]
+		type StableCurrencyId: Get<Self::CurrencyId>;
 
-        /// Discount applied when purchasing collateral during liquidation.
-        type Discount: Get<Permill>;
+		/// Discount applied when purchasing collateral during liquidation.
+		type Discount: Get<Permill>;
 
-        /// Maximum amount of stable currency the issuance buffer can mint.
-        type IssuanceQuota: Get<BalanceOf<Self>>;
+		/// Maximum amount of stable currency the issuance buffer can mint.
+		type IssuanceQuota: Get<BalanceOf<Self>>;
 
-        /// The pallet ID for the issuance buffer, used for deriving its account ID.
-        #[pallet::constant]
-        type PalletId: Get<PalletId>;
+		/// The pallet ID for the issuance buffer, used for deriving its account ID.
+		#[pallet::constant]
+		type PalletId: Get<PalletId>;
 
-        /// The CDP treasury pallet.
-        type CDPTreasury: CDPTreasury<Self::AccountId, Balance = BalanceOf<Self>, CurrencyId = Self::CurrencyId>;
-    }
+		/// The CDP treasury pallet.
+		type CDPTreasury: CDPTreasury<
+			Self::AccountId,
+			Balance = BalanceOf<Self>,
+			CurrencyId = Self::CurrencyId,
+		>;
+	}
 
-    #[pallet::storage]
-    #[pallet::getter(fn issuance_used)]
-    pub type IssuanceUsed<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>; // current PDD debt
+	#[pallet::storage]
+	#[pallet::getter(fn issuance_used)]
+	pub type IssuanceUsed<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>; // current PDD debt
 
-    #[pallet::event]
-    #[pallet::generate_deposit(pub(crate) fn deposit_event)]
-    pub enum Event<T: Config> {
-        /// Buffer funded
-        Funded { amount: BalanceOf<T> },
-        /// Buffer defunded
-        Defunded { amount: BalanceOf<T> },
-    }
+	#[pallet::event]
+	#[pallet::generate_deposit(pub(crate) fn deposit_event)]
+	pub enum Event<T: Config> {
+		/// Buffer funded
+		Funded { amount: BalanceOf<T> },
+		/// Buffer defunded
+		Defunded { amount: BalanceOf<T> },
+	}
 
-    #[pallet::error]
-    pub enum Error<T> {
-        /// Quota exceeded
-        QuotaExceeded,
-        /// Insufficient funds to withdraw
-        InsufficientFunds,
-        /// The collateral currency is not supported by this buffer.
-        UnsupportedCollateral,
-        /// An error occurred while trying to get the price from the oracle.
-        OraclePriceError,
-    }
+	#[pallet::error]
+	pub enum Error<T> {
+		/// Quota exceeded
+		QuotaExceeded,
+		/// Insufficient funds to withdraw
+		InsufficientFunds,
+		/// The collateral currency is not supported by this buffer.
+		UnsupportedCollateral,
+		/// An error occurred while trying to get the price from the oracle.
+		OraclePriceError,
+	}
 
-    #[pallet::pallet]
-    pub struct Pallet<T>(_);
+	#[pallet::pallet]
+	pub struct Pallet<T>(_);
 
-    #[pallet::call]
-    impl<T: Config> Pallet<T> {
-        /// Fund the buffer by locking DOT as collateral into the buffer CDP.
-        #[pallet::call_index(0)]
-        #[pallet::weight(T::DbWeight::get().writes(1))]
-        pub fn fund(
-            origin: OriginFor<T>,
-            #[pallet::compact] amount: BalanceOf<T>,
-        ) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+	#[pallet::call]
+	impl<T: Config> Pallet<T> {
+		/// Fund the buffer by locking DOT as collateral into the buffer CDP.
+		#[pallet::call_index(0)]
+		#[pallet::weight(T::DbWeight::get().writes(1))]
+		pub fn fund(
+			origin: OriginFor<T>,
+			#[pallet::compact] amount: BalanceOf<T>,
+		) -> DispatchResult {
+			T::AdminOrigin::ensure_origin(origin)?;
 
-            T::CDPTreasury::pay_surplus(amount)?;
+			T::CDPTreasury::pay_surplus(amount)?;
 
-            Self::deposit_event(Event::Funded { amount });
-            Ok(())
-        }
+			Self::deposit_event(Event::Funded { amount });
+			Ok(())
+		}
 
-        /// Withdraw unlocked DOT from the buffer CDP (only collateral not required
-        /// by LR/CR and not reserved for in-flight liquidations can be withdrawn).
-        #[pallet::call_index(1)]
-        #[pallet::weight(T::DbWeight::get().writes(1))]
-        pub fn defund(
-            origin: OriginFor<T>,
-            #[pallet::compact] amount: BalanceOf<T>,
-        ) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+		/// Withdraw unlocked DOT from the buffer CDP (only collateral not required
+		/// by LR/CR and not reserved for in-flight liquidations can be withdrawn).
+		#[pallet::call_index(1)]
+		#[pallet::weight(T::DbWeight::get().writes(1))]
+		pub fn defund(
+			origin: OriginFor<T>,
+			#[pallet::compact] amount: BalanceOf<T>,
+		) -> DispatchResult {
+			T::AdminOrigin::ensure_origin(origin)?;
 
-            T::CDPTreasury::refund_surplus(amount)?;
+			T::CDPTreasury::refund_surplus(amount)?;
 
-            Self::deposit_event(Event::Defunded { amount });
-            Ok(())
-        }
+			Self::deposit_event(Event::Defunded { amount });
+			Ok(())
+		}
+	}
 
-    }
+	impl<T: Config> Pallet<T> {
+		pub fn account_id() -> T::AccountId {
+			<T as Config>::PalletId::get().into_account_truncating()
+		}
 
-    impl<T: Config> Pallet<T> {
-        pub fn account_id() -> T::AccountId {
-            <T as Config>::PalletId::get().into_account_truncating()
-        }
+		/// Current discount applied when purchasing collateral.
+		pub fn discount() -> Permill {
+			T::Discount::get()
+		}
 
-        /// Current discount applied when purchasing collateral.
-        pub fn discount() -> Permill {
-            T::Discount::get()
-        }
+		/// Maximum additional stable currency that can be issued by the buffer.
+		pub fn issuance_quota() -> BalanceOf<T> {
+			T::IssuanceQuota::get()
+		}
+	}
 
-        /// Maximum additional stable currency that can be issued by the buffer.
-        pub fn issuance_quota() -> BalanceOf<T> {
-            T::IssuanceQuota::get()
-        }
-    }
+	impl<T: Config> LiquidationTarget<T::AccountId, T::CurrencyId, BalanceOf<T>> for Pallet<T> {
+		fn liquidate(
+			who: &T::AccountId,
+			collateral_currency: T::CurrencyId,
+			collateral_to_sell: BalanceOf<T>,
+			debit_to_cover: BalanceOf<T>,
+		) -> result::Result<(BalanceOf<T>, BalanceOf<T>), DispatchError> {
+			if collateral_currency != <T as Config>::CollateralCurrencyId::get() {
+				return Err(Error::<T>::UnsupportedCollateral.into());
+			}
 
-    impl<T: Config> LiquidationTarget<T::AccountId, T::CurrencyId, BalanceOf<T>> for Pallet<T> {
-        fn liquidate(
-            who: &T::AccountId,
-            collateral_currency: T::CurrencyId,
-            collateral_to_sell: BalanceOf<T>,
-            debit_to_cover: BalanceOf<T>,
-        ) -> result::Result<(BalanceOf<T>, BalanceOf<T>), DispatchError> {
-            if collateral_currency != <T as Config>::CollateralCurrencyId::get() {
-                return Err(Error::<T>::UnsupportedCollateral.into());
-            }
+			let price = T::PriceProvider::get_relative_price(
+				collateral_currency,
+				T::StableCurrencyId::get(),
+			)
+			.ok_or(Error::<T>::OraclePriceError)?;
+			let discount = Self::discount();
+			let discounted_price = price.saturating_mul(discount.into());
 
-            let price = T::PriceProvider::get_relative_price(collateral_currency, T::StableCurrencyId::get()).ok_or(Error::<T>::OraclePriceError)?;
-            let discount = Self::discount();
-            let discounted_price = price.saturating_mul(discount.into());
+			let remaining_quota = Self::issuance_quota().saturating_sub(Self::issuance_used());
+			if remaining_quota.is_zero() {
+				return Ok((Zero::zero(), Zero::zero()));
+			}
 
-            let remaining_quota = Self::issuance_quota().saturating_sub(Self::issuance_used());
-            if remaining_quota.is_zero() {
-                return Ok((Zero::zero(), Zero::zero()));
-            }
+			// how much collateral can be bought with remaining quota
+			let collateral_to_buy: BalanceOf<T> = if let Some(r) = discounted_price.reciprocal() {
+				r.saturating_mul_int(remaining_quota)
+			} else {
+				Zero::zero()
+			}
+			.into();
 
-            // how much collateral can be bought with remaining quota
-            let collateral_to_buy: BalanceOf<T> = if let Some(r) = discounted_price.reciprocal() {
-                r.saturating_mul_int(remaining_quota)
-            } else {
-                Zero::zero()
-            }.into();
+			let actual_collateral_to_buy = sp_std::cmp::min(collateral_to_sell, collateral_to_buy);
+			if actual_collateral_to_buy.is_zero() {
+				return Ok((Zero::zero(), Zero::zero()));
+			}
 
-            let actual_collateral_to_buy = sp_std::cmp::min(collateral_to_sell, collateral_to_buy);
-            if actual_collateral_to_buy.is_zero() {
-                return Ok((Zero::zero(), Zero::zero()));
-            }
+			let debit_value = discounted_price.saturating_mul_int(actual_collateral_to_buy);
+			let actual_debit_to_cover = sp_std::cmp::min(debit_to_cover, debit_value);
 
-            let debit_value = discounted_price.saturating_mul_int(actual_collateral_to_buy);
-            let actual_debit_to_cover = sp_std::cmp::min(debit_to_cover, debit_value);
+			// recalculate collateral to buy based on actual debit to cover
+			let actual_collateral_to_buy_final: BalanceOf<T> =
+				if let Some(r) = discounted_price.reciprocal() {
+					r.saturating_mul_int(actual_debit_to_cover)
+				} else {
+					Zero::zero()
+				}
+				.into();
 
-            // recalculate collateral to buy based on actual debit to cover
-            let actual_collateral_to_buy_final: BalanceOf<T> = if let Some(r) = discounted_price.reciprocal() {
-                r.saturating_mul_int(actual_debit_to_cover)
-            } else {
-                Zero::zero()
-            }.into();
+			<T as Config>::Currency::transfer(
+				who,
+				&Self::account_id(),
+				actual_collateral_to_buy_final,
+				frame_support::traits::ExistenceRequirement::AllowDeath,
+			)?;
 
-            <T as Config>::Currency::transfer(who, &Self::account_id(), actual_collateral_to_buy_final, frame_support::traits::ExistenceRequirement::AllowDeath)?;
+			T::CDPTreasury::deposit_collateral(
+				&Self::account_id(),
+				actual_collateral_to_buy_final,
+			)?;
+			T::CDPTreasury::on_system_debit(actual_debit_to_cover)?;
 
-            T::CDPTreasury::deposit_collateral(&Self::account_id(), actual_collateral_to_buy_final)?;
-            T::CDPTreasury::on_system_debit(actual_debit_to_cover)?;
+			IssuanceUsed::<T>::mutate(|used| *used = used.saturating_add(actual_debit_to_cover));
 
-            IssuanceUsed::<T>::mutate(|used| *used = used.saturating_add(actual_debit_to_cover));
-
-            Ok((actual_collateral_to_buy_final, actual_debit_to_cover))
-        }
-    }
+			Ok((actual_collateral_to_buy_final, actual_debit_to_cover))
+		}
+	}
 }
 
 #[cfg(test)]

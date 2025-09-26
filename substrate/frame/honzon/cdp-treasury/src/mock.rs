@@ -23,20 +23,18 @@
 use super::*;
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
-	construct_runtime, derive_impl, parameter_types, PalletId,
+	construct_runtime, derive_impl, parameter_types,
 	traits::{
 		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, EitherOfDiverse, Everything,
 		Incrementable, InstanceFilter, OnUnbalanced, SortedMembers,
 	},
+	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
 use pallet_traits::{AggregatedSwapPath, AuctionManager, Swap, SwapLimit};
 use scale_info::TypeInfo;
 use sp_core::H256;
-use sp_runtime::{
-	traits::{IdentityLookup},
-	BuildStorage, DispatchError, DispatchResult, Permill,
-};
+use sp_runtime::{traits::IdentityLookup, BuildStorage, DispatchError, DispatchResult, Permill};
 use std::cell::RefCell;
 
 pub type AccountId = u128;
@@ -121,8 +119,8 @@ impl pallet_assets::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
 	type AssetId = CurrencyId;
-		type AssetIdParameter = u32;
-		type Currency = PalletBalances;
+	type AssetIdParameter = u32;
+	type Currency = PalletBalances;
 	type CreateOrigin = AsEnsureOriginWithArg<EnsureSignedBy<OneMember, AccountId>>;
 	type ForceOrigin = EnsureRoot<AccountId>;
 	type AssetDeposit = ConstU128<1>;
@@ -232,7 +230,8 @@ impl Config for Test {
 	type GetStableCurrencyId = GetStableCurrencyId;
 	type GetBaseCurrencyId = GetNativeCurrencyId;
 	type AuctionManagerHandler = MockAuctionManager;
-	type UpdateOrigin = EitherOfDiverse<EnsureRoot<AccountId>, EnsureSignedBy<OneMember, AccountId>>;
+	type UpdateOrigin =
+		EitherOfDiverse<EnsureRoot<AccountId>, EnsureSignedBy<OneMember, AccountId>>;
 	type MaxAuctionsCount = ConstU32<5>;
 	type PalletId = CDPTreasuryPalletId;
 	type TreasuryAccount = TreasuryAccount;
@@ -262,9 +261,7 @@ impl Default for ExtBuilder {
 
 impl ExtBuilder {
 	pub fn build(self) -> sp_io::TestExternalities {
-		let mut t = frame_system::GenesisConfig::<Test>::default()
-			.build_storage()
-			.unwrap();
+		let mut t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
 
 		pallet_assets::GenesisConfig::<Test> {
 			assets: vec![
@@ -272,7 +269,11 @@ impl ExtBuilder {
 				(NATIVE, CDPTreasuryModule::account_id(), true, 1),
 			],
 			metadata: vec![],
-			accounts: self.balances.into_iter().map(|(id, asset, balance)| (asset, id, balance)).collect(),
+			accounts: self
+				.balances
+				.into_iter()
+				.map(|(id, asset, balance)| (asset, id, balance))
+				.collect(),
 			next_asset_id: None,
 		}
 		.assimilate_storage(&mut t)

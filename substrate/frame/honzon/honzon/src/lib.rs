@@ -25,8 +25,8 @@
 //! Currently, the native currency is the only supported collateral type.
 //!
 //! This pallet is built on top of the following pallets:
-//! - `pallet-cdp-engine`: Manages the underlying mechanics of `Position`s, including liquidation and
-//!   stability fees.
+//! - `pallet-cdp-engine`: Manages the underlying mechanics of `Position`s, including liquidation
+//!   and stability fees.
 //! - `pallet-loans`: Handles the accounting of loans and collateral.
 //! - `pallet-oracle`: Provides the price feeds for collateral assets.
 //!
@@ -57,9 +57,8 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use pallet_loans::{Amount, BalanceOf};
-use pallet_traits::Rate;
 use pallet_traits::{
-	EmergencyShutdown, ExchangeRate, HonzonManager, Position, PriceProvider, Ratio,
+	EmergencyShutdown, ExchangeRate, HonzonManager, Position, PriceProvider, Rate, Ratio,
 };
 use sp_core::U256;
 use sp_runtime::{
@@ -143,11 +142,10 @@ pub mod pallet {
 	{
 		/// Adjusts a `Position` by changing the collateral and debit amounts.
 		///
-		/// - `collateral_adjustment`: A signed amount representing the change in collateral.
-		///   A positive value deposits collateral, while a negative value withdraws it.
-		/// - `debit_adjustment`: A signed amount representing the change in debit.
-		///   A positive value issues more stablecoin to the caller, while a negative value
-		///   represents a repayment.
+		/// - `collateral_adjustment`: A signed amount representing the change in collateral. A
+		///   positive value deposits collateral, while a negative value withdraws it.
+		/// - `debit_adjustment`: A signed amount representing the change in debit. A positive value
+		///   issues more stablecoin to the caller, while a negative value represents a repayment.
 		#[pallet::call_index(0)]
 		#[pallet::weight(<T as Config>::WeightInfo::adjust_loan())]
 		pub fn adjust_loan(
@@ -164,8 +162,8 @@ pub mod pallet {
 		/// This function is used when the `Position` is still in a safe state (i.e., not
 		/// subject to liquidation).
 		///
-		/// - `max_collateral_amount`: The maximum amount of collateral to be sold to swap for
-		///   the stablecoin needed to clear the debit.
+		/// - `max_collateral_amount`: The maximum amount of collateral to be sold to swap for the
+		///   stablecoin needed to clear the debit.
 		///
 		/// **Note:** This function is not yet implemented.
 		#[pallet::call_index(1)]
@@ -181,7 +179,8 @@ pub mod pallet {
 		/// Generates new debit in advance, buys collateral, and deposits it into the `Position`.
 		///
 		/// - `increase_debit_value`: The specific increased debit value for the `Position`.
-		/// - `min_increase_collateral`: The minimum amount of collateral to be added to the `Position`.
+		/// - `min_increase_collateral`: The minimum amount of collateral to be added to the
+		///   `Position`.
 		///
 		/// **Note:** This function is not yet implemented.
 		#[pallet::call_index(6)]
@@ -198,7 +197,8 @@ pub mod pallet {
 
 		/// Sells the collateral locked in a `Position` to get stablecoin to repay the debit.
 		///
-		/// - `decrease_collateral`: The specific amount of collateral to be sold from the `Position`.
+		/// - `decrease_collateral`: The specific amount of collateral to be sold from the
+		///   `Position`.
 		/// - `min_decrease_debit_value`: The minimum amount of debit to be repaid.
 		///
 		/// **Note:** This function is not yet implemented.
@@ -220,11 +220,11 @@ pub mod pallet {
 		/// This differs from `adjust_loan` where the debit adjustment is a direct amount of
 		/// the stablecoin.
 		///
-		/// - `collateral_adjustment`: A signed amount representing the change in collateral.
-		///   A positive value deposits collateral, while a negative value withdraws it.
+		/// - `collateral_adjustment`: A signed amount representing the change in collateral. A
+		///   positive value deposits collateral, while a negative value withdraws it.
 		/// - `debit_value_adjustment`: A signed amount representing the change in the debit's
-		///   value. A positive value issues more stablecoin, while a negative value represents
-		///   a repayment.
+		///   value. A positive value issues more stablecoin, while a negative value represents a
+		///   repayment.
 		///
 		/// **Note:** This function is not yet implemented.
 		#[pallet::call_index(8)]

@@ -32,17 +32,17 @@ use frame_support::{
 	pallet_prelude::*,
 	traits::{
 		fungibles::{Inspect, Mutate},
-		tokens::{Balance as BalanceT, Preservation, Precision, Fortitude},
+		tokens::{Balance as BalanceT, Fortitude, Precision, Preservation},
 	},
 	transactional, PalletId,
 };
 use frame_system::pallet_prelude::*;
+use num_traits::ops::checked::CheckedRem;
 use pallet_traits::{AuctionManager, CDPTreasury, CDPTreasuryExtended, Ratio, Swap, SwapLimit};
 use sp_runtime::{
-	traits::{AccountIdConversion, One, Zero, Saturating},
+	traits::{AccountIdConversion, One, Saturating, Zero},
 	ArithmeticError, DispatchError, DispatchResult, FixedPointNumber,
 };
-use num_traits::ops::checked::CheckedRem;
 use sp_std::prelude::*;
 
 mod mock;
@@ -293,7 +293,8 @@ impl<T: Config> Pallet<T> {
 
 	/// Offsets the surplus and debit pools.
 	fn offset_surplus_and_debit() {
-		// The part of the debit pool that exceeds the debit offset buffer can be offset by the surplus
+		// The part of the debit pool that exceeds the debit offset buffer can be offset by the
+		// surplus
 		let offset_amount = sp_std::cmp::min(
 			Self::debit_pool().saturating_sub(Self::debit_offset_buffer()),
 			Self::surplus_pool(),
@@ -309,14 +310,14 @@ impl<T: Config> Pallet<T> {
 							.checked_sub(&offset_amount)
 							.expect("offset = min(debit, surplus); qed")
 					});
-				}
+				},
 				Err(e) => {
 					log::warn!(
 						target: "cdp-treasury",
 						"get_swap_supply_amount: Attempt to burn surplus {:?} failed: {:?}, this is unexpected but should be safe",
 						offset_amount, e
 					);
-				}
+				},
 			}
 		}
 	}
