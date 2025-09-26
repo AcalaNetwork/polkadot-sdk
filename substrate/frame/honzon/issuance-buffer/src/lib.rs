@@ -30,7 +30,7 @@ pub use pallet::*;
 pub mod pallet {
 	use frame_support::{
 		pallet_prelude::*,
-		traits::{Currency, Get, ReservableCurrency},
+		traits::{fungible, Get, tokens::fungible::Mutate},
 		PalletId,
 	};
 	use frame_system::pallet_prelude::*;
@@ -42,8 +42,7 @@ pub mod pallet {
 	};
 	use sp_std::result;
 
-	type BalanceOf<T> =
-		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+	type BalanceOf<T> = <T as pallet_cdp_treasury::Config>::Balance;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_cdp_treasury::Config {
@@ -52,7 +51,7 @@ pub mod pallet {
 
 		/// Currency type for deposit/withdraw collateral assets to/from loans
 		/// module
-		type Currency: ReservableCurrency<Self::AccountId>;
+		type Currency: Mutate<Self::AccountId, Balance = <Self as pallet_cdp_treasury::Config>::Balance>;
 
 		/// Price provider for collateral assets.
 		type PriceProvider: PriceProvider<Self::CurrencyId>;
@@ -214,7 +213,7 @@ pub mod pallet {
 				who,
 				&Self::account_id(),
 				actual_collateral_to_buy_final,
-				frame_support::traits::ExistenceRequirement::AllowDeath,
+				frame_support::traits::tokens::Preservation::Expendable,
 			)?;
 
 			T::CDPTreasury::deposit_collateral(

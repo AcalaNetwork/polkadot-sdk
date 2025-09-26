@@ -24,7 +24,7 @@
 #![allow(clippy::from_over_into)]
 #![allow(clippy::type_complexity)]
 
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,17 @@ impl<T> Handler<T> for Tuple {
 }
 
 /// Represents a potential change to a value.
-#[derive(Encode, Decode, Clone, Eq, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	Clone,
+	Eq,
+	PartialEq,
+	RuntimeDebug,
+	TypeInfo,
+	MaxEncodedLen,
+)]
 pub enum Change<Value> {
 	/// No change is required.
 	NoChange,

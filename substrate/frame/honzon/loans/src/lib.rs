@@ -29,6 +29,11 @@
 
 pub use pallet::*;
 
+#[cfg(test)]
+mod mock;
+#[cfg(test)]
+mod tests;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::{
@@ -42,18 +47,31 @@ pub mod pallet {
 	use pallet_traits::{
 		CDPTreasury, Handler, LiquidationTarget, Position, Rate, Ratio, RiskManager,
 	};
+	use sp_arithmetic::traits::Signed;
 	use sp_runtime::{
-		traits::{AccountIdConversion, Saturating, Zero},
+		traits::{AccountIdConversion, Bounded, Saturating, Zero},
 		ArithmeticError, DispatchResult,
 	};
 	use sp_std::prelude::*;
 
-	pub type Amount = i128;
 	pub type BalanceOf<T> =
 		<<T as Config>::Currency as Inspect<<T as frame_system::Config>::AccountId>>::Balance;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
+		/// The amount type, should be a signed integer.
+		type Amount: Parameter
+			+ Member
+			+ Signed
+			+ Saturating
+			+ sp_runtime::traits::Bounded
+			+ MaybeSerializeDeserialize
+			+ Copy
+			+ Default
+			+ Ord
+			+ TryFrom<BalanceOf<Self>>
+			+ TryInto<BalanceOf<Self>>;
+
 		/// Currency type for handling collateral holds on user accounts.
 		type Currency: HoldMutate<Self::AccountId, Reason = Self::RuntimeHoldReason>;
 
@@ -88,7 +106,7 @@ pub mod pallet {
 		type CollateralCurrencyId: Get<Self::CurrencyId>;
 
 		/// Event handler which calls when update loan.
-		type OnUpdateLoan: Handler<(Self::AccountId, Amount, BalanceOf<Self>)>;
+		type OnUpdateLoan: Handler<(Self::AccountId, Self::Amount, BalanceOf<Self>)>;
 
 		type LiquidationStrategy: LiquidationTarget<
 			Self::AccountId,
@@ -108,8 +126,8 @@ pub mod pallet {
 		/// Position updated.
 		PositionUpdated {
 			owner: T::AccountId,
-			collateral_adjustment: Amount,
-			debit_adjustment: Amount,
+			collateral_adjustment: T::Amount,
+			debit_adjustment: T::Amount,
 		},
 		/// Confiscate CDP\'s collateral assets and eliminate its debit.
 		ConfiscateCollateralAndDebit {
@@ -156,10 +174,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {}
 
-	impl<T: Config> Pallet<T>
-	where
-		BalanceOf<T>: TryFrom<Amount> + TryInto<Amount>,
-	{
+	impl<T: Config> Pallet<T> {
 		pub fn account_id() -> T::AccountId {
 			T::PalletId::get().into_account_truncating()
 		}
@@ -197,8 +212,8 @@ pub mod pallet {
 			let remaining_debit = debit_decrease.saturating_sub(covered_debit);
 
 			// convert balance type to amount type
-			let collateral_adjustment = Self::amount_try_from_balance(collateral_confiscate)?;
-			let debit_adjustment = Self::amount_try_from_balance(debit_decrease)?;
+			let collateral_adjustment = Self::balance_to_amount(collateral_confiscate)?;
+			let debit_adjustment = Self::balance_to_amount(debit_decrease)?;
 
 			if !remaining_collateral.is_zero() {
 				// transfer remaining collateral to cdp treasury
@@ -217,8 +232,8 @@ pub mod pallet {
 			// update loan
 			Self::update_loan(
 				who,
-				collateral_adjustment.saturating_neg(),
-				debit_adjustment.saturating_neg(),
+				T::Amount::zero().saturating_sub(collateral_adjustment),
+				T::Amount::zero().saturating_sub(debit_adjustment),
 				None,
 			)?;
 
@@ -236,8 +251,8 @@ pub mod pallet {
 		#[transactional]
 		pub fn adjust_position(
 			who: &T::AccountId,
-			collateral_adjustment: Amount,
-			debit_adjustment: Amount,
+			collateral_adjustment: T::Amount,
+			debit_adjustment: T::Amount,
 			maybe_new_stability_fee: Option<Rate>,
 		) -> DispatchResult {
 			// mutate collateral and debit
@@ -250,8 +265,8 @@ pub mod pallet {
 			)?;
 
 			let collateral_balance_adjustment =
-				Self::balance_try_from_amount_abs(collateral_adjustment)?;
-			let debit_balance_adjustment = Self::balance_try_from_amount_abs(debit_adjustment)?;
+				Self::amount_to_balance_abs(collateral_adjustment)?;
+			let debit_balance_adjustment = Self::amount_to_balance_abs(debit_adjustment)?;
 
 			if collateral_adjustment.is_positive() {
 				T::Currency::hold(
@@ -331,13 +346,13 @@ pub mod pallet {
 			)?;
 
 			// balance -> amount
-			let collateral_adjustment = Self::amount_try_from_balance(collateral)?;
-			let debit_adjustment = Self::amount_try_from_balance(debit)?;
+			let collateral_adjustment = Self::balance_to_amount(collateral)?;
+			let debit_adjustment = Self::balance_to_amount(debit)?;
 
 			Self::update_loan(
 				from,
-				collateral_adjustment.saturating_neg(),
-				debit_adjustment.saturating_neg(),
+				T::Amount::zero().saturating_sub(collateral_adjustment),
+				T::Amount::zero().saturating_sub(debit_adjustment),
 				None,
 			)?;
 			Self::update_loan(
@@ -354,12 +369,12 @@ pub mod pallet {
 		/// mutate records of collaterals and debits
 		pub fn update_loan(
 			who: &T::AccountId,
-			collateral_adjustment: Amount,
-			debit_adjustment: Amount,
+			collateral_adjustment: T::Amount,
+			debit_adjustment: T::Amount,
 			maybe_new_stability_fee: Option<Rate>,
 		) -> DispatchResult {
-			let collateral_balance = Self::balance_try_from_amount_abs(collateral_adjustment)?;
-			let debit_balance = Self::balance_try_from_amount_abs(debit_adjustment)?;
+			let collateral_balance = Self::amount_to_balance_abs(collateral_adjustment)?;
+			let debit_balance = Self::amount_to_balance_abs(debit_adjustment)?;
 
 			<Positions<T>>::try_mutate_exists(who, |may_be_position| -> DispatchResult {
 				let mut p = may_be_position.take().unwrap_or_default();
@@ -476,13 +491,18 @@ pub mod pallet {
 		}
 
 		/// Convert `Balance` to `Amount`.
-		pub fn amount_try_from_balance(b: BalanceOf<T>) -> Result<Amount, Error<T>> {
+		pub fn balance_to_amount(b: BalanceOf<T>) -> Result<T::Amount, Error<T>> {
 			b.try_into().map_err(|_| Error::<T>::AmountConvertFailed)
 		}
 
 		/// Convert the absolute value of `Amount` to `Balance`.
-		pub fn balance_try_from_amount_abs(a: Amount) -> Result<BalanceOf<T>, Error<T>> {
-			a.saturating_abs().try_into().map_err(|_| Error::<T>::AmountConvertFailed)
+		pub fn amount_to_balance_abs(a: T::Amount) -> Result<BalanceOf<T>, Error<T>> {
+			let b = if a == T::Amount::min_value() {
+				T::Amount::max_value()
+			} else {
+				a.abs()
+			};
+			b.try_into().map_err(|_| Error::<T>::AmountConvertFailed)
 		}
 	}
 }

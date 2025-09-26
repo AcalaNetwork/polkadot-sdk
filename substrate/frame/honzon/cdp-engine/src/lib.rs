@@ -62,7 +62,7 @@
 use codec::MaxEncodedLen;
 use frame_support::{
 	pallet_prelude::*,
-	traits::{fungibles, UnixTime},
+	traits::{fungible, fungibles, fungibles::Mutate, tokens::Preservation, UnixTime},
 	transactional, PalletId,
 };
 use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
@@ -90,7 +90,9 @@ use sp_runtime::{
 };
 use sp_std::{marker::PhantomData, prelude::*};
 
+#[cfg(test)]
 mod mock;
+#[cfg(test)]
 mod tests;
 pub mod weights;
 
@@ -161,7 +163,6 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_loans::Config {
-		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 
 		/// The origin which may update risk management parameters. Root can
 		/// always do this.
@@ -225,8 +226,15 @@ pub mod pallet {
 		/// Thus value at genesis is not used.
 		type UnixTime: UnixTime;
 
-		/// Currency for transfer assets
-		type Currency: fungibles::Mutate<
+		/// Single-currency interface used for loan accounting and collateral holds.
+		type Currency: fungible::MutateHold<
+			Self::AccountId,
+			Balance = pallet_loans::BalanceOf<Self>,
+			Reason = <Self as pallet_loans::Config>::RuntimeHoldReason,
+		>;
+
+		/// Multi-currency interface for working with specific assets.
+		type Tokens: fungibles::Mutate<
 			Self::AccountId,
 			AssetId = CurrencyId,
 			Balance = pallet_loans::BalanceOf<Self>,
@@ -471,8 +479,9 @@ pub mod pallet {
 			let mut collateral_params = Self::collateral_params();
 			if let Change::NewValue(maybe_rate) = interest_rate_per_sec {
 				match (collateral_params.interest_rate_per_sec.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) =>
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
+					(Some(existing), Some(rate)) => {
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
+					},
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -492,8 +501,9 @@ pub mod pallet {
 			}
 			if let Change::NewValue(maybe_rate) = liquidation_penalty {
 				match (collateral_params.liquidation_penalty.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) =>
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
+					(Some(existing), Some(rate)) => {
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
+					},
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -626,7 +636,8 @@ impl<T: Config> Pallet<T> {
 	fn submit_unsigned_liquidation_tx(who: T::AccountId) {
 		let who = T::Lookup::unlookup(who);
 		let call = Call::<T>::liquidate { who: who.clone() };
-		let res = SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into());
+		let xt = T::create_bare(call.into());
+		let res = SubmitTransaction::<T, Call<T>>::submit_transaction(xt);
 		if res.is_err() {
 			log::info!(
 				target: "cdp-engine offchain worker",
@@ -639,7 +650,8 @@ impl<T: Config> Pallet<T> {
 	fn submit_unsigned_settlement_tx(who: T::AccountId) {
 		let who = T::Lookup::unlookup(who);
 		let call = Call::<T>::settle { who: who.clone() };
-		let res = SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into());
+		let xt = T::create_bare(call.into());
+		let res = SubmitTransaction::<T, Call<T>>::submit_transaction(xt);
 		if res.is_err() {
 			log::info!(
 				target: "cdp-engine offchain worker",
@@ -705,8 +717,8 @@ impl<T: Config> Pallet<T> {
 					continue;
 				},
 			};
-			if !is_shutdown &&
-				matches!(
+			if !is_shutdown
+				&& matches!(
 					Self::check_cdp_status(collateral, debit, stability_fee),
 					CDPStatus::Unsafe
 				) {
@@ -774,12 +786,13 @@ impl<T: Config> Pallet<T> {
 				exchange_rate,
 			);
 			match Self::get_liquidation_ratio() {
-				Ok(liquidation_ratio) =>
+				Ok(liquidation_ratio) => {
 					if collateral_ratio < liquidation_ratio {
 						CDPStatus::Unsafe
 					} else {
 						CDPStatus::Safe
-					},
+					}
+				},
 				Err(e) => CDPStatus::ChecksFailed(e),
 			}
 		} else {
@@ -1024,16 +1037,16 @@ impl<T: Config> Pallet<T> {
 		let collateral_adjustment =
 			<LoansOf<T>>::amount_try_from_balance(decrease_collateral)?.saturating_neg();
 		let previous_debit_value = Self::convert_to_debit_value(debit, effective_stability_fee);
-		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount >=
-			previous_debit_value
+		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount
+			>= previous_debit_value
 		{
 			// refund extra stable coin to the CDP owner
-			<T as Config>::Currency::transfer(
+			<T as Config>::Tokens::transfer(
 				stable_currency_id,
 				&loans_module_account,
 				who,
 				actual_stable_amount.saturating_sub(previous_debit_value),
-				true,
+				Preservation::Protect,
 			)?;
 
 			(previous_debit_value, debit)

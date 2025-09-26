@@ -1,5 +1,5 @@
 scripts:
-  check: cargo check -p pallet-cdp-engine
+  check: cargo check -p pallet-loans --tests
 rules: |
   You are migrate some pallets from other repo into here.
   All the pallets are located in substrate/frame.
@@ -10,3 +10,5 @@ rules: |
   orml-* / module-* pallets are now pallet-*
   We only support a single collateral type: the native currency
   Remove / Replace multi collateral related code
+  Use traits/tokens/fungible(s) traits
+  Use pallet-assets in mock for testing

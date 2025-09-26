@@ -19,34 +19,38 @@
 //! Mock runtime for CDP Engine pallet
 
 use super::*;
-use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{ConstU128, ConstU32, ConstU64, Nothing, UnixTime},
+	traits::{ConstU128, ConstU32, ConstU64, UnixTime},
 };
 use pallet_traits::{
 	AggregatedSwapPath, CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager,
-	EmergencyShutdown, ExchangeRate, LiquidationTarget, Position, Price, PriceProvider, Rate,
-	Ratio, RiskManager, Swap, SwapLimit,
+	EmergencyShutdown, ExchangeRate, Handler, LiquidationTarget, Position, Price, PriceProvider,
+	Rate, Ratio, RiskManager, Swap, SwapLimit,
 };
-use scale_info::TypeInfo;
 use sp_runtime::{
+	testing::UintAuthorityId,
 	traits::{BlakeTwo256, IdentityLookup, Zero},
 	BuildStorage, DispatchError, DispatchResult, RuntimeDebug,
 };
 use sp_std::marker::PhantomData;
 
 pub type CurrencyId = u32;
+type AccountId = u64;
 type Block = frame_system::mocking::MockBlock<Test>;
+
+const COLLATERAL_ASSET_ID: CurrencyId = 1;
+const STABLE_ASSET_ID: CurrencyId = 2;
 
 // Configure a mock runtime to test the pallet.
 construct_runtime!(
 	pub enum Test
 	{
 		System: frame_system,
+		Assets: pallet_assets,
+		Balances: pallet_balances,
 		Loans: pallet_loans,
 		CDPEngine: crate,
-		Balances: pallet_balances,
 	}
 );
 
@@ -128,6 +132,28 @@ impl pallet_balances::Config for Test {
 	type FreezeIdentifier = ();
 	type MaxFreezes = ();
 	type DoneSlashHandler = ();
+}
+
+impl pallet_assets::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type Balance = Balance;
+	type AssetId = CurrencyId;
+	type AssetIdParameter = CurrencyId;
+	type Currency = Balances;
+	type CreateOrigin = frame_system::EnsureRoot<AccountId>;
+	type ForceOrigin = frame_system::EnsureRoot<AccountId>;
+	type AssetDeposit = ConstU128<0>;
+	type AssetAccountDeposit = ConstU128<0>;
+	type MetadataDepositBase = ConstU128<0>;
+	type MetadataDepositPerByte = ConstU128<0>;
+	type ApprovalDeposit = ConstU128<0>;
+	type StringLimit = ConstU32<64>;
+	type Freezer = ();
+	type Extra = ();
+	type WeightInfo = ();
+	type RemoveItemsLimit = ConstU32<1000>;
+	type CallbackHandle = ();
+	type Holder = ();
 }
 
 parameter_types! {
@@ -329,7 +355,7 @@ impl Config for Test {
 	type UnsignedPriority = ConstU64<100>;
 	type EmergencyShutdown = MockEmergencyShutdown;
 	type UnixTime = MockUnixTime;
-	type Currency = Balances;
+	type Currency = AssetsCurrencyAdapter;
 	type DEX = MockDEXManager;
 	type Swap = MockDEXManager;
 	type PalletId = CDPEnginePalletId;
@@ -447,6 +473,24 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	}
 	.assimilate_storage(&mut storage)
 	.unwrap();
+
+	pallet_assets::GenesisConfig::<Test> {
+		assets: vec![(COLLATERAL_ASSET_ID, 1, true, 1), (STABLE_ASSET_ID, 1, true, 1)],
+		metadata: vec![],
+		accounts: vec![
+			(COLLATERAL_ASSET_ID, 1, 1_000_000u128),
+			(COLLATERAL_ASSET_ID, 2, 1_000_000u128),
+			(STABLE_ASSET_ID, 1, 1_000_000u128),
+			(STABLE_ASSET_ID, 2, 1_000_000u128),
+		],
+		next_asset_id: None,
+	}
+	.assimilate_storage(&mut storage)
+	.unwrap();
+
+	pallet_assets_holder::GenesisConfig::<Test>::default()
+		.assimilate_storage(&mut storage)
+		.unwrap();
 
 	pallet_loans::TotalPositions::<Test>::put(Position::default());
 	pallet_loans::TotalDebitByStabilityFee::<Test>::remove_all(None);

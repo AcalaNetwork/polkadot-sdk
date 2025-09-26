@@ -472,8 +472,8 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 
 		if collateral_in_auction {
 			ensure!(
-				Self::total_collaterals() >= supply_limit &&
-					T::AuctionManagerHandler::get_total_collateral_in_auction(
+				Self::total_collaterals() >= supply_limit
+					&& T::AuctionManagerHandler::get_total_collateral_in_auction(
 						T::GetBaseCurrencyId::get()
 					) >= supply_limit,
 				Error::<T>::CollateralNotEnough,
@@ -509,10 +509,10 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 		let mut unhandled_target = target;
 		let expected_collateral_auction_size = Self::expected_collateral_auction_size();
 		let max_auctions_count: T::Balance = T::MaxAuctionsCount::get().into();
-		let lots_count = if !split ||
-			max_auctions_count.is_zero() ||
-			expected_collateral_auction_size.is_zero() ||
-			amount <= expected_collateral_auction_size
+		let lots_count = if !split
+			|| max_auctions_count.is_zero()
+			|| expected_collateral_auction_size.is_zero()
+			|| amount <= expected_collateral_auction_size
 		{
 			One::one()
 		} else {
