@@ -47,11 +47,11 @@ mod mock;
 mod tests;
 mod weights;
 
-pub use module::*;
+pub use pallet::*;
 pub use weights::WeightInfo;
 
 #[frame_support::pallet]
-pub mod module {
+pub mod pallet {
 	use super::*;
 
 	#[pallet::config]

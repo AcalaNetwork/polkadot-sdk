@@ -58,6 +58,8 @@ pub mod weights;
 
 pub use weights::WeightInfo;
 
+pub use pallet::*;
+
 /// Reasons for holding funds in this pallet.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 #[codec(dumb_trait_bound)]
