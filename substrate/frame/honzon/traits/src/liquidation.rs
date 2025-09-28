@@ -22,3 +22,24 @@ pub trait LiquidationTarget<AccountId, CurrencyId, Balance> {
 		debit_to_cover: Balance,
 	) -> Result<(Balance, Balance), DispatchError>;
 }
+
+/// A simple liquidation strategy for use in tests and mocks.
+///
+/// The strategy does not perform any actual liquidation, instead it returns
+/// zeroed values so the caller can treat the entire collateral and debit as
+/// leftovers.
+#[derive(Default, Clone, Copy, Eq, PartialEq, Debug)]
+pub struct MockLiquidationStrategy;
+
+impl<AccountId, CurrencyId, Balance: Default>
+	LiquidationTarget<AccountId, CurrencyId, Balance> for MockLiquidationStrategy
+{
+	fn liquidate(
+		_who: &AccountId,
+		_collateral_currency: CurrencyId,
+		_collateral_to_sell: Balance,
+		_debit_to_cover: Balance,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((Balance::default(), Balance::default()))
+	}
+}

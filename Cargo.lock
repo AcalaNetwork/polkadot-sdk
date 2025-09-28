@@ -12681,7 +12681,6 @@ dependencies = [
  "pallet-assets-holder",
  "pallet-balances",
  "pallet-cdp-treasury",
- "pallet-issuance-buffer",
  "pallet-traits",
  "parity-scale-codec",
  "scale-info",

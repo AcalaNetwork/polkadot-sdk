@@ -24,7 +24,6 @@ pallet-balances = { workspace = true, features = ["std"] }
 pallet-assets-holder = { workspace = true, features = ["std"] }
 pallet-assets = { workspace = true, features = ["std"] }
 pallet-cdp-treasury = { workspace = true, features = ["std"] }
-pallet-issuance-buffer = { path = "../issuance-buffer", features = ["std"] }
 serde = { workspace = true, features = ["derive"] }
 
 [features]

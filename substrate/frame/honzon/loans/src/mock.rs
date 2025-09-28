@@ -27,31 +27,22 @@ use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types,
 	pallet_prelude::*,
 	parameter_types,
-	traits::{AsEnsureOriginWithArg, ConstU128, ConstU32, Nothing},
+	traits::{AsEnsureOriginWithArg, ConstU128, ConstU32},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_traits::{honzon::*, Handler, Price, PriceProvider, Swap, SwapLimit};
-use sp_arithmetic::traits::Signed;
-use sp_core::H256;
+use pallet_traits::{honzon::*, Handler, MockLiquidationStrategy, Swap, SwapLimit};
 use sp_runtime::{
-	testing::Header,
-	traits::{AccountIdConversion, BlakeTwo256, Convert, IdentityLookup},
+	traits::{AccountIdConversion, Convert, IdentityLookup},
 	BuildStorage, DispatchResult, Either,
 };
-use sp_runtime::{FixedU128, Permill};
 use std::collections::HashMap;
 
 pub type AccountId = u128;
 pub type Balance = u128;
 pub type Amount = i128;
-pub type BlockNumber = u64;
-
 pub const ALICE: AccountId = 1;
 pub const BOB: AccountId = 2;
-
-type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;
-type Block = frame_system::mocking::MockBlock<Runtime>;
 
 construct_runtime!(
 	pub enum Runtime {
@@ -60,7 +51,6 @@ construct_runtime!(
 		Assets: pallet_assets,
 		PalletBalances: pallet_balances,
 		CDPTreasuryModule: pallet_cdp_treasury,
-		IssuanceBuffer: pallet_issuance_buffer,
 	}
 );
 
@@ -68,7 +58,7 @@ construct_runtime!(
 impl frame_system::Config for Runtime {
 	type AccountId = AccountId;
 	type Lookup = IdentityLookup<Self::AccountId>;
-	type Block = Block;
+	type Block = frame_system::mocking::MockBlock<Runtime>;
 	type AccountData = pallet_balances::AccountData<Balance>;
 }
 
@@ -168,6 +158,7 @@ ord_parameter_types! {
 parameter_types! {
 	pub const CDPTreasuryPalletId: PalletId = PalletId(*b"aca/cdpt");
 	pub TreasuryAccount: AccountId = PalletId(*b"aca/hztr").into_account_truncating();
+	pub const StableCurrencyIdValue: CurrencyId = CurrencyId::Stable;
 }
 
 pub struct MockSwap;
@@ -223,41 +214,6 @@ impl pallet_cdp_treasury::Config for Runtime {
 	type GetBaseCurrencyId = CollateralCurrencyIdValue;
 	type Swap = MockSwap;
 	type Balance = Balance;
-}
-
-parameter_types! {
-	pub const IssuanceBufferPalletId: PalletId = PalletId(*b"isncbufr");
-	pub const StableCurrencyIdValue: CurrencyId = CurrencyId::Stable;
-}
-
-pub struct MockPriceProvider;
-impl PriceProvider<CurrencyId> for MockPriceProvider {
-	fn get_price(currency_id: CurrencyId) -> Option<Price> {
-		if currency_id == CurrencyId::Native {
-			Some(FixedU128::from_inner(2))
-		} else if currency_id == CurrencyId::Stable {
-			Some(FixedU128::from_inner(1))
-		} else {
-			None
-		}
-	}
-}
-
-parameter_types! {
-	pub const SomeDiscount: Permill = Permill::from_percent(10);
-	pub const IssuanceQuotaValue: Balance = 0;
-}
-
-impl pallet_issuance_buffer::Config for Runtime {
-	type AdminOrigin = EnsureSignedBy<One, AccountId>;
-	type PriceProvider = MockPriceProvider;
-	type CollateralCurrencyId = CollateralCurrencyIdValue;
-	type StableCurrencyId = StableCurrencyIdValue;
-	type PalletId = IssuanceBufferPalletId;
-	type CDPTreasury = CDPTreasuryModule;
-	type Discount = SomeDiscount;
-	type IssuanceQuota = IssuanceQuotaValue;
-	type Currency = LoansMultiCurrency;
 }
 
 // mock risk manager
@@ -333,7 +289,7 @@ impl Config for Runtime {
 	type OnUpdateLoan = MockOnUpdateLoan;
 	type CurrencyId = CurrencyId;
 	type CollateralCurrencyId = CollateralCurrencyIdValue;
-	type LiquidationStrategy = IssuanceBuffer;
+	type LiquidationStrategy = MockLiquidationStrategy;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	type Currency = Collateral;
 }
