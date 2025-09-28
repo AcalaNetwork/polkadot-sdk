@@ -73,6 +73,7 @@ use pallet_traits::{
 	Swap, SwapLimit,
 };
 use scale_info::TypeInfo;
+use num_traits::Signed;
 use sp_runtime::{
 	offchain::{
 		storage::StorageValueRef,
@@ -100,7 +101,7 @@ pub use pallet::*;
 pub use weights::WeightInfo;
 
 pub type CurrencyId = u32;
-pub type Amount = i128;
+pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 
 #[derive(RuntimeDebug)]
 pub enum OffchainErr {
@@ -162,7 +163,12 @@ pub mod pallet {
 	use super::*;
 
 	#[pallet::config]
-	pub trait Config: frame_system::Config + pallet_loans::Config {
+	pub trait Config:
+		frame_system::Config
+		+ pallet_loans::Config
+		+ frame_system::offchain::CreateTransactionBase<Call<Self>>
+		+ frame_system::offchain::CreateBare<Call<Self>>
+	{
 		/// The origin which may update risk management parameters. Root can
 		/// always do this.
 		type UpdateOrigin: EnsureOrigin<Self::RuntimeOrigin>;
@@ -295,16 +301,16 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		/// Liquidate the unsafe CDP.
 		LiquidateUnsafeCDP {
-			owner: T::AccountId,
+			owner: AccountIdOf<T>,
 			collateral_amount: pallet_loans::BalanceOf<T>,
 			bad_debt_value: pallet_loans::BalanceOf<T>,
 			target_amount: pallet_loans::BalanceOf<T>,
 		},
 		/// Settle the CDP has debit.
-		SettleCDPInDebit { owner: T::AccountId },
+		SettleCDPInDebit { owner: AccountIdOf<T> },
 		/// Directly close CDP has debit by handle debit with DEX.
 		CloseCDPInDebitByDEX {
-			owner: T::AccountId,
+			owner: AccountIdOf<T>,
 			sold_collateral_amount: pallet_loans::BalanceOf<T>,
 			refund_collateral_amount: pallet_loans::BalanceOf<T>,
 			debit_value: pallet_loans::BalanceOf<T>,
@@ -394,7 +400,11 @@ pub mod pallet {
 
 		/// Runs after every block. Start offchain worker to check CDP and
 		/// submit unsigned tx to trigger liquidation or settlement.
-		fn offchain_worker(now: BlockNumberFor<T>) {
+		fn offchain_worker(now: BlockNumberFor<T>)
+		where
+			T: frame_system::offchain::CreateTransactionBase<Call<T>>
+				+ frame_system::offchain::CreateBare<Call<T>>,
+		{
 			if let Err(e) = Self::_offchain_worker() {
 				log::info!(
 					target: "cdp-engine offchain worker",
@@ -632,137 +642,6 @@ impl<T: Config> Pallet<T> {
 		0
 	}
 
-	fn submit_unsigned_liquidation_tx(who: T::AccountId) {
-		let who = T::Lookup::unlookup(who);
-		let call = Call::<T>::liquidate { who: who.clone() };
-		let xt = T::create_bare(call.into());
-		let res = SubmitTransaction::<T, Call<T>>::submit_transaction(xt);
-		if res.is_err() {
-			log::info!(
-				target: "cdp-engine offchain worker",
-				"submit unsigned liquidation tx for \nCDP - AccountId {:?} \nfailed!",
-				who,
-			);
-		}
-	}
-
-	fn submit_unsigned_settlement_tx(who: T::AccountId) {
-		let who = T::Lookup::unlookup(who);
-		let call = Call::<T>::settle { who: who.clone() };
-		let xt = T::create_bare(call.into());
-		let res = SubmitTransaction::<T, Call<T>>::submit_transaction(xt);
-		if res.is_err() {
-			log::info!(
-				target: "cdp-engine offchain worker",
-				"submit unsigned settlement tx for \nCDP - AccountId {:?} \nfailed!",
-				who,
-			);
-		}
-	}
-
-	fn _offchain_worker() -> Result<(), OffchainErr> {
-		// check if we are a potential validator
-		if !sp_io::offchain::is_validator() {
-			return Err(OffchainErr::NotValidator);
-		}
-
-		// acquire offchain worker lock
-		let lock_expiration = Duration::from_millis(LOCK_DURATION);
-		let mut lock = StorageLock::<Time>::with_deadline(OFFCHAIN_WORKER_LOCK, lock_expiration);
-		let mut guard = lock.try_lock().map_err(|_| OffchainErr::OffchainLock)?;
-		let to_be_continue = StorageValueRef::persistent(OFFCHAIN_WORKER_DATA);
-
-		// get to_be_continue record
-		let start_key: Option<Vec<u8>> = if let Ok(Some(maybe_last_iterator_previous_key)) =
-			to_be_continue.get::<Option<Vec<u8>>>()
-		{
-			maybe_last_iterator_previous_key
-		} else {
-			None
-		};
-
-		// get the max iterations config
-		let max_iterations = StorageValueRef::persistent(OFFCHAIN_WORKER_MAX_ITERATIONS)
-			.get::<u32>()
-			.unwrap_or(Some(DEFAULT_MAX_ITERATIONS))
-			.unwrap_or(DEFAULT_MAX_ITERATIONS);
-
-		let currency_id = T::GetNativeCurrencyId::get();
-		let is_shutdown = T::EmergencyShutdown::is_shutdown();
-
-		// If start key is Some(value) continue iterating from that point in storage otherwise start
-		// iterating from the beginning of <pallet_loans::Positions<T>>
-		let mut map_iterator = match start_key.clone() {
-			Some(key) => <pallet_loans::Positions<T>>::iter_from(key),
-			None => <pallet_loans::Positions<T>>::iter(),
-		};
-
-		let mut finished = true;
-		let mut iteration_count = 0;
-		let iteration_start_time = sp_io::offchain::timestamp();
-
-		#[allow(clippy::while_let_on_iterator)]
-		while let Some((who, Position { collateral, debit, stability_fee })) = map_iterator.next() {
-			let stability_fee = Rate::from_inner(stability_fee.into_inner());
-			let stability_fee = match Self::get_effective_stability_fee(stability_fee) {
-				Ok(fee) => fee,
-				Err(e) => {
-					log::debug!(
-						target: "cdp-engine offchain worker",
-						"skip position {:?} due to stability fee error: {:?}",
-						who,
-						e
-					);
-					continue;
-				},
-			};
-			if !is_shutdown
-				&& matches!(
-					Self::check_cdp_status(collateral, debit, stability_fee),
-					CDPStatus::Unsafe
-				) {
-				// liquidate unsafe CDPs before emergency shutdown occurs
-				Self::submit_unsigned_liquidation_tx(who);
-			} else if is_shutdown && !debit.is_zero() {
-				// settle CDPs with debit after emergency shutdown occurs.
-				Self::submit_unsigned_settlement_tx(who);
-			}
-
-			iteration_count += 1;
-			if iteration_count == max_iterations {
-				finished = false;
-				break;
-			}
-			// extend offchain worker lock
-			guard.extend_lock().map_err(|_| OffchainErr::OffchainLock)?;
-		}
-		let iteration_end_time = sp_io::offchain::timestamp();
-		log::debug!(
-			target: "cdp-engine offchain worker",
-			"iteration info: max_iterations: {:?}, currency_id: {:?}, start_key: {:?}, iteration_count: {:?}, start_at: {:?}, end_at: {:?}, execution_time: {:?}",
-			max_iterations,
-			currency_id,
-			start_key,
-			iteration_count,
-			iteration_start_time,
-			iteration_end_time,
-			iteration_end_time.diff(&iteration_start_time)
-		);
-
-		// if iteration for map storage finished, clear to be continue record
-		// otherwise, update to be continue record
-		if finished {
-			to_be_continue.set(&Option::<Vec<u8>>::None);
-		} else {
-			to_be_continue.set(&Some(map_iterator.last_raw_key()));
-		}
-
-		// Consume the guard but **do not** unlock the underlying lock.
-		guard.forget();
-
-		Ok(())
-	}
-
 	pub fn check_cdp_status(
 		collateral_amount: BalanceOf<T>,
 		debit_amount: BalanceOf<T>,
@@ -903,9 +782,9 @@ impl<T: Config> Pallet<T> {
 	}
 
 	pub fn adjust_position(
-		who: &T::AccountId,
-		collateral_adjustment: Amount,
-		debit_adjustment: Amount,
+		who: &AccountIdOf<T>,
+		collateral_adjustment: <T as pallet_loans::Config>::Amount,
+		debit_adjustment: <T as pallet_loans::Config>::Amount,
 		maybe_new_stability_fee: Option<Rate>,
 	) -> DispatchResult {
 		<LoansOf<T>>::adjust_position(
@@ -918,12 +797,12 @@ impl<T: Config> Pallet<T> {
 	}
 
 	pub fn adjust_position_by_debit_value(
-		who: &T::AccountId,
-		collateral_adjustment: Amount,
-		debit_value_adjustment: Amount,
+		who: &AccountIdOf<T>,
+		collateral_adjustment: <T as pallet_loans::Config>::Amount,
+		debit_value_adjustment: <T as pallet_loans::Config>::Amount,
 	) -> DispatchResult {
 		let debit_value_adjustment_abs =
-			<LoansOf<T>>::balance_try_from_amount_abs(debit_value_adjustment)?;
+			<LoansOf<T>>::amount_to_balance_abs(debit_value_adjustment)?;
 		let Position { debit, stability_fee, .. } = <LoansOf<T>>::positions(who);
 		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
 		let effective_stability_fee = Self::get_effective_stability_fee(position_stability_fee)?;
@@ -935,12 +814,14 @@ impl<T: Config> Pallet<T> {
 			)
 			.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
 			let actual_adjustment_abs = debit.min(debit_adjustment_abs);
-			let debit_adjustment = <LoansOf<T>>::amount_try_from_balance(actual_adjustment_abs)?;
+			let debit_adjustment = <LoansOf<T>>::balance_to_amount(actual_adjustment_abs)?;
+			let negative_debit_adjustment =
+				<T as pallet_loans::Config>::Amount::zero().saturating_sub(debit_adjustment);
 
 			Self::adjust_position(
 				who,
 				collateral_adjustment,
-				debit_adjustment.saturating_neg(),
+				negative_debit_adjustment,
 				None,
 			)?;
 		} else {
@@ -948,7 +829,7 @@ impl<T: Config> Pallet<T> {
 			let debit_adjustment_abs =
 				Self::try_convert_to_debit_balance(debit_value_adjustment_abs, new_stability_fee)
 					.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
-			let debit_adjustment = <LoansOf<T>>::amount_try_from_balance(debit_adjustment_abs)?;
+			let debit_adjustment = <LoansOf<T>>::balance_to_amount(debit_adjustment_abs)?;
 
 			Self::adjust_position(
 				who,
@@ -965,7 +846,7 @@ impl<T: Config> Pallet<T> {
 	/// and the collateral ratio will be reduced but CDP must still be at valid risk.
 	#[transactional]
 	pub fn expand_position_collateral(
-		who: &T::AccountId,
+		who: &AccountIdOf<T>,
 		increase_debit_value: BalanceOf<T>,
 		min_increase_collateral: BalanceOf<T>,
 	) -> DispatchResult {
@@ -984,12 +865,12 @@ impl<T: Config> Pallet<T> {
 		)?;
 
 		// update CDP state
-		let collateral_adjustment = <LoansOf<T>>::amount_try_from_balance(increase_collateral)?;
+		let collateral_adjustment = <LoansOf<T>>::balance_to_amount(increase_collateral)?;
 		let new_stability_fee = Self::get_interest_rate_per_sec()?;
 		let increase_debit_balance =
 			Self::try_convert_to_debit_balance(increase_debit_value, new_stability_fee)
 				.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
-		let debit_adjustment = <LoansOf<T>>::amount_try_from_balance(increase_debit_balance)?;
+		let debit_adjustment = <LoansOf<T>>::balance_to_amount(increase_debit_balance)?;
 		Self::adjust_position(
 			who,
 			collateral_adjustment,
@@ -1010,7 +891,7 @@ impl<T: Config> Pallet<T> {
 	/// and the collateral ratio will be increased.
 	#[transactional]
 	pub fn shrink_position_debit(
-		who: &T::AccountId,
+		who: &AccountIdOf<T>,
 		decrease_collateral: BalanceOf<T>,
 		min_decrease_debit_value: BalanceOf<T>,
 	) -> DispatchResult {
@@ -1033,8 +914,10 @@ impl<T: Config> Pallet<T> {
 		)?;
 
 		// update CDP state
+		let collateral_reduction =
+			<LoansOf<T>>::balance_to_amount(decrease_collateral)?;
 		let collateral_adjustment =
-			<LoansOf<T>>::amount_try_from_balance(decrease_collateral)?.saturating_neg();
+			<T as pallet_loans::Config>::Amount::zero().saturating_sub(collateral_reduction);
 		let previous_debit_value = Self::convert_to_debit_value(debit, effective_stability_fee);
 		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount
 			>= previous_debit_value
@@ -1057,8 +940,10 @@ impl<T: Config> Pallet<T> {
 			)
 		};
 
+		let debit_reduction =
+			<LoansOf<T>>::balance_to_amount(decrease_debit_balance)?;
 		let debit_adjustment =
-			<LoansOf<T>>::amount_try_from_balance(decrease_debit_balance)?.saturating_neg();
+			<T as pallet_loans::Config>::Amount::zero().saturating_sub(debit_reduction);
 		Self::adjust_position(who, collateral_adjustment, debit_adjustment, None)?;
 
 		// repay the debit of CDP
@@ -1072,7 +957,7 @@ impl<T: Config> Pallet<T> {
 	}
 
 	// settle cdp has debit when emergency shutdown
-	pub fn settle_cdp_has_debit(who: T::AccountId) -> DispatchResult {
+	pub fn settle_cdp_has_debit(who: AccountIdOf<T>) -> DispatchResult {
 		let currency_id = T::GetNativeCurrencyId::get();
 		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
 		let stability_fee = Rate::from_inner(stability_fee.into_inner());
@@ -1098,7 +983,7 @@ impl<T: Config> Pallet<T> {
 	// close cdp has debit by swap collateral to exact debit
 	#[transactional]
 	pub fn close_cdp_has_debit_by_dex(
-		who: T::AccountId,
+		who: AccountIdOf<T>,
 		max_collateral_amount: BalanceOf<T>,
 	) -> DispatchResult {
 		let currency_id = T::GetNativeCurrencyId::get();
@@ -1139,7 +1024,7 @@ impl<T: Config> Pallet<T> {
 	}
 
 	// liquidate unsafe cdp
-	pub fn liquidate_unsafe_cdp(who: T::AccountId) -> Result<Weight, DispatchError> {
+	pub fn liquidate_unsafe_cdp(who: AccountIdOf<T>) -> Result<Weight, DispatchError> {
 		let currency_id = T::GetNativeCurrencyId::get();
 		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
 		let stability_fee = Rate::from_inner(stability_fee.into_inner());
@@ -1170,7 +1055,7 @@ impl<T: Config> Pallet<T> {
 	}
 
 	pub fn handle_liquidated_collateral(
-		who: &T::AccountId,
+		who: &AccountIdOf<T>,
 		amount: BalanceOf<T>,
 		target_stable_amount: BalanceOf<T>,
 	) -> DispatchResult {
@@ -1185,7 +1070,7 @@ impl<T: Config> Pallet<T> {
 		LiquidateByPriority::<T>::liquidate(who, currency_id, amount, target_stable_amount)
 	}
 
-	fn account_id() -> T::AccountId {
+	fn account_id() -> AccountIdOf<T> {
 		<T as Config>::PalletId::get().into_account_truncating()
 	}
 }
@@ -1193,9 +1078,9 @@ impl<T: Config> Pallet<T> {
 type LiquidateByPriority<T> = (LiquidateViaDex<T>, LiquidateViaAuction<T>);
 
 pub struct LiquidateViaDex<T>(PhantomData<T>);
-impl<T: Config> LiquidateCollateral<T::AccountId, CurrencyId, BalanceOf<T>> for LiquidateViaDex<T> {
+impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyId, BalanceOf<T>> for LiquidateViaDex<T> {
 	fn liquidate(
-		who: &T::AccountId,
+		who: &AccountIdOf<T>,
 		_collateral_currency_id: CurrencyId,
 		amount: BalanceOf<T>,
 		target_stable_amount: BalanceOf<T>,
@@ -1241,12 +1126,131 @@ impl<T: Config> LiquidateCollateral<T::AccountId, CurrencyId, BalanceOf<T>> for 
 	}
 }
 
+impl<T: Config> Pallet<T> {
+	fn submit_unsigned_liquidation_tx(who: AccountIdOf<T>) {
+		let who = T::Lookup::unlookup(who);
+		let call = Call::<T>::liquidate { who: who.clone() };
+		let xt = T::create_bare(call.into());
+		if SubmitTransaction::<T, Call<T>>::submit_transaction(xt).is_err() {
+			log::info!(
+				target: "cdp-engine offchain worker",
+				"submit unsigned liquidation tx for \nCDP - AccountId {:?} \nfailed!",
+				who,
+			);
+		}
+	}
+
+	fn submit_unsigned_settlement_tx(who: AccountIdOf<T>) {
+		let who = T::Lookup::unlookup(who);
+		let call = Call::<T>::settle { who: who.clone() };
+		let xt = T::create_bare(call.into());
+		if SubmitTransaction::<T, Call<T>>::submit_transaction(xt).is_err() {
+			log::info!(
+				target: "cdp-engine offchain worker",
+				"submit unsigned settlement tx for \nCDP - AccountId {:?} \nfailed!",
+				who,
+			);
+		}
+	}
+
+	fn _offchain_worker() -> Result<(), OffchainErr> {
+		if !sp_io::offchain::is_validator() {
+			return Err(OffchainErr::NotValidator);
+		}
+
+		let lock_expiration = Duration::from_millis(LOCK_DURATION);
+		let mut lock = StorageLock::<Time>::with_deadline(OFFCHAIN_WORKER_LOCK, lock_expiration);
+		let mut guard = lock.try_lock().map_err(|_| OffchainErr::OffchainLock)?;
+		let to_be_continue = StorageValueRef::persistent(OFFCHAIN_WORKER_DATA);
+
+		let start_key: Option<Vec<u8>> = if let Ok(Some(maybe_last_iterator_previous_key)) =
+			to_be_continue.get::<Option<Vec<u8>>>()
+		{
+			maybe_last_iterator_previous_key
+		} else {
+			None
+		};
+
+		let max_iterations = StorageValueRef::persistent(OFFCHAIN_WORKER_MAX_ITERATIONS)
+			.get::<u32>()
+			.unwrap_or(Some(DEFAULT_MAX_ITERATIONS))
+			.unwrap_or(DEFAULT_MAX_ITERATIONS);
+
+		let currency_id = T::GetNativeCurrencyId::get();
+		let is_shutdown = T::EmergencyShutdown::is_shutdown();
+
+		let mut map_iterator = match start_key.clone() {
+			Some(key) => <pallet_loans::Positions<T>>::iter_from(key),
+			None => <pallet_loans::Positions<T>>::iter(),
+		};
+
+		let mut finished = true;
+		let mut iteration_count = 0;
+		let iteration_start_time = sp_io::offchain::timestamp();
+
+		#[allow(clippy::while_let_on_iterator)]
+		while let Some((who, Position { collateral, debit, stability_fee })) = map_iterator.next() {
+			let stability_fee = Rate::from_inner(stability_fee.into_inner());
+			let stability_fee = match Self::get_effective_stability_fee(stability_fee) {
+				Ok(fee) => fee,
+				Err(e) => {
+					log::debug!(
+						target: "cdp-engine offchain worker",
+						"skip position {:?} due to stability fee error: {:?}",
+						who,
+						e
+					);
+					continue;
+				},
+			};
+			if !is_shutdown
+				&& matches!(
+					Self::check_cdp_status(collateral, debit, stability_fee),
+					CDPStatus::Unsafe
+				) {
+				Self::submit_unsigned_liquidation_tx(who);
+			} else if is_shutdown && !debit.is_zero() {
+				Self::submit_unsigned_settlement_tx(who);
+			}
+
+			iteration_count += 1;
+			if iteration_count == max_iterations {
+				finished = false;
+				break;
+			}
+			guard.extend_lock().map_err(|_| OffchainErr::OffchainLock)?;
+		}
+		let iteration_end_time = sp_io::offchain::timestamp();
+		log::debug!(
+			target: "cdp-engine offchain worker",
+			"iteration info: max_iterations: {:?}, currency_id: {:?}, start_key: {:?}, iteration_count: {:?}, start_at: {:?}, end_at: {:?}, execution_time: {:?}",
+			max_iterations,
+			currency_id,
+			start_key,
+			iteration_count,
+			iteration_start_time,
+			iteration_end_time,
+			iteration_end_time.diff(&iteration_start_time)
+		);
+
+		if finished {
+			to_be_continue.set(&Option::<Vec<u8>>::None);
+		} else {
+			to_be_continue.set(&Some(map_iterator.last_raw_key()));
+		}
+
+		guard.forget();
+
+		Ok(())
+	}
+}
+
 pub struct LiquidateViaAuction<T>(PhantomData<T>);
-impl<T: Config> LiquidateCollateral<T::AccountId, CurrencyId, BalanceOf<T>>
+impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyId, BalanceOf<T>>
 	for LiquidateViaAuction<T>
 {
 	fn liquidate(
-		who: &T::AccountId,
+		who: &AccountIdOf<T>,
 		_collateral_currency_id: CurrencyId,
 		amount: BalanceOf<T>,
 		target_stable_amount: BalanceOf<T>,
@@ -1261,7 +1265,7 @@ impl<T: Config> LiquidateCollateral<T::AccountId, CurrencyId, BalanceOf<T>>
 	}
 }
 
-impl<T: Config> RiskManager<T::AccountId, CurrencyId, BalanceOf<T>, BalanceOf<T>> for Pallet<T> {
+impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyId, BalanceOf<T>, BalanceOf<T>> for Pallet<T> {
 	fn get_debit_value(_currency_id: CurrencyId, debit_balance: BalanceOf<T>) -> BalanceOf<T> {
 		Self::average_debit_exchange_rate().saturating_mul_int(debit_balance)
 	}

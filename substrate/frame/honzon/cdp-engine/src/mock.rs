@@ -19,28 +19,43 @@
 //! Mock runtime for CDP Engine pallet
 
 use super::*;
+use core::sync::atomic::{AtomicBool, Ordering};
 use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{ConstU128, ConstU32, ConstU64, UnixTime},
+	traits::{ConstU128, ConstU32, ConstU64, Get, UnixTime},
 };
 use pallet_traits::{
-	AggregatedSwapPath, CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager,
-	EmergencyShutdown, ExchangeRate, Handler, LiquidationTarget, Position, Price, PriceProvider,
-	Rate, Ratio, RiskManager, Swap, SwapLimit,
+	AggregatedSwapPath, CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager, EmergencyShutdown,
+	ExchangeRate, Handler, LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager,
+	Swap, SwapLimit,
 };
 use sp_runtime::{
-	testing::UintAuthorityId,
 	traits::{BlakeTwo256, IdentityLookup, Zero},
-	BuildStorage, DispatchError, DispatchResult, RuntimeDebug,
+	BuildStorage, DispatchError, DispatchResult,
 };
 use sp_std::marker::PhantomData;
 
 pub type CurrencyId = u32;
 type AccountId = u64;
 type Block = frame_system::mocking::MockBlock<Test>;
+type Balance = u128;
+type Amount = i128;
 
 const COLLATERAL_ASSET_ID: CurrencyId = 1;
 const STABLE_ASSET_ID: CurrencyId = 2;
+
+static IS_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
+pub fn set_shutdown(value: bool) {
+	IS_SHUTDOWN.store(value, Ordering::SeqCst);
+}
+
+pub struct DummyOnUpdateLoan;
+impl Handler<(AccountId, Amount, Balance)> for DummyOnUpdateLoan {
+	fn handle(_: &(AccountId, Amount, Balance)) -> DispatchResult {
+		Ok(())
+	}
+}
 
 // Configure a mock runtime to test the pallet.
 construct_runtime!(
@@ -87,25 +102,21 @@ impl frame_system::Config for Test {
 	type PostTransactions = ();
 }
 
-impl<LocalCall> frame_system::offchain::CreateSignedTransaction<LocalCall> for Test
+impl<C> frame_system::offchain::CreateTransactionBase<C> for Test
 where
-	RuntimeCall: From<LocalCall>,
+	RuntimeCall: From<C>,
 {
-	fn create_signed_transaction<
-		C: frame_system::offchain::AppCrypto<Self::Public, Self::Signature>,
-	>(
-		_call: RuntimeCall,
-		_public: Self::Public,
-		_account: Self::AccountId,
-		_nonce: Self::Nonce,
-	) -> Option<Self::Extrinsic> {
-		None
-	}
+	type Extrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
+	type RuntimeCall = RuntimeCall;
 }
 
-impl frame_system::offchain::SigningTypes for Test {
-	type Public = sp_core::sr25519::Public;
-	type Signature = sp_core::sr25519::Signature;
+impl<C> frame_system::offchain::CreateBare<C> for Test
+where
+	RuntimeCall: From<C>,
+{
+	fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
+		frame_system::mocking::MockUncheckedExtrinsic::<Test>::new_bare(call)
+	}
 }
 
 /// Mock UnixTime implementation that returns a fixed timestamp
@@ -140,7 +151,7 @@ impl pallet_assets::Config for Test {
 	type AssetId = CurrencyId;
 	type AssetIdParameter = CurrencyId;
 	type Currency = Balances;
-	type CreateOrigin = frame_system::EnsureRoot<AccountId>;
+	type CreateOrigin = frame_system::EnsureSigned<AccountId>;
 	type ForceOrigin = frame_system::EnsureRoot<AccountId>;
 	type AssetDeposit = ConstU128<0>;
 	type AssetAccountDeposit = ConstU128<0>;
@@ -159,11 +170,17 @@ impl pallet_assets::Config for Test {
 parameter_types! {
 	pub const LoansPalletId: PalletId = PalletId(*b"aca/loan");
 	pub const DefaultDebitExchangeRate: ExchangeRate = ExchangeRate::from_inner(1_000_000_000_000_000_000);
-	pub const DefaultLiquidationPenalty: Rate = Rate::from_inner(1_050_000_000_000_000_000);
 	pub const MinimumCollateralAmount: u128 = 100;
 	pub const GetNativeCurrencyId: CurrencyId = 1;
 	pub const GetStableCurrencyId: CurrencyId = 2;
 	pub const MaxSwapSlippageCompareToOracle: Ratio = Ratio::from_rational(10, 100);
+}
+
+pub struct DefaultPenalty;
+impl Get<FractionalRate> for DefaultPenalty {
+	fn get() -> FractionalRate {
+		FractionalRate::default()
+	}
 }
 
 pub struct MockRiskManager;
@@ -174,10 +191,20 @@ impl RiskManager<u64, CurrencyId, Balance, Balance> for MockRiskManager {
 
 	fn check_position_valid(
 		_currency_id: CurrencyId,
-		_collateral_balance: Balance,
-		_debit_balance: Balance,
-		_check_required_ratio: bool,
+		collateral_balance: Balance,
+		debit_balance: Balance,
+		check_required_ratio: bool,
 	) -> DispatchResult {
+		if debit_balance.is_zero() {
+			return Ok(());
+		}
+		if check_required_ratio {
+			let collateral_value = collateral_balance.saturating_mul(100);
+			let required_value = debit_balance.saturating_mul(150);
+			if collateral_value < required_value {
+				return Err(Error::<Test>::BelowRequiredCollateralRatio.into());
+			}
+		}
 		Ok(())
 	}
 
@@ -199,6 +226,7 @@ impl LiquidationTarget<u64, CurrencyId, Balance> for MockLiquidationStrategy {
 }
 
 impl pallet_loans::Config for Test {
+	type Amount = Amount;
 	type Currency = Balances;
 	type RuntimeHoldReason = pallet_loans::HoldReason;
 	type CurrencyId = CurrencyId;
@@ -206,25 +234,25 @@ impl pallet_loans::Config for Test {
 	type CDPTreasury = MockCDPTreasury;
 	type PalletId = LoansPalletId;
 	type CollateralCurrencyId = GetNativeCurrencyId;
-	type OnUpdateLoan = Nothing<(Self::AccountId, i128, pallet_loans::BalanceOf<Self>)>;
+	type OnUpdateLoan = DummyOnUpdateLoan;
 	type LiquidationStrategy = MockLiquidationStrategy;
 }
 
 pub struct MockPriceProvider;
 impl PriceProvider<CurrencyId> for MockPriceProvider {
 	fn get_relative_price(_base: CurrencyId, _quote: CurrencyId) -> Option<Price> {
-		Some(Price::from_inner(100_000_000_000_000_000))
+		Some(Price::from_inner(1_000_000_000_000_000_000))
 	}
 
 	fn get_price(_currency_id: CurrencyId) -> Option<Price> {
-		Some(Price::from_inner(100_000_000_000_000_000))
+		Some(Price::from_inner(1_000_000_000_000_000_000))
 	}
 }
 
 pub struct MockEmergencyShutdown;
 impl EmergencyShutdown for MockEmergencyShutdown {
 	fn is_shutdown() -> bool {
-		false
+		IS_SHUTDOWN.load(Ordering::SeqCst)
 	}
 }
 
@@ -340,12 +368,11 @@ where
 }
 
 impl Config for Test {
-	type RuntimeEvent = RuntimeEvent;
 	type UpdateOrigin = frame_system::EnsureRoot<Self::AccountId>;
 	type DefaultLiquidationRatio = ConstRatio150;
 	type DefaultDebitExchangeRate = DefaultDebitExchangeRate;
-	type DefaultLiquidationPenalty = DefaultLiquidationPenalty;
-	type MinimumDebitValue = ConstU64<100>;
+	type DefaultLiquidationPenalty = DefaultPenalty;
+	type MinimumDebitValue = ConstU128<100>;
 	type MinimumCollateralAmount = MinimumCollateralAmount;
 	type GetNativeCurrencyId = GetNativeCurrencyId;
 	type GetStableCurrencyId = GetStableCurrencyId;
@@ -355,7 +382,8 @@ impl Config for Test {
 	type UnsignedPriority = ConstU64<100>;
 	type EmergencyShutdown = MockEmergencyShutdown;
 	type UnixTime = MockUnixTime;
-	type Currency = AssetsCurrencyAdapter;
+	type Currency = Balances;
+	type Tokens = Assets;
 	type DEX = MockDEXManager;
 	type Swap = MockDEXManager;
 	type PalletId = CDPEnginePalletId;
@@ -367,10 +395,8 @@ parameter_types! {
 	pub const ConstRatio150: Ratio = Ratio::from_inner(1_500_000_000_000_000_000u128); // 1.5
 }
 
-pub type Balance = u128;
-
 pub struct MockCDPTreasury;
-impl<AccountId: Clone> CDPTreasuryT<AccountId> for MockCDPTreasury {
+impl<AccountId: Clone + Default> CDPTreasuryT<AccountId> for MockCDPTreasury {
 	type CurrencyId = u32;
 	type Balance = Balance;
 
@@ -435,7 +461,7 @@ impl<AccountId: Clone> CDPTreasuryT<AccountId> for MockCDPTreasury {
 	}
 }
 
-impl<AccountId: Clone> CDPTreasuryExtended<AccountId> for MockCDPTreasury {
+impl<AccountId: Clone + Default> CDPTreasuryExtended<AccountId> for MockCDPTreasury {
 	fn swap_collateral_to_stable(
 		_swap_limit: SwapLimit<Self::Balance>,
 		_collateral_in_auction: bool,
@@ -465,7 +491,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 		collateral_params: (
 			Some(Rate::from_inner(1_000_000_000)),
 			Some(Ratio::from_inner(1_500_000_000_000_000_000u128)), // 1.5
-			Some(Rate::from_inner(1_050_000_000_000_000_000)),
+			Some(Rate::from_inner(1_000_000_000_000_000_000)),
 			Some(Ratio::from_inner(2_000_000_000_000_000_000u128)), // 2.0
 			1000000000000000000u128,
 		),
@@ -488,13 +514,20 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	.assimilate_storage(&mut storage)
 	.unwrap();
 
-	pallet_assets_holder::GenesisConfig::<Test>::default()
-		.assimilate_storage(&mut storage)
-		.unwrap();
+	pallet_balances::GenesisConfig::<Test> {
+		balances: vec![(1, 1_000_000u128), (2, 1_000_000u128)],
+		dev_accounts: None,
+	}
+	.assimilate_storage(&mut storage)
+	.unwrap();
 
-	pallet_loans::TotalPositions::<Test>::put(Position::default());
-	pallet_loans::TotalDebitByStabilityFee::<Test>::remove_all(None);
-	pallet_loans::Positions::<Test>::remove_all(None);
+	let mut ext = sp_io::TestExternalities::from(storage);
+	ext.execute_with(|| {
+		set_shutdown(false);
+		pallet_loans::TotalPositions::<Test>::put(Position::default());
+		pallet_loans::TotalDebitByStabilityFee::<Test>::remove_all(None);
+		pallet_loans::Positions::<Test>::remove_all(None);
+	});
 
-	storage.into()
+	ext
 }
