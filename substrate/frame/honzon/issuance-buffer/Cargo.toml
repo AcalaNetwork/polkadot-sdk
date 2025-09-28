@@ -23,6 +23,7 @@ pallet-cdp-treasury = { workspace = true }
 sp-core = { workspace = true }
 sp-io = { workspace = true }
 pallet-balances = { workspace = true, features = ["std"] }
+pallet-assets = { workspace = true, features = ["std"] }
 pallet-loans = { workspace = true, features = ["std"] }
 
 [features]
@@ -32,6 +33,7 @@ std = [
     "frame-support/std",
     "frame-system/std",
     "pallet-cdp-treasury/std",
+    "pallet-assets/std",
     "pallet-loans/std",
     "pallet-oracle/std",
     "pallet-traits/std",

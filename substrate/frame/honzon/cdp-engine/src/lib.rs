@@ -163,7 +163,6 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_loans::Config {
-
 		/// The origin which may update risk management parameters. Root can
 		/// always do this.
 		type UpdateOrigin: EnsureOrigin<Self::RuntimeOrigin>;

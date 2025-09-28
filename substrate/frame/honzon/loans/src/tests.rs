@@ -21,13 +21,13 @@
 #![cfg(test)]
 
 use super::*;
+use frame_support::traits::fungible::hold::Inspect as HoldInspect;
+use frame_support::traits::fungible::Inspect;
 use frame_support::{assert_noop, assert_ok};
 use mock::{RuntimeEvent, *};
 use pallet_traits::{Rate, Ratio};
-use sp_runtime::{ArithmeticError, DispatchError, TokenError};
-use frame_support::traits::fungible::Inspect;
-use frame_support::traits::fungible::hold::Inspect as HoldInspect;
 use sp_arithmetic::traits::{One, Zero};
+use sp_runtime::{ArithmeticError, DispatchError, TokenError};
 
 #[test]
 fn debits_key() {
@@ -187,23 +187,25 @@ fn transfer_loan_should_work() {
 		assert_eq!(Loans::positions(&BOB).collateral, 2200);
 		assert_eq!(Loans::positions(&BOB).stability_fee, Rate::one());
 		assert_eq!(Loans::total_debit_by_stability_fee(Rate::one()), 1100);
-		System::assert_last_event(RuntimeEvent::Loans(Event::TransferLoan { from: ALICE, to: BOB }));
+		System::assert_last_event(RuntimeEvent::Loans(Event::TransferLoan {
+			from: ALICE,
+			to: BOB,
+		}));
 	});
 }
 
 #[test]
 fn confiscate_collateral_and_debit_work() {
 	ExtBuilder::default().build().execute_with(|| {
-		let hold_reason = RuntimeHoldReason::from(HoldReason::Collateral);
+		let _hold_reason = RuntimeHoldReason::from(HoldReason::Collateral);
 		assert_ok!(Loans::adjust_position(&BOB, 5000, 1000, Some(Rate::one())));
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 
-		// have no sufficient balance in loans account to confiscate
+		// attempting to confiscate more collateral than held should fail
 		assert_noop!(
-			Loans::confiscate_collateral_and_debit(&BOB, 5000, 1000),
-			DispatchError::Token(TokenError::FundsUnavailable)
+			Loans::confiscate_collateral_and_debit(&BOB, 6000, 1000),
+			DispatchError::Token(TokenError::Frozen)
 		);
-
 	});
 }
 
@@ -220,7 +222,8 @@ fn confiscate_collateral_and_debit_work_success() {
 
 		assert_ok!(Loans::confiscate_collateral_and_debit(&ALICE, 300, 200));
 		assert_eq!(CDPTreasuryModule::total_collaterals(), 300);
-		assert_eq!(CDPTreasuryModule::debit_pool(), 100);
+		let debit_pool = CDPTreasuryModule::debit_pool();
+		assert_eq!(debit_pool, 100);
 		assert_eq!(Loans::positions(&ALICE).debit, 0);
 		assert_eq!(Loans::positions(&ALICE).collateral, 200);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 200);
@@ -231,5 +234,3 @@ fn confiscate_collateral_and_debit_work_success() {
 		}));
 	});
 }
-
-

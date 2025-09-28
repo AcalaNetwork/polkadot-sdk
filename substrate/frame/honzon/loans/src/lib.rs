@@ -264,8 +264,7 @@ pub mod pallet {
 				maybe_new_stability_fee,
 			)?;
 
-			let collateral_balance_adjustment =
-				Self::amount_to_balance_abs(collateral_adjustment)?;
+			let collateral_balance_adjustment = Self::amount_to_balance_abs(collateral_adjustment)?;
 			let debit_balance_adjustment = Self::amount_to_balance_abs(debit_adjustment)?;
 
 			if collateral_adjustment.is_positive() {
@@ -497,11 +496,7 @@ pub mod pallet {
 
 		/// Convert the absolute value of `Amount` to `Balance`.
 		pub fn amount_to_balance_abs(a: T::Amount) -> Result<BalanceOf<T>, Error<T>> {
-			let b = if a == T::Amount::min_value() {
-				T::Amount::max_value()
-			} else {
-				a.abs()
-			};
+			let b = if a == T::Amount::min_value() { T::Amount::max_value() } else { a.abs() };
 			b.try_into().map_err(|_| Error::<T>::AmountConvertFailed)
 		}
 	}

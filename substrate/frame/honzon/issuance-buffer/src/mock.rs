@@ -22,22 +22,18 @@
 
 use super::*;
 use frame_support::{
-	construct_runtime, derive_impl, parameter_types,
-	traits::{
-		fungibles::{Inspect, Mutate, Unbalanced},
-		tokens::{
-			ConversionToAssetBalance, DepositConsequence, Fortitude, Precision, Preservation,
-			Provenance, WithdrawConsequence,
-		},
-		ConstU128, ConstU32, Everything,
-	},
+	construct_runtime, derive_impl, ord_parameter_types, parameter_types,
+	traits::{tokens::fungible::UnionOf, AsEnsureOriginWithArg, ConstU128, ConstU32, Everything},
 	PalletId,
 };
-use frame_system::EnsureRoot;
+use frame_system::{EnsureRoot, EnsureSignedBy};
+use pallet_assets as assets;
 use pallet_traits::{AggregatedSwapPath, AuctionManager, PriceProvider, Swap};
 use sp_core::H256;
-use sp_runtime::{BuildStorage, DispatchError, DispatchResult, FixedU128, Permill};
-use sp_std::{marker::PhantomData, result};
+use sp_runtime::{
+	traits::Convert, BuildStorage, DispatchError, DispatchResult, Either, FixedU128, Permill,
+};
+use sp_std::marker::PhantomData;
 
 pub type AccountId = u64;
 pub type Balance = u128;
@@ -60,6 +56,7 @@ construct_runtime!(
 		System: frame_system,
 		IssuanceBuffer: issuance_buffer,
 		PalletBalances: pallet_balances,
+		PalletAssets: pallet_assets,
 		CDPTreasury: pallet_cdp_treasury,
 	}
 );
@@ -102,79 +99,39 @@ impl pallet_balances::Config for Test {
 	type DoneSlashHandler = ();
 }
 
-pub struct MockFungibles;
-impl Inspect<AccountId> for MockFungibles {
-	type AssetId = CurrencyId;
+parameter_types! {
+	pub const AssetDeposit: Balance = 0;
+	pub const AssetAccountDeposit: Balance = 0;
+	pub const MetadataDepositBase: Balance = 0;
+	pub const MetadataDepositPerByte: Balance = 0;
+	pub const ApprovalDeposit: Balance = 0;
+	pub const StringLimit: u32 = 32;
+}
+
+ord_parameter_types! {
+	pub const One: AccountId = ALICE;
+}
+
+impl assets::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
-	fn total_issuance(_asset: Self::AssetId) -> Self::Balance {
-		0
-	}
-	fn minimum_balance(_asset: Self::AssetId) -> Self::Balance {
-		0
-	}
-	fn balance(_asset: Self::AssetId, _who: &AccountId) -> Self::Balance {
-		0
-	}
-	fn reducible_balance(
-		_asset: Self::AssetId,
-		_who: &AccountId,
-		_preservation: Preservation,
-		_fortitude: Fortitude,
-	) -> Self::Balance {
-		0
-	}
-	fn can_deposit(
-		_asset: Self::AssetId,
-		_who: &AccountId,
-		_amount: Self::Balance,
-		_provenance: Provenance,
-	) -> DepositConsequence {
-		DepositConsequence::Success
-	}
-	fn can_withdraw(
-		_asset: Self::AssetId,
-		_who: &AccountId,
-		_amount: Self::Balance,
-	) -> WithdrawConsequence<Self::Balance> {
-		WithdrawConsequence::Success
-	}
-	fn asset_exists(_asset: Self::AssetId) -> bool {
-		true
-	}
-	fn total_balance(_asset: Self::AssetId, _who: &AccountId) -> Self::Balance {
-		0
-	}
-}
-impl Unbalanced<AccountId> for MockFungibles {
-	fn handle_raw_dust(_asset: Self::AssetId, _dust: Self::Balance) {}
-	fn write_balance(
-		_asset: Self::AssetId,
-		_who: &AccountId,
-		_amount: Self::Balance,
-	) -> Result<Option<Self::Balance>, DispatchError> {
-		Ok(None)
-	}
-	fn set_total_issuance(_asset: Self::AssetId, _amount: Self::Balance) {}
-	fn handle_dust(_dust: frame_support::traits::tokens::fungibles::Dust<AccountId, Self>) {}
-}
-impl Mutate<AccountId> for MockFungibles {
-	fn mint_into(
-		_asset: Self::AssetId,
-		_who: &AccountId,
-		amount: Self::Balance,
-	) -> Result<Self::Balance, DispatchError> {
-		Ok(amount)
-	}
-	fn burn_from(
-		_asset: Self::AssetId,
-		_who: &AccountId,
-		_amount: Self::Balance,
-		_preservation: Preservation,
-		_precision: Precision,
-		_fortitude: Fortitude,
-	) -> Result<Self::Balance, DispatchError> {
-		Ok(0)
-	}
+	type AssetId = CurrencyId;
+	type AssetIdParameter = CurrencyId;
+	type Currency = PalletBalances;
+	type CreateOrigin = AsEnsureOriginWithArg<EnsureSignedBy<One, AccountId>>;
+	type ForceOrigin = EnsureRoot<AccountId>;
+	type AssetDeposit = AssetDeposit;
+	type AssetAccountDeposit = AssetAccountDeposit;
+	type MetadataDepositBase = MetadataDepositBase;
+	type MetadataDepositPerByte = MetadataDepositPerByte;
+	type ApprovalDeposit = ApprovalDeposit;
+	type StringLimit = StringLimit;
+	type Freezer = ();
+	type Extra = ();
+	type CallbackHandle = ();
+	type RemoveItemsLimit = ConstU32<100>;
+	type WeightInfo = ();
+	type Holder = ();
 }
 
 pub struct MockAuctionManager<AccountId>(PhantomData<AccountId>);
@@ -249,7 +206,7 @@ impl frame_support::traits::Get<AccountId> for TreasuryAccount {
 
 impl pallet_cdp_treasury::Config for Test {
 	type PalletId = CDPTreasuryPalletId;
-	type Fungibles = MockFungibles;
+	type Fungibles = MultiCurrency;
 	type AuctionManagerHandler = MockAuctionManager<AccountId>;
 	type Swap = MockSwap;
 	type UpdateOrigin = EnsureRoot<AccountId>;
@@ -281,27 +238,30 @@ parameter_types! {
 	pub IssuanceQuotaParam: Balance = 0;
 }
 
-pub struct MockConvert;
-impl ConversionToAssetBalance<Balance, CurrencyId, Balance> for MockConvert {
-	type Error = DispatchError;
-	fn to_asset_balance(
-		balance: Balance,
-		_asset_id: CurrencyId,
-	) -> result::Result<Balance, Self::Error> {
-		Ok(balance)
+pub struct CurrencyIdConvert;
+impl Convert<CurrencyId, Either<(), CurrencyId>> for CurrencyIdConvert {
+	fn convert(currency_id: CurrencyId) -> Either<(), CurrencyId> {
+		if currency_id == CollateralCurrencyId::get() {
+			Either::Left(())
+		} else {
+			Either::Right(currency_id)
+		}
 	}
 }
 
+type MultiCurrency =
+	UnionOf<PalletBalances, PalletAssets, CurrencyIdConvert, CurrencyId, AccountId>;
+
 impl Config for Test {
 	type AdminOrigin = EnsureRoot<AccountId>;
-	type Currency = PalletBalances;
+	type Currency = MultiCurrency;
 	type PriceProvider = MockPriceProvider;
 	type CollateralCurrencyId = CollateralCurrencyId;
 	type StableCurrencyId = StableCurrencyId;
 	type Discount = DiscountParam;
 	type IssuanceQuota = IssuanceQuotaParam;
 	type PalletId = IssuanceBufferPalletId;
-	type CDPTreasury = CDPTreasury;
+	type CDPTreasury = pallet_cdp_treasury::Pallet<Test>;
 }
 
 pub struct ExtBuilder;
@@ -314,10 +274,26 @@ impl Default for ExtBuilder {
 
 impl ExtBuilder {
 	pub fn build(self) -> sp_io::TestExternalities {
-		let t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
+		let mut t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
+
+		pallet_balances::GenesisConfig::<Test> {
+			balances: vec![(ALICE, 1_000_000), (BOB, 1_000_000)],
+			dev_accounts: None,
+		}
+		.assimilate_storage(&mut t)
+		.unwrap();
+
+		assets::GenesisConfig::<Test> {
+			assets: vec![(STABLE, ALICE, true, 1)],
+			metadata: vec![(STABLE, b"Stable".to_vec(), b"STB".to_vec(), 12)],
+			accounts: vec![(STABLE, ALICE, 1_000_000)],
+			next_asset_id: None,
+		}
+		.assimilate_storage(&mut t)
+		.unwrap();
 
 		let mut ext = sp_io::TestExternalities::new(t);
-		ext.execute_with(|| System::set_block_number(1));
+		ext.execute_with(|| frame_system::Pallet::<Test>::set_block_number(1));
 		ext
 	}
 }

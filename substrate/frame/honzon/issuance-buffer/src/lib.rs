@@ -28,9 +28,10 @@ pub use pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
+	use frame_support::traits::fungibles::Mutate as FungiblesMutate;
 	use frame_support::{
 		pallet_prelude::*,
-		traits::{fungible, Get, tokens::fungible::Mutate},
+		traits::{fungibles, Get},
 		PalletId,
 	};
 	use frame_system::pallet_prelude::*;
@@ -49,9 +50,12 @@ pub mod pallet {
 		/// The origin which can update parameters of the module.
 		type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
-		/// Currency type for deposit/withdraw collateral assets to/from loans
-		/// module
-		type Currency: Mutate<Self::AccountId, Balance = <Self as pallet_cdp_treasury::Config>::Balance>;
+		/// Multi-currency interface for moving collateral and stable assets.
+		type Currency: fungibles::Mutate<
+			Self::AccountId,
+			AssetId = Self::CurrencyId,
+			Balance = <Self as pallet_cdp_treasury::Config>::Balance,
+		>;
 
 		/// Price provider for collateral assets.
 		type PriceProvider: PriceProvider<Self::CurrencyId>;
@@ -210,6 +214,7 @@ pub mod pallet {
 				.into();
 
 			<T as Config>::Currency::transfer(
+				<T as Config>::CollateralCurrencyId::get(),
 				who,
 				&Self::account_id(),
 				actual_collateral_to_buy_final,

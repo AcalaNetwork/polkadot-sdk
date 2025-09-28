@@ -22,21 +22,22 @@
 
 use super::*;
 use codec::{Decode, Encode};
+use frame_support::traits::tokens::fungible::UnionOf;
 use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types,
 	pallet_prelude::*,
 	parameter_types,
-	traits::{ConstU128, ConstU32, Nothing, AsEnsureOriginWithArg, fungible, fungibles},
+	traits::{AsEnsureOriginWithArg, ConstU128, ConstU32, Nothing},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_traits::{honzon::*, PriceProvider, Handler, Price, Swap, SwapLimit};
+use pallet_traits::{honzon::*, Handler, Price, PriceProvider, Swap, SwapLimit};
 use sp_arithmetic::traits::Signed;
 use sp_core::H256;
 use sp_runtime::{
 	testing::Header,
-	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup},
-	BuildStorage, DispatchResult,
+	traits::{AccountIdConversion, BlakeTwo256, Convert, IdentityLookup},
+	BuildStorage, DispatchResult, Either,
 };
 use sp_runtime::{FixedU128, Permill};
 use std::collections::HashMap;
@@ -88,8 +89,6 @@ impl pallet_balances::Config for Runtime {
 	type DoneSlashHandler = ();
 }
 
-
-
 impl pallet_assets::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
@@ -112,9 +111,20 @@ impl pallet_assets::Config for Runtime {
 	type Holder = ();
 }
 
-
 #[derive(
-	Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Encode, Decode, RuntimeDebug, MaxEncodedLen, TypeInfo, Default, codec::DecodeWithMemTracking
+	Copy,
+	Clone,
+	Eq,
+	PartialEq,
+	Ord,
+	PartialOrd,
+	Encode,
+	Decode,
+	RuntimeDebug,
+	MaxEncodedLen,
+	TypeInfo,
+	Default,
+	codec::DecodeWithMemTracking,
 )]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub enum CurrencyId {
@@ -179,13 +189,21 @@ impl Swap<u128, u128, CurrencyId> for MockSwap {
 		Some((1, 1))
 	}
 
-	fn swap_by_path(_who: &u128, _path: &[CurrencyId], _limit: SwapLimit<u128>) -> Result<(u128, u128), DispatchError> {
+	fn swap_by_path(
+		_who: &u128,
+		_path: &[CurrencyId],
+		_limit: SwapLimit<u128>,
+	) -> Result<(u128, u128), DispatchError> {
 		Ok((1, 1))
 	}
 
 	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
 		_who: &u128,
-		_path: &[pallet_traits::AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
+		_path: &[pallet_traits::AggregatedSwapPath<
+			CurrencyId,
+			StableAssetPoolId,
+			PoolTokenIndex,
+		>],
 		_limit: SwapLimit<u128>,
 	) -> Result<(u128, u128), DispatchError> {
 		Ok((1, 1))
@@ -193,7 +211,7 @@ impl Swap<u128, u128, CurrencyId> for MockSwap {
 }
 
 impl pallet_cdp_treasury::Config for Runtime {
-	type Fungibles = Assets;
+	type Fungibles = LoansMultiCurrency;
 	type AuctionManagerHandler = MockAuctionManager;
 	type UpdateOrigin = EnsureSignedBy<One, AccountId>;
 	type MaxAuctionsCount = ConstU32<10_000>;
@@ -225,11 +243,9 @@ impl PriceProvider<CurrencyId> for MockPriceProvider {
 	}
 }
 
-pub type StableCoin = fungible::ItemOf<Assets, StableCurrencyIdValue, AccountId>;
-
 parameter_types! {
 	pub const SomeDiscount: Permill = Permill::from_percent(10);
-	pub const IssuanceQuotaValue: Balance = 1_000_000;
+	pub const IssuanceQuotaValue: Balance = 0;
 }
 
 impl pallet_issuance_buffer::Config for Runtime {
@@ -241,7 +257,7 @@ impl pallet_issuance_buffer::Config for Runtime {
 	type CDPTreasury = CDPTreasuryModule;
 	type Discount = SomeDiscount;
 	type IssuanceQuota = IssuanceQuotaValue;
-	type Currency = StableCoin;
+	type Currency = LoansMultiCurrency;
 }
 
 // mock risk manager
@@ -283,6 +299,18 @@ parameter_types! {
 	pub static DotShares: HashMap<AccountId, Balance> = HashMap::new();
 }
 
+pub struct CurrencyIdConvert;
+impl Convert<CurrencyId, Either<(), CurrencyId>> for CurrencyIdConvert {
+	fn convert(currency_id: CurrencyId) -> Either<(), CurrencyId> {
+		match currency_id {
+			CurrencyId::Native => Either::Left(()),
+			other => Either::Right(other),
+		}
+	}
+}
+
+type LoansMultiCurrency = UnionOf<Collateral, Assets, CurrencyIdConvert, CurrencyId, AccountId>;
+
 pub struct MockOnUpdateLoan;
 impl Handler<(u128, i128, u128)> for MockOnUpdateLoan {
 	fn handle(_info: &(u128, i128, u128)) -> DispatchResult {
@@ -318,10 +346,7 @@ pub struct ExtBuilder {
 impl Default for ExtBuilder {
 	fn default() -> Self {
 		Self {
-			balances: vec![
-				(ALICE, CurrencyId::Stable, 10000),
-				(BOB, CurrencyId::Stable, 10000),
-			],
+			balances: vec![(ALICE, CurrencyId::Stable, 10000), (BOB, CurrencyId::Stable, 10000)],
 			asset_balances: vec![(ALICE, 10000), (BOB, 10000)],
 		}
 	}
@@ -329,9 +354,7 @@ impl Default for ExtBuilder {
 
 impl ExtBuilder {
 	pub fn build(self) -> sp_io::TestExternalities {
-		let mut t = frame_system::GenesisConfig::<Runtime>::default()
-			.build_storage()
-			.unwrap();
+		let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
 
 		pallet_balances::GenesisConfig::<Runtime> {
 			balances: self.asset_balances.iter().map(|(acc, b)| (*acc, *b)).collect(),
@@ -343,7 +366,11 @@ impl ExtBuilder {
 		pallet_assets::GenesisConfig::<Runtime> {
 			assets: vec![(CurrencyId::Stable, ALICE, true, 1)],
 			metadata: vec![(CurrencyId::Stable, b"Stable".to_vec(), b"STB".to_vec(), 12)],
-			accounts: self.balances.into_iter().map(|(account, asset, balance)| (asset, account, balance)).collect(),
+			accounts: self
+				.balances
+				.into_iter()
+				.map(|(account, asset, balance)| (asset, account, balance))
+				.collect(),
 			next_asset_id: Some(CurrencyId::Asset(1)),
 		}
 		.assimilate_storage(&mut t)
