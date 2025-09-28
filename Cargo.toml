@@ -393,6 +393,7 @@ members = [
 	"substrate/frame/honzon/loans",
 	"substrate/frame/honzon/oracle",
 	"substrate/frame/honzon/oracle/runtime-api",
+	"substrate/frame/honzon/savings",
 	"substrate/frame/honzon/traits",
 	"substrate/frame/identity",
 	"substrate/frame/im-online",
@@ -649,6 +650,7 @@ pallet-loans = { path = "substrate/frame/honzon/loans", default-features = false
 pallet-oracle = { path = "substrate/frame/honzon/oracle", default-features = false }
 pallet-oracle-runtime-api = { path = "substrate/frame/honzon/oracle/runtime-api", default-features = false }
 pallet-traits = { path = "substrate/frame/honzon/traits", default-features = false }
+pallet-savings = { path = "substrate/frame/honzon/savings", default-features = false }
 
 Inflector = { version = "0.11.4" }
 aes-gcm = { version = "0.10" }
