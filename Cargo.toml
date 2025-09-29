@@ -391,10 +391,10 @@ members = [
 	"substrate/frame/honzon/honzon",
 	"substrate/frame/honzon/issuance-buffer",
 	"substrate/frame/honzon/loans",
-	"substrate/frame/honzon/oracle",
-	"substrate/frame/honzon/oracle/runtime-api",
 	"substrate/frame/honzon/savings",
 	"substrate/frame/honzon/traits",
+	"substrate/frame/honzon/oracle",
+	"substrate/frame/honzon/oracle/runtime-api",
 	"substrate/frame/identity",
 	"substrate/frame/im-online",
 	"substrate/frame/indices",
@@ -647,10 +647,10 @@ pallet-emergency-shutdown = { path = "substrate/frame/honzon/emergency-shutdown"
 pallet-honzon = { path = "substrate/frame/honzon/honzon", default-features = false }
 pallet-issuance-buffer = { path = "substrate/frame/honzon/issuance-buffer", default-features = false }
 pallet-loans = { path = "substrate/frame/honzon/loans", default-features = false }
-pallet-oracle = { path = "substrate/frame/honzon/oracle", default-features = false }
-pallet-oracle-runtime-api = { path = "substrate/frame/honzon/oracle/runtime-api", default-features = false }
 pallet-traits = { path = "substrate/frame/honzon/traits", default-features = false }
 pallet-savings = { path = "substrate/frame/honzon/savings", default-features = false }
+pallet-oracle = { path = "substrate/frame/honzon/oracle", default-features = false }
+pallet-oracle-runtime-api = { path = "substrate/frame/honzon/oracle/runtime-api", default-features = false }
 
 Inflector = { version = "0.11.4" }
 aes-gcm = { version = "0.10" }
@@ -1431,6 +1431,7 @@ syn = { version = "2.0.87" }
 sysinfo = { version = "0.30" }
 tar = { version = "0.4" }
 tempfile = { version = "3.8.1" }
+test-case = { version = "3.3.1" }
 test-log = { version = "0.2.14" }
 test-pallet = { path = "substrate/frame/support/test/pallet", default-features = false, package = "frame-support-test-pallet" }
 test-parachain-adder = { path = "polkadot/parachain/test-parachains/adder" }
