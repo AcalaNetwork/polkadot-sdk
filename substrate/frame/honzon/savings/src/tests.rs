@@ -9,8 +9,6 @@ use sp_runtime::{traits::AccountIdConversion, DispatchError};
 #[test]
 fn create_pool_successfully() {
 	new_test_ext().execute_with(|| {
-		assert_ok!(Assets::create(RuntimeOrigin::signed(1), 1.into(), 1, 1));
-		assert_ok!(Assets::create(RuntimeOrigin::signed(1), 2.into(), 1, 1));
 		assert_ok!(Savings::create_pool(RuntimeOrigin::signed(1), 1, 2, 100, Some(1)));
 	});
 }
@@ -19,8 +17,6 @@ fn create_pool_successfully() {
 fn create_pool_emits_event() {
 	new_test_ext().execute_with(|| {
 		System::set_block_number(1);
-		assert_ok!(Assets::create(RuntimeOrigin::signed(1), 1.into(), 1, 1));
-		assert_ok!(Assets::create(RuntimeOrigin::signed(1), 2.into(), 1, 1));
 		assert_ok!(Savings::create_pool(RuntimeOrigin::signed(1), 1, 2, 100, Some(1)));
 		System::assert_last_event(RuntimeEvent::Savings(crate::Event::PoolCreated { pool_id: 0 }));
 	});
@@ -46,8 +42,7 @@ fn create_pool_correct_params() {
 
 		System::set_block_number(10);
 
-		assert_ok!(Assets::create(RuntimeOrigin::signed(1), staked_asset_id.into(), 1, 1));
-		assert_ok!(Assets::create(RuntimeOrigin::signed(1), reward_asset_id.into(), 1, 1));
+
 
 		assert_ok!(Savings::create_pool(
 			RuntimeOrigin::signed(1),
@@ -67,19 +62,13 @@ fn on_initialize_distributes_rewards() {
 	new_test_ext().execute_with(|| {
 		let reward_asset_id = 2;
 		let reward_rate_per_block = 100;
-		let savings_account = SavingsPalletId::get().into_account_truncating();
+		let savings_account: AccountId = SavingsPalletId::get().into_account_truncating();
 
 		// Create asset and mint some to the savings account
-		assert_ok!(Assets::create(RuntimeOrigin::signed(1), reward_asset_id.into(), 1, 1));
-		assert_ok!(Assets::create(RuntimeOrigin::signed(1), 1.into(), 1, 1)); // staked asset
-		assert_ok!(Assets::mint(
-			RuntimeOrigin::signed(1),
-			reward_asset_id.into(),
-			savings_account,
-			1_000_000
-		));
 
 		// Create a pool
+		System::set_block_number(1);
+		Savings::on_initialize(1); // This will set LastUpdatedBlock to 1
 		assert_ok!(Savings::create_pool(
 			RuntimeOrigin::signed(1),
 			1, // staked asset
@@ -89,13 +78,76 @@ fn on_initialize_distributes_rewards() {
 		));
 
 		// Run to a block that is a multiple of UpdatePeriod
-		Savings::on_initialize(UpdatePeriod::get());
+		let current_block = UpdatePeriod::get();
+		System::set_block_number(current_block);
+		Savings::on_initialize(current_block);
 
 		let pool_id = 0;
 		let pool_account = AssetRewardsPalletId::get().into_sub_account_truncating(pool_id);
-		let expected_reward = reward_rate_per_block * Into::<u128>::into(UpdatePeriod::get());
+		let elapsed = current_block - 1;
+		let expected_reward = reward_rate_per_block * Into::<u128>::into(elapsed);
 
 		// Check that the reward has been transferred to the pool account
 		assert_eq!(Assets::balance(reward_asset_id, &pool_account), expected_reward);
+		assert_eq!(LastUpdatedBlock::<Test>::get(), Some(current_block));
+	});
+}
+
+#[test]
+fn on_initialize_handles_block_jumps() {
+	new_test_ext().execute_with(|| {
+		let staked_asset_id = 1;
+		let reward_asset_id = 2;
+		let reward_rate_per_block = 10; // for easier calculation
+		let savings_account: AccountId = SavingsPalletId::get().into_account_truncating();
+
+		// Setup assets and pool
+		assert_ok!(Savings::create_pool(
+			RuntimeOrigin::signed(1),
+			staked_asset_id,
+			reward_asset_id,
+			reward_rate_per_block,
+			Some(1)
+		));
+		let pool_id = 0;
+		let pool_account = AssetRewardsPalletId::get().into_sub_account_truncating(pool_id);
+
+		// 1. Initial run
+		System::set_block_number(1);
+		Savings::on_initialize(1);
+		assert_eq!(LastUpdatedBlock::<Test>::get(), Some(1));
+		assert_eq!(Assets::balance(reward_asset_id, &pool_account), 0);
+
+		// 2. Jump forward 49 blocks
+		System::set_block_number(50);
+		Savings::on_initialize(50);
+		let elapsed1 = 50 - 1;
+		let expected_reward1 = reward_rate_per_block * elapsed1; // 10 * 49 = 490
+		assert_eq!(Assets::balance(reward_asset_id, &pool_account), expected_reward1);
+		assert_eq!(LastUpdatedBlock::<Test>::get(), Some(50));
+
+		// 3. Jump forward another 51 blocks
+		System::set_block_number(101);
+		Savings::on_initialize(101);
+		let elapsed2 = 101 - 50;
+		let expected_reward2 = expected_reward1 + (reward_rate_per_block * elapsed2); // 490 + 10 * 51 = 490 + 510 = 1000
+		assert_eq!(Assets::balance(reward_asset_id, &pool_account), expected_reward2);
+		assert_eq!(LastUpdatedBlock::<Test>::get(), Some(101));
+
+		// 4. Big block number jump (300 blocks)
+		System::set_block_number(401);
+		Savings::on_initialize(401);
+		let elapsed3 = 401 - 101;
+		let expected_reward3 = expected_reward2 + (reward_rate_per_block * elapsed3); // 1000 + 10 * 300 = 4000
+		assert_eq!(Assets::balance(reward_asset_id, &pool_account), expected_reward3);
+		assert_eq!(LastUpdatedBlock::<Test>::get(), Some(401));
+
+		// 5. Another jump
+		System::set_block_number(551);
+		Savings::on_initialize(551);
+		let elapsed4 = 551 - 401;
+		let expected_reward4 = expected_reward3 + (reward_rate_per_block * elapsed4); // 4000 + 10 * 150 = 5500
+		assert_eq!(Assets::balance(reward_asset_id, &pool_account), expected_reward4);
+		assert_eq!(LastUpdatedBlock::<Test>::get(), Some(551));
 	});
 }

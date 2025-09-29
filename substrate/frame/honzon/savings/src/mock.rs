@@ -3,16 +3,25 @@
 use super::*;
 use crate as pallet_savings;
 
+use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, EnsureOrigin, Get},
+	traits::{
+		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, EnsureOrigin, Get, SortedMembers,
+		tokens::{DepositConsequence, WithdrawConsequence, Fortitude, Provenance, Preservation},
+	},
 	PalletId,
 };
-use frame_system::EnsureSigned;
+use frame_system::{EnsureSigned, EnsureSignedBy};
+use pallet_asset_rewards::FreezeReason;
+use scale_info::TypeInfo;
 use sp_core::H256;
+use frame_support::traits::tokens::fungibles::{self, Mutate, MutateFreeze, Inspect, InspectFreeze};
+use frame_support::dispatch::DispatchResult;
 use sp_runtime::{
 	testing::Header,
-	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup, BuildStorage},
+	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup},
+	BuildStorage, RuntimeDebug,
 };
 
 
@@ -33,7 +42,7 @@ construct_runtime!(
 	}
 );
 
-pub type AccountId = u64;
+pub type AccountId = u128;
 pub type Balance = u128;
 pub type AssetId = u32;
 pub type BlockNumber = u64;
@@ -45,7 +54,7 @@ parameter_types! {
 
 impl frame_system::Config for Test {
 	type BaseCallFilter = frame_support::traits::Everything;
-	type BlockWeights = ();
+		type BlockWeights = ();
 	type BlockLength = ();
 	type DbWeight = ();
 	type RuntimeOrigin = RuntimeOrigin;
@@ -58,7 +67,7 @@ impl frame_system::Config for Test {
 	type Block = Block;
 	type RuntimeEvent = RuntimeEvent;
 	type BlockHashCount = BlockHashCount;
-		type Version = ();
+	type Version = ();
 	type PalletInfo = PalletInfo;
 	type AccountData = pallet_balances::AccountData<Balance>;
 	type OnNewAccount = ();
@@ -67,6 +76,13 @@ impl frame_system::Config for Test {
 	type SS58Prefix = SS58Prefix;
 	type OnSetCode = ();
 	type MaxConsumers = ConstU32<16>;
+	type RuntimeTask = ();
+	type ExtensionsWeightInfo = ();
+	type SingleBlockMigrations = ();
+	type MultiBlockMigrator = ();
+	type PreInherents = ();
+	type PostInherents = ();
+	type PostTransactions = ();
 }
 
 parameter_types! {
@@ -86,6 +102,8 @@ impl pallet_balances::Config for Test {
 	type FreezeIdentifier = ();
 	type MaxFreezes = ();
 	type RuntimeHoldReason = ();
+	type RuntimeFreezeReason = ();
+	type DoneSlashHandler = ();
 }
 
 parameter_types! {
@@ -110,15 +128,72 @@ impl pallet_assets::Config for Test {
 	type MetadataDepositPerByte = MetadataDepositPerByte;
 	type ApprovalDeposit = ApprovalDeposit;
 	type StringLimit = StringLimit;
-	type Freezer = Assets;
+	type Freezer = ();
 	type Extra = ();
 	type WeightInfo = ();
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
+	type Holder = ();
 }
 
 parameter_types! {
 	pub const AssetRewardsPalletId: PalletId = PalletId(*b"py/asrw ");
+}
+
+#[derive(
+	Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Encode, Decode, RuntimeDebug, MaxEncodedLen, TypeInfo,
+)]
+pub enum MyFreezeReason {
+	Other,
+}
+
+impl From<FreezeReason> for MyFreezeReason {
+	fn from(_: FreezeReason) -> Self {
+		MyFreezeReason::Other
+	}
+}
+
+pub struct DummyFreezer;
+
+impl Inspect<AccountId> for DummyFreezer {
+    type AssetId = AssetId;
+    type Balance = Balance;
+    fn total_issuance(asset_id: Self::AssetId) -> Self::Balance {
+		Assets::total_issuance(asset_id)
+	}
+	fn total_balance(asset_id: Self::AssetId, who: &AccountId) -> Self::Balance {
+		Assets::total_balance(asset_id, who)
+	}
+    fn minimum_balance(asset_id: Self::AssetId) -> Self::Balance {
+		Assets::minimum_balance(asset_id)
+	}
+    fn balance(asset_id: Self::AssetId, who: &AccountId) -> Self::Balance {
+		Assets::balance(asset_id, who)
+	}
+    fn reducible_balance(asset_id: Self::AssetId, who: &AccountId, preservation: Preservation, fortitude: Fortitude) -> Self::Balance {
+		Assets::reducible_balance(asset_id, who, preservation, fortitude)
+	}
+    fn can_deposit(asset_id: Self::AssetId, who: &AccountId, amount: Self::Balance, provenance: Provenance) -> DepositConsequence {
+		Assets::can_deposit(asset_id, who, amount, provenance)
+	}
+    fn can_withdraw(asset_id: Self::AssetId, who: &AccountId, amount: Self::Balance) -> WithdrawConsequence<Self::Balance> {
+		Assets::can_withdraw(asset_id, who, amount)
+	}
+	fn asset_exists(asset_id: Self::AssetId) -> bool {
+		Assets::asset_exists(asset_id)
+	}
+}
+
+impl InspectFreeze<AccountId> for DummyFreezer {
+    type Id = MyFreezeReason;
+    fn balance_frozen(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId) -> Self::Balance { 0 }
+    fn can_freeze(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId) -> bool { true }
+}
+
+impl MutateFreeze<AccountId> for DummyFreezer {
+    fn set_freeze(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId, _amount: Self::Balance) -> DispatchResult { Ok(()) }
+    fn extend_freeze(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId, _amount: Self::Balance) -> DispatchResult { Ok(()) }
+    fn thaw(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId) -> DispatchResult { Ok(()) }
 }
 
 impl pallet_asset_rewards::Config for Test {
@@ -127,9 +202,9 @@ impl pallet_asset_rewards::Config for Test {
 	type Balance = Balance;
 	type Assets = Assets;
 	type PalletId = AssetRewardsPalletId;
-	type CreatePoolOrigin = AsEnsureOriginWithArg<frame_system::EnsureSigned<AccountId>>;
-	type AssetsFreezer = Assets;
-	type RuntimeFreezeReason = RuntimeFreezeReason;
+	type CreatePoolOrigin = EnsureSigned<AccountId>;
+	type AssetsFreezer = DummyFreezer;
+	type RuntimeFreezeReason = MyFreezeReason;
 	type Consideration = ();
 	type WeightInfo = ();
 	#[cfg(feature = "runtime-benchmarks")]
@@ -142,11 +217,10 @@ parameter_types! {
 	pub const MaxRewardPools: u32 = 10;
 }
 
-pub struct MockEnsureOrigin;
-impl EnsureOrigin<RuntimeOrigin> for MockEnsureOrigin {
-	type Success = AccountId;
-	fn try_origin(o: RuntimeOrigin) -> Result<Self::Success, RuntimeOrigin> {
-		EnsureSigned::try_origin(o)
+pub struct AdminAccount;
+impl SortedMembers<AccountId> for AdminAccount {
+	fn sorted_members() -> Vec<AccountId> {
+		vec![1]
 	}
 }
 
@@ -155,7 +229,7 @@ impl Config for Test {
 	type Balance = Balance;
 	type AssetId = AssetId;
 	type Assets = Assets;
-	type UpdateOrigin = MockEnsureOrigin;
+	type UpdateOrigin = EnsureSignedBy<AdminAccount, AccountId>;
 	type UpdatePeriod = UpdatePeriod;
 	type BlockNumberProvider = System;
 	type RewardPool = AssetRewards;
@@ -169,8 +243,22 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
 	pallet_balances::GenesisConfig::<Test> {
 		balances: vec![(1, 100), (2, 100)],
+		dev_accounts: Default::default(),
 	}
 	.assimilate_storage(&mut t)
 	.unwrap();
+
+	pallet_assets::GenesisConfig::<Test> {
+		assets: vec![
+			(1, 1, true, 1), // Staked Asset
+			(2, 1, true, 1), // Reward Asset
+		],
+		metadata: vec![],
+		next_asset_id: Some(3),
+		accounts: vec![(2, SavingsPalletId::get().into_account_truncating(), 1_000_000)],
+	}
+	.assimilate_storage(&mut t)
+	.unwrap();
+
 	t.into()
 }

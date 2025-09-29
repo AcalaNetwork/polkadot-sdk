@@ -12,7 +12,7 @@ pub mod pallet {
 		traits::{fungibles::{self, Mutate}, tokens::Preservation, EnsureOrigin, Get},
 		PalletId,
 	};
-	use frame_system::pallet_prelude::*;
+	use frame_system::pallet_prelude::{BlockNumberFor, *};
 	use scale_info::TypeInfo;
 	use sp_runtime::traits::{AccountIdConversion, AtLeast32BitUnsigned, BlockNumberProvider, Saturating};
 
@@ -22,9 +22,6 @@ pub mod pallet {
 		pub reward_asset_id: AssetId,
 		pub reward_rate_per_block: Balance,
 	}
-
-	type BlockNumberFor<T> =
-	<<T as Config>::BlockNumberProvider as BlockNumberProvider>::BlockNumber;
 
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
@@ -56,7 +53,7 @@ pub mod pallet {
 		type UpdatePeriod: Get<BlockNumberFor<Self>>;
 
 		/// Something that provides the current block number.
-		type BlockNumberProvider: BlockNumberProvider;
+		type BlockNumberProvider: BlockNumberProvider<BlockNumber = BlockNumberFor<Self>>;
 
 		/// The reward pool trait.
 		type RewardPool: RewardsPool<
@@ -87,6 +84,10 @@ pub mod pallet {
 	#[pallet::getter(fn reward_pools)]
 	pub type RewardPools<T: Config> =
 		StorageValue<_, BoundedVec<PoolData<T::PoolId, T::AssetId, T::Balance>, T::MaxRewardPools>, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn last_updated_block)]
+	pub type LastUpdatedBlock<T: Config> = StorageValue<_, BlockNumberFor<T>>;
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -144,25 +145,47 @@ pub mod pallet {
 	}
 
 	#[pallet::hooks]
-	impl<T: Config> Hooks<frame_system::pallet_prelude::BlockNumberFor<T>> for Pallet<T> {
-		fn on_initialize(_now: frame_system::pallet_prelude::BlockNumberFor<T>) -> Weight {
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		fn on_initialize(_now: BlockNumberFor<T>) -> Weight {
 			let now = T::BlockNumberProvider::current_block_number();
-			if (now % T::UpdatePeriod::get()).is_zero() {
-				let pools = RewardPools::<T>::get();
-				for pool in pools {
-					let period = T::Balance::from(T::UpdatePeriod::get());
-					let amount = pool.reward_rate_per_block.saturating_mul(period);
-					let savings_account = T::PalletId::get().into_account_truncating();
-					let pool_account = T::AssetRewardsPalletId::get().into_sub_account_truncating(pool.pool_id);
-					let _ = T::Assets::transfer(
-						pool.reward_asset_id,
-						&savings_account,
-						&pool_account,
-						amount,
-						Preservation::Preserve,
-					);
-				}
+			let last_updated = match Self::last_updated_block() {
+				Some(val) => val,
+				None => {
+					LastUpdatedBlock::<T>::put(now);
+					return Weight::zero();
+				},
+			};
+
+			let elapsed = now.saturating_sub(last_updated);
+			if elapsed.is_zero() {
+				return Weight::zero();
 			}
+
+			let elapsed_balance = T::Balance::from(elapsed);
+			let pools = RewardPools::<T>::get();
+			for pool in pools {
+				let amount = pool.reward_rate_per_block.saturating_mul(elapsed_balance);
+
+				if amount.is_zero() {
+					continue;
+				}
+
+				let savings_account = T::PalletId::get().into_account_truncating();
+				let pool_account =
+					T::AssetRewardsPalletId::get().into_sub_account_truncating(pool.pool_id);
+
+				let _ = T::Assets::transfer(
+					pool.reward_asset_id,
+					&savings_account,
+					&pool_account,
+					amount,
+					Preservation::Preserve,
+				);
+			}
+
+			LastUpdatedBlock::<T>::put(now);
+
+			// TODO: Calculate proper weight
 			Weight::zero()
 		}
 	}

@@ -3,3 +3,4 @@ scripts:
 rules: |
   Use traits/tokens/fungible(s) traits
   Use pallet-assets in mock for testing
+  Use T::BlockNumberProvider::current_block_number() to get current block number
