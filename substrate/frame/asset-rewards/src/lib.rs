@@ -98,8 +98,8 @@ use frame_support::{
 use scale_info::TypeInfo;
 use sp_core::Get;
 use sp_runtime::{
-	traits::{BlockNumberProvider, MaybeDisplay, Zero},
-	DispatchError,
+	traits::{BadOrigin, BlockNumberProvider, EnsureAdd, MaybeDisplay, Zero},
+	DispatchError, DispatchResult,
 };
 use sp_std::boxed::Box;
 
@@ -857,10 +857,7 @@ impl<T: Config> RewardsPool<T::AccountId, PoolId, T::Balance> for Pallet<T> {
 		// Check the expiry block.
 		let now = T::BlockNumberProvider::current_block_number();
 		let expiry_block = expiry.evaluate(now);
-		ensure!(
-			expiry_block > now,
-			Error::<T>::ExpiryBlockMustBeInTheFuture
-		);
+		ensure!(expiry_block > now, Error::<T>::ExpiryBlockMustBeInTheFuture);
 
 		let pool_id = NextPoolId::<T>::try_mutate(|id| -> Result<PoolId, DispatchError> {
 			let current_id = *id;
@@ -948,10 +945,7 @@ impl<T: Config> RewardsPool<T::AccountId, PoolId, T::Balance> for Pallet<T> {
 	) -> DispatchResult {
 		let now = T::BlockNumberProvider::current_block_number();
 		let new_expiry_block = new_expiry.evaluate(now);
-		ensure!(
-			new_expiry_block > now,
-			Error::<T>::ExpiryBlockMustBeInTheFuture
-		);
+		ensure!(new_expiry_block > now, Error::<T>::ExpiryBlockMustBeInTheFuture);
 
 		let pool_info = Pools::<T>::get(pool_id).ok_or(Error::<T>::NonExistentPool)?;
 		ensure!(pool_info.admin == *admin, BadOrigin);
