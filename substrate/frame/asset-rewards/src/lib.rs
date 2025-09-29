@@ -93,6 +93,7 @@ use frame_support::{
 		Consideration,
 	},
 	PalletId,
+	ensure,
 };
 use scale_info::TypeInfo;
 use sp_core::Get;
@@ -181,6 +182,7 @@ sp_api::decl_runtime_apis! {
 pub mod pallet {
 	use super::*;
 	use frame_support::{
+		rewards::RewardsPool,
 		pallet_prelude::*,
 		rewards::RewardsPool,
 		traits::{

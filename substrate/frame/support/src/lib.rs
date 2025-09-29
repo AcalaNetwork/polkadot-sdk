@@ -96,6 +96,7 @@ mod tests;
 pub mod traits;
 pub mod view_functions;
 pub mod weights;
+pub mod rewards;
 #[doc(hidden)]
 pub mod unsigned {
 	#[doc(hidden)]
