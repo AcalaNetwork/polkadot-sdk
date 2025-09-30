@@ -243,7 +243,7 @@ pub mod pallet {
 		///
 		/// - [`Bid`]: Emitted when a bid is successfully placed
 		#[pallet::call_index(0)]
-		#[pallet::weight(T::WeightInfo::bid_collateral_auction())]
+		#[pallet::weight(T::WeightInfo::bid())]
 		pub fn bid(
 			origin: OriginFor<T>,
 			id: T::AuctionId,

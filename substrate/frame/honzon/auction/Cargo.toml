@@ -4,7 +4,7 @@ description = "Auction module that implements `Auction` trait."
 license = "Apache-2.0"
 version = "1.0.0"
 authors = ["Acala Developers", "Parity Technologies <admin@parity.io>"]
-edition = "2021"
+edition.workspace = true
 
 [dependencies]
 codec = { workspace = true }
