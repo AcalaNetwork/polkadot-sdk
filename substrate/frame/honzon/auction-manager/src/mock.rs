@@ -33,7 +33,7 @@ use frame_support::{
 	PalletId,
 };
 use frame_system::EnsureSignedBy;
-use pallet_traits::{AggregatedSwapPath, EmergencyShutdown, PriceProvider, Rate, Swap, SwapLimit};
+use pallet_traits::{EmergencyShutdown, PriceProvider, Rate, Swap, SwapLimit};
 use sp_core::H256;
 use sp_runtime::{
 	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup, One as OneT},
@@ -301,14 +301,6 @@ impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
 	fn swap_by_path(
 		_who: &AccountId,
 		_swap_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Err(DispatchError::Other("Not implemented"))
-	}
-
-	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
-		_who: &AccountId,
-		_swap_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
 		_limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError> {
 		Err(DispatchError::Other("Not implemented"))

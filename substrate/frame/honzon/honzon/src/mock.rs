@@ -33,7 +33,7 @@ use frame_support::{
 use frame_system::{EnsureRoot, EnsureSignedBy};
 use pallet_traits::{
 	bounded::FractionalRate,
-	AggregatedSwapPath, AuctionManager, CDPTreasury as CDPTreasuryTrait, DEXManager,
+	AuctionManager, CDPTreasury as CDPTreasuryTrait, DEXManager,
 	EmergencyShutdown, ExchangeRate, LiquidationTarget, PriceProvider, Rate, RiskManager, Swap,
 	SwapLimit,
 };
@@ -305,14 +305,6 @@ impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
 	) -> Result<(Balance, Balance), DispatchError> {
 		Ok((0, 0))
 	}
-
-	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
-		_who: &AccountId,
-		_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
-	}
 }
 
 impl DEXManager<AccountId, Balance, CurrencyId> for MockSwap {
@@ -323,32 +315,11 @@ impl DEXManager<AccountId, Balance, CurrencyId> for MockSwap {
 		(1, 1)
 	}
 
-	fn get_liquidity_token_address(_currency_id_a: u32, _currency_id_b: u32) -> Option<H160> {
-		None
-	}
-
 	fn get_swap_amount(
 		_path: &[u32],
 		_limit: SwapLimit<Balance>,
 	) -> Option<(Balance, Balance)> {
 		None
-	}
-
-	fn get_best_price_swap_path(
-		_from: u32,
-		_to: u32,
-		_limit: SwapLimit<Balance>,
-		_all_paths: Vec<Vec<u32>>,
-	) -> Option<(Vec<u32>, Balance, Balance)> {
-		None
-	}
-
-	fn swap_with_specific_path(
-		_who: &AccountId,
-		_path: &[u32],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
 	}
 
 	fn add_liquidity(
@@ -370,7 +341,6 @@ impl DEXManager<AccountId, Balance, CurrencyId> for MockSwap {
 		_remove_share: Balance,
 		_min_withdrawn_a: Balance,
 		_min_withdrawn_b: Balance,
-		_by_unstake: bool,
 	) -> Result<(Balance, Balance), DispatchError> {
 		unimplemented!()
 	}

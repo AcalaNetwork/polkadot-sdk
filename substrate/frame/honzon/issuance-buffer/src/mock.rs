@@ -28,7 +28,7 @@ use frame_support::{
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
 use pallet_assets as assets;
-use pallet_traits::{AggregatedSwapPath, AuctionManager, PriceProvider, Swap};
+use pallet_traits::{AuctionManager, PriceProvider, Swap};
 use sp_core::H256;
 use sp_runtime::{
 	traits::Convert, BuildStorage, DispatchError, DispatchResult, Either, FixedU128, Permill,
@@ -185,14 +185,6 @@ impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
 		_path: &[CurrencyId],
 		_amount: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
-	}
-	fn swap_by_aggregated_path<T, U>(
-		_source: &AccountId,
-		_path: &[AggregatedSwapPath<CurrencyId, T, U>],
-		_amount: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		let _ = PhantomData::<(T, U)>;
 		Ok((0, 0))
 	}
 }

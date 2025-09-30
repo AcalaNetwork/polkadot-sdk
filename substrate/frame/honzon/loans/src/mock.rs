@@ -186,18 +186,6 @@ impl Swap<u128, u128, CurrencyId> for MockSwap {
 	) -> Result<(u128, u128), DispatchError> {
 		Ok((1, 1))
 	}
-
-	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
-		_who: &u128,
-		_path: &[pallet_traits::AggregatedSwapPath<
-			CurrencyId,
-			StableAssetPoolId,
-			PoolTokenIndex,
-		>],
-		_limit: SwapLimit<u128>,
-	) -> Result<(u128, u128), DispatchError> {
-		Ok((1, 1))
-	}
 }
 
 impl pallet_cdp_treasury::Config for Runtime {

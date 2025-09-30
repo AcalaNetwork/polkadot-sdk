@@ -31,7 +31,7 @@ use frame_support::{
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_traits::{AggregatedSwapPath, AuctionManager, Swap, SwapLimit};
+use pallet_traits::{AuctionManager, Swap, SwapLimit};
 use scale_info::TypeInfo;
 use sp_core::H256;
 use sp_runtime::{traits::IdentityLookup, BuildStorage, DispatchError, DispatchResult, Permill};
@@ -202,14 +202,6 @@ impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
 	fn swap_by_path(
 		_who: &AccountId,
 		_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
-	}
-
-	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
-		_who: &AccountId,
-		_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
 		_limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError> {
 		Ok((0, 0))

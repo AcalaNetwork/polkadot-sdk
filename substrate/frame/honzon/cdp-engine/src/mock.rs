@@ -25,7 +25,7 @@ use frame_support::{
 	traits::{ConstU128, ConstU32, ConstU64, Get, UnixTime},
 };
 use pallet_traits::{
-	AggregatedSwapPath, CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager, EmergencyShutdown,
+	CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager, EmergencyShutdown,
 	ExchangeRate, Handler, LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager,
 	Swap, SwapLimit,
 };
@@ -268,36 +268,12 @@ where
 		(Balance::from(1u128), Balance::from(1u128))
 	}
 
-	fn get_liquidity_token_address(
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> Option<sp_core::H160> {
-		None
-	}
-
 	fn get_swap_amount(
 		_path: &[CurrencyId],
 		_limit: SwapLimit<Balance>,
 	) -> Option<(Balance, Balance)> {
 		let _ = (_path, _limit);
 		Some((Balance::from(1u128), Balance::from(1u128)))
-	}
-
-	fn get_best_price_swap_path(
-		_supply_currency_id: CurrencyId,
-		_target_currency_id: CurrencyId,
-		_limit: SwapLimit<Balance>,
-		_alternative_path_joint_list: Vec<Vec<CurrencyId>>,
-	) -> Option<(Vec<CurrencyId>, Balance, Balance)> {
-		Some((Vec::new(), Balance::from(1u128), Balance::from(1u128)))
-	}
-
-	fn swap_with_specific_path(
-		_who: &AccountId,
-		_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((Balance::from(1u128), Balance::from(1u128)))
 	}
 
 	fn add_liquidity(
@@ -307,7 +283,6 @@ where
 		_max_amount_a: Balance,
 		_max_amount_b: Balance,
 		_min_share_increment: Balance,
-		_stake_increment_share: bool,
 	) -> Result<(Balance, Balance, Balance), DispatchError> {
 		Ok((Balance::from(0u128), Balance::from(0u128), Balance::from(0u128)))
 	}
@@ -319,7 +294,6 @@ where
 		_remove_share: Balance,
 		_min_withdrawn_a: Balance,
 		_min_withdrawn_b: Balance,
-		_by_unstake: bool,
 	) -> Result<(Balance, Balance), DispatchError> {
 		Ok((Balance::from(0u128), Balance::from(0u128)))
 	}
@@ -351,15 +325,6 @@ where
 	fn swap_by_path(
 		_who: &AccountId,
 		swap_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		let _ = (swap_path, _limit);
-		Ok((Balance::from(1u128), Balance::from(1u128)))
-	}
-
-	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
-		_who: &AccountId,
-		swap_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
 		_limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError> {
 		let _ = (swap_path, _limit);

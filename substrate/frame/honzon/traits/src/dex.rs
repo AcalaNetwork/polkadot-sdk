@@ -38,16 +38,6 @@ pub enum SwapLimit<Balance> {
 	ExactTarget(Balance, Balance),
 }
 
-/// Represents a swap path that can be aggregated across different DEX protocols.
-#[derive(Encode, Decode, Eq, PartialEq, Clone, RuntimeDebug, PartialOrd, Ord, TypeInfo)]
-#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
-pub enum AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex> {
-	/// A swap path through a traditional DEX.
-	Dex(Vec<CurrencyId>),
-	/// A swap path through a Taiga stable asset pool.
-	Taiga(StableAssetPoolId, PoolTokenIndex, PoolTokenIndex),
-}
-
 /// A trait for managing a DEX.
 pub trait DEXManager<AccountId, Balance, CurrencyId> {
 	/// Returns the liquidity pool for a given pair of currencies.
@@ -56,32 +46,12 @@ pub trait DEXManager<AccountId, Balance, CurrencyId> {
 		currency_id_b: CurrencyId,
 	) -> (Balance, Balance);
 
-	/// Returns the address of the liquidity token for a given pair of currencies.
-	fn get_liquidity_token_address(
-		currency_id_a: CurrencyId,
-		currency_id_b: CurrencyId,
-	) -> Option<H160>;
 
 	/// Returns the swap amount for a given path and limit.
 	fn get_swap_amount(
 		path: &[CurrencyId],
 		limit: SwapLimit<Balance>,
 	) -> Option<(Balance, Balance)>;
-
-	/// Returns the best swap path for a given supply and target currency.
-	fn get_best_price_swap_path(
-		supply_currency_id: CurrencyId,
-		target_currency_id: CurrencyId,
-		limit: SwapLimit<Balance>,
-		alternative_path_joint_list: Vec<Vec<CurrencyId>>,
-	) -> Option<(Vec<CurrencyId>, Balance, Balance)>;
-
-	/// Swaps currencies along a specific path.
-	fn swap_with_specific_path(
-		who: &AccountId,
-		path: &[CurrencyId],
-		limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError>;
 
 	/// Adds liquidity to a currency pair.
 	fn add_liquidity(
@@ -91,7 +61,6 @@ pub trait DEXManager<AccountId, Balance, CurrencyId> {
 		max_amount_a: Balance,
 		max_amount_b: Balance,
 		min_share_increment: Balance,
-		stake_increment_share: bool,
 	) -> Result<(Balance, Balance, Balance), DispatchError>;
 
 	/// Removes liquidity from a currency pair.
@@ -102,7 +71,6 @@ pub trait DEXManager<AccountId, Balance, CurrencyId> {
 		remove_share: Balance,
 		min_withdrawn_a: Balance,
 		min_withdrawn_b: Balance,
-		by_unstake: bool,
 	) -> Result<(Balance, Balance), DispatchError>;
 }
 
@@ -131,98 +99,6 @@ where
 		swap_path: &[CurrencyId],
 		limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError>;
-
-	/// Swaps currencies along a given aggregated path.
-	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
-		who: &AccountId,
-		swap_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
-		limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError>;
-}
-
-/// An error that can occur during a swap.
-#[derive(Eq, PartialEq, RuntimeDebug)]
-pub enum SwapError {
-	/// The swap cannot be completed.
-	CannotSwap,
-}
-
-impl Into<DispatchError> for SwapError {
-	fn into(self) -> DispatchError {
-		DispatchError::Other("Cannot swap")
-	}
-}
-
-/// A wrapper that implements the `Swap` trait for a DEX with specific joints.
-pub struct SpecificJointsSwap<Dex, Joints>(sp_std::marker::PhantomData<(Dex, Joints)>);
-
-impl<AccountId, Balance, CurrencyId, Dex, Joints> Swap<AccountId, Balance, CurrencyId>
-	for SpecificJointsSwap<Dex, Joints>
-where
-	Dex: DEXManager<AccountId, Balance, CurrencyId>,
-	Joints: Get<Vec<Vec<CurrencyId>>>,
-	Balance: Clone,
-	CurrencyId: Clone,
-{
-	fn get_swap_amount(
-		supply_currency_id: CurrencyId,
-		target_currency_id: CurrencyId,
-		limit: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)> {
-		<Dex as DEXManager<AccountId, Balance, CurrencyId>>::get_best_price_swap_path(
-			supply_currency_id,
-			target_currency_id,
-			limit,
-			Joints::get(),
-		)
-		.map(|(_, supply_amount, target_amount)| (supply_amount, target_amount))
-	}
-
-	fn swap(
-		who: &AccountId,
-		supply_currency_id: CurrencyId,
-		target_currency_id: CurrencyId,
-		limit: SwapLimit<Balance>,
-	) -> sp_std::result::Result<(Balance, Balance), DispatchError> {
-		let path = <Dex as DEXManager<AccountId, Balance, CurrencyId>>::get_best_price_swap_path(
-			supply_currency_id,
-			target_currency_id,
-			limit.clone(),
-			Joints::get(),
-		)
-		.ok_or_else(|| Into::<DispatchError>::into(SwapError::CannotSwap))?
-		.0;
-
-		<Dex as DEXManager<AccountId, Balance, CurrencyId>>::swap_with_specific_path(
-			who, &path, limit,
-		)
-	}
-
-	fn swap_by_path(
-		who: &AccountId,
-		swap_path: &[CurrencyId],
-		limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		<Dex as DEXManager<AccountId, Balance, CurrencyId>>::swap_with_specific_path(
-			who, swap_path, limit,
-		)
-	}
-
-	fn swap_by_aggregated_path<StableAssetPoolId, PoolTokenIndex>(
-		who: &AccountId,
-		swap_path: &[AggregatedSwapPath<CurrencyId, StableAssetPoolId, PoolTokenIndex>],
-		limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		ensure!(swap_path.len() == 1, Into::<DispatchError>::into(SwapError::CannotSwap));
-		match swap_path.last() {
-			Some(AggregatedSwapPath::<CurrencyId, StableAssetPoolId, PoolTokenIndex>::Dex(
-				path,
-			)) => <Dex as DEXManager<AccountId, Balance, CurrencyId>>::swap_with_specific_path(
-				who, path, limit,
-			),
-			_ => Err(Into::<DispatchError>::into(SwapError::CannotSwap)),
-		}
-	}
 }
 
 #[cfg(feature = "std")]
@@ -237,35 +113,11 @@ where
 		Default::default()
 	}
 
-	fn get_liquidity_token_address(
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> Option<H160> {
-		Some(Default::default())
-	}
-
 	fn get_swap_amount(
 		_path: &[CurrencyId],
 		_limit: SwapLimit<Balance>,
 	) -> Option<(Balance, Balance)> {
 		Some(Default::default())
-	}
-
-	fn get_best_price_swap_path(
-		_supply_currency_id: CurrencyId,
-		_target_currency_id: CurrencyId,
-		_limit: SwapLimit<Balance>,
-		_alternative_path_joint_list: Vec<Vec<CurrencyId>>,
-	) -> Option<(Vec<CurrencyId>, Balance, Balance)> {
-		Some(Default::default())
-	}
-
-	fn swap_with_specific_path(
-		_who: &AccountId,
-		_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok(Default::default())
 	}
 
 	fn add_liquidity(
@@ -275,7 +127,6 @@ where
 		_max_amount_a: Balance,
 		_max_amount_b: Balance,
 		_min_share_increment: Balance,
-		_stake_increment_share: bool,
 	) -> Result<(Balance, Balance, Balance), DispatchError> {
 		Ok(Default::default())
 	}
@@ -287,107 +138,7 @@ where
 		_remove_share: Balance,
 		_min_withdrawn_a: Balance,
 		_min_withdrawn_b: Balance,
-		_by_unstake: bool,
 	) -> Result<(Balance, Balance), DispatchError> {
 		Ok(Default::default())
-	}
-}
-
-/// A trait for bootstrapping a DEX.
-pub trait DEXBootstrap<AccountId, Balance, CurrencyId> {
-	/// Returns the provision pool for a given currency pair.
-	fn get_provision_pool(
-		currency_id_a: CurrencyId,
-		currency_id_b: CurrencyId,
-	) -> (Balance, Balance);
-
-	/// Returns the provision pool of a specific account for a given currency pair.
-	fn get_provision_pool_of(
-		who: &AccountId,
-		currency_id_a: CurrencyId,
-		currency_id_b: CurrencyId,
-	) -> (Balance, Balance);
-
-	/// Returns the initial share exchange rate for a given currency pair.
-	fn get_initial_share_exchange_rate(
-		currency_id_a: CurrencyId,
-		currency_id_b: CurrencyId,
-	) -> (Balance, Balance);
-
-	/// Adds a provision to the DEX.
-	fn add_provision(
-		who: &AccountId,
-		currency_id_a: CurrencyId,
-		currency_id_b: CurrencyId,
-		contribution_a: Balance,
-		contribution_b: Balance,
-	) -> DispatchResult;
-
-	/// Claims a DEX share.
-	fn claim_dex_share(
-		who: &AccountId,
-		currency_id_a: CurrencyId,
-		currency_id_b: CurrencyId,
-	) -> Result<Balance, DispatchError>;
-
-	/// Refunds a provision.
-	fn refund_provision(
-		who: &AccountId,
-		currency_id_a: CurrencyId,
-		currency_id_b: CurrencyId,
-	) -> DispatchResult;
-}
-
-#[cfg(feature = "std")]
-impl<AccountId, CurrencyId, Balance> DEXBootstrap<AccountId, Balance, CurrencyId> for ()
-where
-	Balance: Default,
-{
-	fn get_provision_pool(
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> (Balance, Balance) {
-		Default::default()
-	}
-
-	fn get_provision_pool_of(
-		_who: &AccountId,
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> (Balance, Balance) {
-		Default::default()
-	}
-
-	fn get_initial_share_exchange_rate(
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> (Balance, Balance) {
-		Default::default()
-	}
-
-	fn add_provision(
-		_who: &AccountId,
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-		_contribution_a: Balance,
-		_contribution_b: Balance,
-	) -> DispatchResult {
-		Ok(())
-	}
-
-	fn claim_dex_share(
-		_who: &AccountId,
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> Result<Balance, DispatchError> {
-		Ok(Default::default())
-	}
-
-	fn refund_provision(
-		_who: &AccountId,
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> DispatchResult {
-		Ok(())
 	}
 }
