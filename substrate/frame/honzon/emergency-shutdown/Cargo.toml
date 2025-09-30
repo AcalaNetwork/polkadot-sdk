@@ -5,16 +5,16 @@ authors = ["Acala Developers"]
 edition = { workspace = true }
 
 [dependencies]
-codec = { workspace = true }
-scale-info = { workspace = true }
-frame-support = { workspace = true }
-frame-system = { workspace = true }
-sp-runtime = { workspace = true }
-sp-std = { workspace = true }
-pallet-traits = { workspace = true }
-pallet-loans = { path = "../loans", default-features = false }
-pallet-auction-manager = { path = "../auction-manager", default-features = false }
-pallet-cdp-treasury = { path = "../cdp-treasury", default-features = false }
+codec = { workspace = true, default-features = false }
+scale-info = { workspace = true, default-features = false }
+frame-support = { workspace = true, default-features = false }
+frame-system = { workspace = true, default-features = false }
+sp-runtime = { workspace = true, default-features = false }
+sp-std = { workspace = true, default-features = false }
+pallet-traits = { workspace = true, default-features = false }
+pallet-loans = { workspace = true, default-features = false }
+pallet-auction-manager = { workspace = true, default-features = false }
+pallet-cdp-treasury = { workspace = true, default-features = false }
 
 
 [dev-dependencies]
@@ -23,8 +23,8 @@ sp-io = { workspace = true, features = ["std"] }
 pallet-balances = { workspace = true, features = ["std"] }
 pallet-assets = { workspace = true, features = ["std"] }
 pallet-traits = { workspace = true, features = ["std"] }
-pallet-cdp-treasury = { path = "../cdp-treasury", features = ["std"] }
-pallet-loans = { path = "../loans", features = ["std"] }
+pallet-cdp-treasury = { workspace = true, features = ["std"] }
+pallet-loans = { workspace = true, features = ["std"] }
 
 
 [features]

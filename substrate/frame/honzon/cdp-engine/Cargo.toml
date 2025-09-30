@@ -5,20 +5,20 @@ authors = ["Acala Developers"]
 edition = { workspace = true }
 
 [dependencies]
-log = { workspace = true }
-rand_chacha = { workspace = true }
-codec = { workspace = true }
-scale-info = { workspace = true }
-frame-support = { workspace = true }
-frame-system = { workspace = true }
-sp-application-crypto = { workspace = true }
-sp-io = { workspace = true }
-sp-runtime = { workspace = true }
-sp-std = { workspace = true }
+log = { workspace = true, default-features = false }
+rand_chacha = { workspace = true, default-features = false }
+codec = { workspace = true, default-features = false }
+scale-info = { workspace = true, default-features = false }
+frame-support = { workspace = true, default-features = false }
+frame-system = { workspace = true, default-features = false }
+sp-application-crypto = { workspace = true, default-features = false }
+sp-io = { workspace = true, default-features = false }
+sp-core = { workspace = true, default-features = false }
+sp-runtime = { workspace = true, default-features = false }
+sp-std = { workspace = true, default-features = false }
 serde = { features = ["derive"], workspace = true, optional = true }
-pallet-traits = { path = "../traits", default-features = false }
-pallet-loans = { path = "../loans", default-features = false }
-pallet-balances = { workspace = true, default-features = false }
+pallet-traits = { workspace = true, default-features = false }
+pallet-loans = { workspace = true, default-features = false }
 num-traits = { workspace = true, default-features = false }
 
 [dev-dependencies]
@@ -28,11 +28,6 @@ sp-io = { workspace = true, features = ["std"] }
 pallet-assets = { workspace = true, features = ["std"] }
 pallet-assets-holder = { workspace = true, features = ["std"] }
 pallet-cdp-treasury = { path = "../cdp-treasury", features = ["std"] }
-
-# Add sp-core for mock runtime
-[dependencies.sp-core]
-workspace = true
-optional = true
 
 [features]
 default = ["std"]
