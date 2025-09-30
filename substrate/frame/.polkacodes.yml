@@ -1,5 +1,5 @@
 scripts:
-  check: cargo test -p pallet-savings
+  check: cargo test -p pallet-honzon
 rules: |
   Use traits/tokens/fungible(s) traits
   Use pallet-assets in mock for testing

@@ -15,6 +15,7 @@ sp-std = { workspace = true }
 pallet-traits = { path = "../traits", default-features = false }
 pallet-cdp-engine = { path = "../cdp-engine", default-features = false }
 pallet-loans = { path = "../loans", default-features = false }
+num-traits = { workspace = true, default-features = false }
 
 [dev-dependencies]
 sp-io = { workspace = true }

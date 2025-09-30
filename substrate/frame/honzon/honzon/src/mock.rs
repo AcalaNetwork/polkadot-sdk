@@ -23,30 +23,27 @@
 use super::*;
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
-	construct_runtime, derive_impl, ord_parameter_types, parameter_types,
+	construct_runtime, ord_parameter_types, parameter_types,
 	traits::{
-		AsEnsureOriginWithArg, ConstU128, ConstU16, ConstU32, ConstU64, Everything, Nothing,
+		AsEnsureOriginWithArg, ConstU128, ConstU16, ConstU32, ConstU64, Everything,
 		SortedMembers, UnixTime,
 	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_cdp_engine::Ratio;
 use pallet_traits::{
-	AggregatedSwapPath, AuctionManager, CDPTreasury as CDPTreasuryTrait, EmergencyShutdown,
-	LiquidationTarget, LockablePrice, PriceProvider, RiskManager, Swap, SwapLimit,
+	bounded::FractionalRate,
+	AggregatedSwapPath, AuctionManager, CDPTreasury as CDPTreasuryTrait, DEXManager,
+	EmergencyShutdown, ExchangeRate, LiquidationTarget, PriceProvider, Rate, RiskManager, Swap,
+	SwapLimit,
 };
-use scale_info::TypeInfo;
-use sp_core::H256;
+use sp_core::{H160, H256};
 use sp_runtime::{
-	serde,
 	traits::{
-		AccountIdConversion, AtLeast32BitUnsigned, BlakeTwo256, Bounded, CheckedAdd, CheckedSub,
-		IdentityLookup, Saturating, Zero,
+		AccountIdConversion, BlakeTwo256, IdentityLookup,
 	},
-	BuildStorage, DispatchError, DispatchResult, FixedU128, RuntimeDebug,
+	BuildStorage, DispatchError, DispatchResult, FixedU128,
 };
-use sp_std::ops::{Add, AddAssign, Div, Mul, Sub};
 
 pub type AccountId = u128;
 pub type BlockNumber = u64;
@@ -68,19 +65,36 @@ mod honzon_pallet {
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;
 type Block = frame_system::mocking::MockBlock<Runtime>;
 
-construct_runtime!(
+construct_runtime! {
 	pub enum Runtime
 	{
 		System: frame_system,
 		Honzon: honzon_pallet,
 		PalletBalances: pallet_balances,
-		Assets: pallet_assets,
+		Fungibles: pallet_assets,
 		CDPTreasury: pallet_cdp_treasury,
 		Loans: pallet_loans,
 		CDPEngine: pallet_cdp_engine,
 		Timestamp: pallet_timestamp,
 	}
-);
+}
+
+impl<C> frame_system::offchain::CreateTransactionBase<C> for Runtime
+where
+	RuntimeCall: From<C>,
+{
+	type Extrinsic = UncheckedExtrinsic;
+	type RuntimeCall = RuntimeCall;
+}
+
+impl<C> frame_system::offchain::CreateBare<C> for Runtime
+where
+	RuntimeCall: From<C>,
+{
+	fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
+		UncheckedExtrinsic::new_bare(call)
+	}
+}
 
 impl frame_system::Config for Runtime {
 	type BaseCallFilter = Everything;
@@ -211,7 +225,6 @@ impl LiquidationTarget<AccountId, CurrencyId, Balance> for MockLiquidationStrate
 }
 
 impl pallet_loans::Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
 	type Currency = PalletBalances;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	type CurrencyId = CurrencyId;
@@ -219,13 +232,17 @@ impl pallet_loans::Config for Runtime {
 	type CDPTreasury = CDPTreasury;
 	type PalletId = LoansPalletId;
 	type CollateralCurrencyId = GetNativeCurrencyId;
-	type OnUpdateLoan = Nothing<(Self::AccountId, Amount, pallet_loans::BalanceOf<Self>)>;
+	type OnUpdateLoan = ();
 	type LiquidationStrategy = MockLiquidationStrategy;
+	type Amount = Amount;
 }
 
 pub struct MockPriceProvider;
 impl PriceProvider<CurrencyId> for MockPriceProvider {
-	fn get_price(_currency_id: CurrencyId) -> Option<FixedU128> {
+	fn get_relative_price(_base: CurrencyId, _quote: CurrencyId) -> Option<FixedU128> {
+		Some(FixedU128::from_inner(100))
+	}
+	fn get_price(_: CurrencyId) -> Option<FixedU128> {
 		Some(FixedU128::from_inner(100))
 	}
 }
@@ -249,12 +266,12 @@ impl AuctionManager<AccountId> for MockAuctionManager {
 		unimplemented!()
 	}
 
-	fn get_total_target_in_auction() -> Self::Balance {
-		unimplemented!()
+	fn get_total_collateral_in_auction(_currency_id: Self::CurrencyId) -> Self::Balance {
+		0
 	}
 
-	fn get_total_collateral_in_auction(_id: Self::CurrencyId) -> Self::Balance {
-		Default::default()
+	fn get_total_target_in_auction() -> Self::Balance {
+		0
 	}
 }
 
@@ -298,6 +315,67 @@ impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
 	}
 }
 
+impl DEXManager<AccountId, Balance, CurrencyId> for MockSwap {
+	fn get_liquidity_pool(
+		_currency_id_a: CurrencyId,
+		_currency_id_b: CurrencyId,
+	) -> (Balance, Balance) {
+		(1, 1)
+	}
+
+	fn get_liquidity_token_address(_currency_id_a: u32, _currency_id_b: u32) -> Option<H160> {
+		None
+	}
+
+	fn get_swap_amount(
+		_path: &[u32],
+		_limit: SwapLimit<Balance>,
+	) -> Option<(Balance, Balance)> {
+		None
+	}
+
+	fn get_best_price_swap_path(
+		_from: u32,
+		_to: u32,
+		_limit: SwapLimit<Balance>,
+		_all_paths: Vec<Vec<u32>>,
+	) -> Option<(Vec<u32>, Balance, Balance)> {
+		None
+	}
+
+	fn swap_with_specific_path(
+		_who: &AccountId,
+		_path: &[u32],
+		_limit: SwapLimit<Balance>,
+	) -> Result<(Balance, Balance), DispatchError> {
+		Ok((0, 0))
+	}
+
+	fn add_liquidity(
+		_who: &AccountId,
+		_currency_id_a: u32,
+		_currency_id_b: u32,
+		_max_amount_a: Balance,
+		_max_amount_b: Balance,
+		_min_share_increment: Balance,
+		_stake: bool,
+	) -> Result<(Balance, Balance, Balance), DispatchError> {
+		unimplemented!()
+	}
+
+	fn remove_liquidity(
+		_who: &AccountId,
+		_currency_id_a: u32,
+		_currency_id_b: u32,
+		_remove_share: Balance,
+		_min_withdrawn_a: Balance,
+		_min_withdrawn_b: Balance,
+		_by_unstake: bool,
+	) -> Result<(Balance, Balance), DispatchError> {
+		unimplemented!()
+	}
+}
+
 parameter_types! {
 	pub const GetStableCurrencyId: CurrencyId = STABLE;
 	pub const CDPTreasuryPalletId: PalletId = PalletId(*b"aca/cdpt");
@@ -306,7 +384,7 @@ parameter_types! {
 
 impl pallet_cdp_treasury::Config for Runtime {
 	type UpdateOrigin = EnsureSignedBy<One, AccountId>;
-	type Fungibles = Assets;
+	type Fungibles = Fungibles;
 	type AuctionManagerHandler = MockAuctionManager;
 	type Balance = Balance;
 	type CurrencyId = CurrencyId;
@@ -323,18 +401,34 @@ parameter_types! {
 	pub const CDPEnginePalletId: PalletId = PalletId(*b"aca/cdpe");
 	pub DefaultLiquidationRatio: Ratio = Ratio::from_rational(3, 2);
 	pub MinimumDebitValue: Balance = 100;
+	pub const DefaultDebitExchangeRate: ExchangeRate = ExchangeRate::from_inner(1_000_000_000_000_000_000);
+	pub DefaultLiquidationPenalty: FractionalRate = FractionalRate::try_from(Rate::from_rational(1, 10)).unwrap();
+	pub const MinimumCollateralAmount: u128 = 100;
+	pub const MaxSwapSlippageCompareToOracle: Ratio = Ratio::from_rational(10, 100);
+	pub const UnsignedPriority: u64 = 100;
 }
 
 impl pallet_cdp_engine::Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
-	type Balance = Balance;
-	type CurrencyId = CurrencyId;
 	type UpdateOrigin = EnsureSignedBy<One, AccountId>;
 	type DefaultLiquidationRatio = DefaultLiquidationRatio;
 	type MinimumDebitValue = MinimumDebitValue;
 	type UnixTime = Timestamp;
 	type PalletId = CDPEnginePalletId;
 	type WeightInfo = ();
+	type DefaultDebitExchangeRate = DefaultDebitExchangeRate;
+	type DefaultLiquidationPenalty = DefaultLiquidationPenalty;
+	type MinimumCollateralAmount = MinimumCollateralAmount;
+	type GetNativeCurrencyId = GetNativeCurrencyId;
+	type GetStableCurrencyId = GetStableCurrencyId;
+	type MaxSwapSlippageCompareToOracle = MaxSwapSlippageCompareToOracle;
+	type CDPTreasury = CDPTreasury;
+	type PriceSource = MockPriceProvider;
+	type UnsignedPriority = UnsignedPriority;
+	type EmergencyShutdown = MockEmergencyShutdown;
+	type Currency = PalletBalances;
+	type Tokens = Fungibles;
+	type DEX = MockSwap;
+	type Swap = MockSwap;
 }
 
 impl pallet_timestamp::Config for Runtime {

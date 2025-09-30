@@ -56,7 +56,7 @@ use frame_support::{
 	traits::{Get, NamedReservableCurrency},
 };
 use frame_system::pallet_prelude::*;
-use pallet_loans::{Amount, BalanceOf};
+use pallet_loans::BalanceOf;
 use pallet_traits::{
 	EmergencyShutdown, ExchangeRate, HonzonManager, Position, PriceProvider, Rate, Ratio,
 };
@@ -65,6 +65,7 @@ use sp_runtime::{
 	traits::{AtLeast32BitUnsigned, MaybeSerializeDeserialize, StaticLookup, Zero},
 	ArithmeticError, DispatchResult,
 };
+use num_traits::Signed;
 use sp_std::prelude::*;
 
 mod mock;
@@ -77,6 +78,9 @@ pub use weights::WeightInfo;
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
+
+	pub type CurrencyId<T> = <T as pallet_loans::Config>::CurrencyId;
+	pub type AmountOf<T> = <T as pallet_loans::Config>::Amount;
 
 	pub type ReserveIdentifier = [u8; 8];
 	pub const RESERVE_ID: ReserveIdentifier = *b"honzon  ";
@@ -96,10 +100,10 @@ pub mod pallet {
 
 		/// Reserved amount per authorization.
 		#[pallet::constant]
-		type DepositPerAuthorization: Get<<Self as pallet_cdp_engine::Config>::Balance>;
+		type DepositPerAuthorization: Get<BalanceOf<Self>>;
 
 		/// The collateral currency id
-		type CollateralCurrencyId: Get<<Self as pallet_loans::Config>::CurrencyId>;
+		type CollateralCurrencyId: Get<CurrencyId<Self>>;
 
 		/// Weight information for the extrinsics in this module.
 		type WeightInfo: WeightInfo;
@@ -108,10 +112,10 @@ pub mod pallet {
 		type EmergencyShutdown: EmergencyShutdown;
 
 		/// Price provider
-		type PriceSource: PriceProvider<<Self as pallet_loans::Config>::CurrencyId>;
+		type PriceSource: PriceProvider<CurrencyId<Self>>;
 
 		/// Stable currency id
-		type GetStableCurrencyId: Get<<Self as pallet_loans::Config>::CurrencyId>;
+		type GetStableCurrencyId: Get<CurrencyId<Self>>;
 	}
 
 	#[pallet::error]
@@ -134,12 +138,7 @@ pub mod pallet {
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
 
 	#[pallet::call]
-	impl<T: Config> Pallet<T>
-	where
-		BalanceOf<T>: TryFrom<i128>,
-		i128: TryFrom<BalanceOf<T>>,
-		<T as pallet_cdp_engine::Config>::Balance: From<BalanceOf<T>>,
-	{
+	impl<T: Config> Pallet<T> {
 		/// Adjusts a `Position` by changing the collateral and debit amounts.
 		///
 		/// - `collateral_adjustment`: A signed amount representing the change in collateral. A
@@ -150,13 +149,12 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::adjust_loan())]
 		pub fn adjust_loan(
 			origin: OriginFor<T>,
-			collateral_adjustment: Amount,
-			debit_adjustment: Amount,
+			collateral_adjustment: AmountOf<T>,
+			debit_adjustment: AmountOf<T>,
 		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
 			Self::do_adjust_loan(&who, collateral_adjustment, debit_adjustment)
 		}
-
 		/// Closes a `Position` that has outstanding debit by selling collateral on a DEX.
 		///
 		/// This function is used when the `Position` is still in a safe state (i.e., not
@@ -170,10 +168,10 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::close_loan_has_debit_by_dex())]
 		pub fn close_loan_has_debit_by_dex(
 			origin: OriginFor<T>,
-			#[pallet::compact] max_collateral_amount: BalanceOf<T>,
+			max_collateral_amount: BalanceOf<T>,
 		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
-			Self::do_close_loan_by_dex(who, max_collateral_amount.into())
+			Self::do_close_loan_by_dex(who, max_collateral_amount)
 		}
 
 		/// Generates new debit in advance, buys collateral, and deposits it into the `Position`.
@@ -231,14 +229,14 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::adjust_loan())]
 		pub fn adjust_loan_by_debit_value(
 			origin: OriginFor<T>,
-			collateral_adjustment: Amount,
-			debit_value_adjustment: Amount,
+			collateral_adjustment: AmountOf<T>,
+			debit_value_adjustment: AmountOf<T>,
 		) -> DispatchResult {
 			let _who = ensure_signed(origin)?;
 
 			// not allowed to adjust the debit after system shutdown
 			if !debit_value_adjustment.is_zero() {
-				ensure!(!T::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
+				ensure!(!<T as crate::Config>::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
 			}
 			// TODO: not implemented
 			Ok(())
@@ -246,19 +244,15 @@ pub mod pallet {
 	}
 }
 
-impl<T: Config> Pallet<T>
-where
-	BalanceOf<T>: TryFrom<i128>,
-	i128: TryFrom<BalanceOf<T>>,
-{
+impl<T: Config> Pallet<T> {
 	fn do_adjust_loan(
 		who: &<T as frame_system::Config>::AccountId,
-		collateral_adjustment: Amount,
-		debit_adjustment: Amount,
+		collateral_adjustment: AmountOf<T>,
+		debit_adjustment: AmountOf<T>,
 	) -> DispatchResult {
 		// not allowed to adjust the debit after system shutdown
 		if !debit_adjustment.is_zero() {
-			ensure!(!T::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
+			ensure!(!<T as crate::Config>::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
 		}
 		let maybe_new_stability_fee = if debit_adjustment.is_positive() {
 			Some(<pallet_cdp_engine::Pallet<T>>::get_interest_rate_per_sec()?)
@@ -276,9 +270,9 @@ where
 
 	fn do_close_loan_by_dex(
 		who: <T as frame_system::Config>::AccountId,
-		max_collateral_amount: <T as pallet_cdp_engine::Config>::Balance,
+		max_collateral_amount: BalanceOf<T>,
 	) -> DispatchResult {
-		ensure!(!T::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
+		ensure!(!<T as crate::Config>::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
 		// TODO: not implemented
 		Ok(())
 	}
@@ -287,44 +281,32 @@ where
 impl<T: Config>
 	HonzonManager<
 		<T as frame_system::Config>::AccountId,
-		Amount,
-		<T as pallet_cdp_engine::Config>::Balance,
-	> for Pallet<T>
-where
-	<T as pallet_cdp_engine::Config>::Balance: From<BalanceOf<T>>,
-	U256: From<<T as pallet_cdp_engine::Config>::Balance>,
-	BalanceOf<T>: TryFrom<i128>,
-	i128: TryFrom<BalanceOf<T>>,
-{
+		AmountOf<T>,
+		BalanceOf<T>,
+	> for Pallet<T> {
 	fn adjust_loan(
 		who: &<T as frame_system::Config>::AccountId,
-		collateral_adjustment: Amount,
-		debit_adjustment: Amount,
+		collateral_adjustment: AmountOf<T>,
+		debit_adjustment: AmountOf<T>,
 	) -> DispatchResult {
 		Self::do_adjust_loan(who, collateral_adjustment, debit_adjustment)
 	}
 
 	fn close_loan_by_dex(
 		who: <T as frame_system::Config>::AccountId,
-		max_collateral_amount: <T as pallet_cdp_engine::Config>::Balance,
+		max_collateral_amount: BalanceOf<T>,
 	) -> DispatchResult {
 		Self::do_close_loan_by_dex(who, max_collateral_amount)
 	}
 
 	fn get_position(
 		who: &<T as frame_system::Config>::AccountId,
-	) -> pallet_traits::Position<<T as pallet_cdp_engine::Config>::Balance> {
-		let position: pallet_traits::Position<BalanceOf<T>> =
-			<pallet_loans::Pallet<T>>::positions(who);
-		pallet_traits::Position {
-			collateral: position.collateral.into(),
-			debit: position.debit.into(),
-			stability_fee: position.stability_fee,
-		}
+	) -> pallet_traits::Position<BalanceOf<T>> {
+		<pallet_loans::Pallet<T>>::positions(who)
 	}
 
 	fn get_collateral_parameters() -> Vec<U256> {
-		let params = <pallet_cdp_engine::Pallet<T>>::collateral_params().unwrap_or_default();
+		let params = <pallet_cdp_engine::Pallet<T>>::collateral_params();
 
 		vec![
 			Ratio::one().into_inner().into(),
@@ -338,10 +320,10 @@ where
 		let currency_id = <T as crate::Config>::CollateralCurrencyId::get();
 		let position: pallet_traits::Position<BalanceOf<T>> =
 			<pallet_loans::Pallet<T>>::positions(who);
-		let stable_currency_id = T::GetStableCurrencyId::get();
+		let stable_currency_id = <T as crate::Config>::GetStableCurrencyId::get();
 		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
 
-		T::PriceSource::get_relative_price(currency_id, stable_currency_id).map(|price| {
+		<T as crate::Config>::PriceSource::get_relative_price(currency_id, stable_currency_id).map(|price| {
 			let exchange_rate =
 				<pallet_cdp_engine::Pallet<T>>::get_debit_exchange_rate(stability_fee);
 			<pallet_cdp_engine::Pallet<T>>::calculate_collateral_ratio(
