@@ -39,6 +39,8 @@ construct_runtime!(
 		Assets: pallet_assets,
 		AssetRewards: pallet_asset_rewards,
 		Savings: pallet_savings,
+		AssetsFreezer: pallet_assets_freezer,
+		AssetsHolder: pallet_assets_holder,
 	}
 );
 
@@ -99,10 +101,10 @@ impl pallet_balances::Config for Test {
 	type ExistentialDeposit = ExistentialDeposit;
 	type AccountStore = System;
 	type WeightInfo = ();
-	type FreezeIdentifier = ();
-	type MaxFreezes = ();
+	type FreezeIdentifier = FreezeReason;
+	type MaxFreezes = ConstU32<1>;
 	type RuntimeHoldReason = ();
-	type RuntimeFreezeReason = ();
+	type RuntimeFreezeReason = FreezeReason;
 	type DoneSlashHandler = ();
 }
 
@@ -128,72 +130,26 @@ impl pallet_assets::Config for Test {
 	type MetadataDepositPerByte = MetadataDepositPerByte;
 	type ApprovalDeposit = ApprovalDeposit;
 	type StringLimit = StringLimit;
-	type Freezer = ();
+	type Freezer = AssetsFreezer;
 	type Extra = ();
 	type WeightInfo = ();
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
-	type Holder = ();
+	type Holder = AssetsHolder;
 }
 
 parameter_types! {
 	pub const AssetRewardsPalletId: PalletId = PalletId(*b"py/asrw ");
 }
 
-#[derive(
-	Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Encode, Decode, RuntimeDebug, MaxEncodedLen, TypeInfo,
-)]
-pub enum MyFreezeReason {
-	Other,
+impl pallet_assets_freezer::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type RuntimeFreezeReason = FreezeReason;
 }
 
-impl From<FreezeReason> for MyFreezeReason {
-	fn from(_: FreezeReason) -> Self {
-		MyFreezeReason::Other
-	}
-}
-
-pub struct DummyFreezer;
-
-impl Inspect<AccountId> for DummyFreezer {
-    type AssetId = AssetId;
-    type Balance = Balance;
-    fn total_issuance(asset_id: Self::AssetId) -> Self::Balance {
-		Assets::total_issuance(asset_id)
-	}
-	fn total_balance(asset_id: Self::AssetId, who: &AccountId) -> Self::Balance {
-		Assets::total_balance(asset_id, who)
-	}
-    fn minimum_balance(asset_id: Self::AssetId) -> Self::Balance {
-		Assets::minimum_balance(asset_id)
-	}
-    fn balance(asset_id: Self::AssetId, who: &AccountId) -> Self::Balance {
-		Assets::balance(asset_id, who)
-	}
-    fn reducible_balance(asset_id: Self::AssetId, who: &AccountId, preservation: Preservation, fortitude: Fortitude) -> Self::Balance {
-		Assets::reducible_balance(asset_id, who, preservation, fortitude)
-	}
-    fn can_deposit(asset_id: Self::AssetId, who: &AccountId, amount: Self::Balance, provenance: Provenance) -> DepositConsequence {
-		Assets::can_deposit(asset_id, who, amount, provenance)
-	}
-    fn can_withdraw(asset_id: Self::AssetId, who: &AccountId, amount: Self::Balance) -> WithdrawConsequence<Self::Balance> {
-		Assets::can_withdraw(asset_id, who, amount)
-	}
-	fn asset_exists(asset_id: Self::AssetId) -> bool {
-		Assets::asset_exists(asset_id)
-	}
-}
-
-impl InspectFreeze<AccountId> for DummyFreezer {
-    type Id = MyFreezeReason;
-    fn balance_frozen(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId) -> Self::Balance { 0 }
-    fn can_freeze(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId) -> bool { true }
-}
-
-impl MutateFreeze<AccountId> for DummyFreezer {
-    fn set_freeze(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId, _amount: Self::Balance) -> DispatchResult { Ok(()) }
-    fn extend_freeze(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId, _amount: Self::Balance) -> DispatchResult { Ok(()) }
-    fn thaw(_asset: Self::AssetId, _id: &Self::Id, _who: &AccountId) -> DispatchResult { Ok(()) }
+impl pallet_assets_holder::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type RuntimeHoldReason = pallet_asset_rewards::HoldReason;
 }
 
 impl pallet_asset_rewards::Config for Test {
@@ -203,10 +159,11 @@ impl pallet_asset_rewards::Config for Test {
 	type Assets = Assets;
 	type PalletId = AssetRewardsPalletId;
 	type CreatePoolOrigin = EnsureSigned<AccountId>;
-	type AssetsFreezer = DummyFreezer;
-	type RuntimeFreezeReason = MyFreezeReason;
+	type AssetsFreezer = AssetsFreezer;
+	type RuntimeFreezeReason = FreezeReason;
 	type Consideration = ();
 	type WeightInfo = ();
+	type BlockNumberProvider = System;
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = ();
 }

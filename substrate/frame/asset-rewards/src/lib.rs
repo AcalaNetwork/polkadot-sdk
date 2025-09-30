@@ -93,7 +93,6 @@ use frame_support::{
 		Consideration,
 	},
 	PalletId,
-	ensure,
 };
 use scale_info::TypeInfo;
 use sp_core::Get;
@@ -184,7 +183,6 @@ pub mod pallet {
 	use frame_support::{
 		rewards::RewardsPool,
 		pallet_prelude::*,
-		rewards::RewardsPool,
 		traits::{
 			fungibles::MutateFreeze,
 			tokens::{AssetId, Fortitude, Preservation},

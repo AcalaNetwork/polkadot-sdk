@@ -13498,6 +13498,8 @@ dependencies = [
  "frame-system",
  "pallet-asset-rewards",
  "pallet-assets",
+ "pallet-assets-freezer",
+ "pallet-assets-holder",
  "pallet-balances",
  "parity-scale-codec",
  "scale-info",

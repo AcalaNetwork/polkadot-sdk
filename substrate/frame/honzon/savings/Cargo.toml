@@ -32,6 +32,8 @@ pallet-asset-rewards = { workspace = true, default-features = false }
 [dev-dependencies]
 pallet-assets = { workspace = true }
 pallet-balances = { workspace = true }
+pallet-assets-freezer = { workspace = true }
+pallet-assets-holder = { workspace = true }
 
 [features]
 default = ["std"]
@@ -43,6 +45,8 @@ std = [
     "pallet-asset-rewards/std",
     "pallet-assets/std",
     "pallet-balances/std",
+    "pallet-assets-freezer/std",
+    "pallet-assets-holder/std",
     "scale-info/std",
     "sp-api/std",
     "sp-arithmetic/std",
@@ -58,6 +62,8 @@ runtime-benchmarks = [
     "pallet-asset-rewards/runtime-benchmarks",
     "pallet-assets/runtime-benchmarks",
     "pallet-balances/runtime-benchmarks",
+    "pallet-assets-freezer/runtime-benchmarks",
+    "pallet-assets-holder/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
 ]
 try-runtime = [
@@ -66,5 +72,7 @@ try-runtime = [
     "pallet-asset-rewards/try-runtime",
     "pallet-assets/try-runtime",
     "pallet-balances/try-runtime",
+    "pallet-assets-freezer/try-runtime",
+    "pallet-assets-holder/try-runtime",
     "sp-runtime/try-runtime",
 ]

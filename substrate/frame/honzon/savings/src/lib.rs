@@ -127,7 +127,7 @@ pub mod pallet {
 				reward_asset_id,
 				reward_rate_per_block,
 				frame_support::traits::schedule::DispatchTime::At(expiry),
-				admin,
+				admin.as_ref().unwrap_or(&sovereign_account),
 			)?;
 
 			let pool_data = PoolData {
