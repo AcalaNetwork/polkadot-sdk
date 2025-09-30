@@ -3,33 +3,31 @@ name = "pallet-auction"
 description = "Auction module that implements `Auction` trait."
 license = "Apache-2.0"
 version = "1.0.0"
-authors = ["Acala Developers"]
+authors = ["Acala Developers", "Parity Technologies <admin@parity.io>"]
 edition = "2021"
 
 [dependencies]
-pallet-traits = { workspace = true }
 codec = { workspace = true }
 scale-info = { workspace = true }
-serde = { workspace = true, optional = true }
 
+frame-benchmarking = { workspace = true, optional = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
 sp-runtime = { workspace = true }
 sp-std = { workspace = true }
 
 [dev-dependencies]
-sp-core = { workspace = true, features = ["std"] }
-sp-io = { workspace = true, features = ["std"] }
+sp-io = { workspace = true }
 
 [features]
-default = [ "std" ]
+default = ["std"]
 std = [
-	"pallet-traits/std",
+	"codec/std",
+	"frame-benchmarking?/std",
 	"frame-support/std",
 	"frame-system/std",
-	"codec/std",
 	"scale-info/std",
-	"serde",
+	"sp-io/std",
 	"sp-runtime/std",
 	"sp-std/std",
 ]
@@ -37,4 +35,10 @@ try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
 	"sp-runtime/try-runtime",
+]
+runtime-benchmarks = [
+	"frame-benchmarking/runtime-benchmarks",
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
 ]

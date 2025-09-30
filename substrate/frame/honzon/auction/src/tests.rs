@@ -1,21 +1,51 @@
-//! Unit tests for the tokens module.
+// This file is part of Substrate.
+
+// Copyright (C) 2020-2025 Acala Foundation.
+// SPDX-License-Identifier: Apache-2.0
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Unit tests for the auction module.
 
 #![cfg(test)]
 
 use super::*;
-use frame_support::{assert_noop, assert_ok};
+use frame_support::{
+	assert_noop, assert_ok,
+	traits::{Auction, AuctionInfo},
+};
 use mock::*;
 
 #[test]
+fn cannot_add_new_auction_when_no_available_id() {
+	new_test_ext().execute_with(|| {
+		<AuctionsIndex<Runtime>>::put(AuctionId::max_value());
+		assert_noop!(AuctionModule::new_auction(0, None), Error::<Runtime>::NoAvailableAuctionId);
+	});
+}
+
+#[test]
 fn new_auction_should_work() {
-	ExtBuilder::default().build().execute_with(|| {
+	new_test_ext().execute_with(|| {
 		assert_ok!(AuctionModule::new_auction(10, Some(100)), 0);
+		// AuctionEndTime should be set for block 100 and auction id 0
+		assert!(AuctionEndTime::<Runtime>::contains_key(100, 0));
 	});
 }
 
 #[test]
 fn update_auction_should_work() {
-	ExtBuilder::default().build().execute_with(|| {
+	new_test_ext().execute_with(|| {
 		assert_ok!(AuctionModule::new_auction(10, Some(100)), 0);
 		assert_noop!(
 			AuctionModule::update_auction(
@@ -33,7 +63,7 @@ fn update_auction_should_work() {
 
 #[test]
 fn auction_info_should_work() {
-	ExtBuilder::default().build().execute_with(|| {
+	new_test_ext().execute_with(|| {
 		assert_ok!(AuctionModule::new_auction(10, Some(100)), 0);
 		assert_eq!(
 			AuctionModule::auction_info(0),
@@ -44,7 +74,7 @@ fn auction_info_should_work() {
 
 #[test]
 fn bid_should_work() {
-	ExtBuilder::default().build().execute_with(|| {
+	new_test_ext().execute_with(|| {
 		System::set_block_number(1);
 		assert_ok!(AuctionModule::new_auction(0, Some(5)), 0);
 		assert_eq!(
@@ -66,7 +96,7 @@ fn bid_should_work() {
 
 #[test]
 fn bid_should_fail() {
-	ExtBuilder::default().build().execute_with(|| {
+	new_test_ext().execute_with(|| {
 		assert_ok!(AuctionModule::new_auction(10, Some(100)), 0);
 		assert_ok!(AuctionModule::new_auction(0, Some(100)), 1);
 		assert_noop!(
@@ -81,12 +111,16 @@ fn bid_should_fail() {
 			AuctionModule::bid(RuntimeOrigin::signed(ALICE), 1, 0),
 			Error::<Runtime>::InvalidBidPrice,
 		);
+		assert_noop!(
+			AuctionModule::bid(RuntimeOrigin::signed(ALICE), 2, 10),
+			Error::<Runtime>::AuctionNotExist,
+		);
 	});
 }
 
 #[test]
 fn remove_auction_should_work() {
-	ExtBuilder::default().build().execute_with(|| {
+	new_test_ext().execute_with(|| {
 		assert_ok!(AuctionModule::new_auction(10, Some(100)), 0);
 		assert_eq!(AuctionModule::auctions_index(), 1);
 		assert!(AuctionModule::auctions(0).is_some());
@@ -99,7 +133,7 @@ fn remove_auction_should_work() {
 
 #[test]
 fn cleanup_auction_should_work() {
-	ExtBuilder::default().build().execute_with(|| {
+	new_test_ext().execute_with(|| {
 		assert_ok!(AuctionModule::new_auction(10, Some(100)), 0);
 		assert_eq!(AuctionModule::auctions_index(), 1);
 		assert_ok!(AuctionModule::new_auction(10, Some(50)), 1);
@@ -124,13 +158,5 @@ fn cleanup_auction_should_work() {
 		assert_eq!(<AuctionEndTime<Runtime>>::iter_prefix(0).count(), 0);
 		assert_eq!(<AuctionEndTime<Runtime>>::iter_prefix(50).count(), 0);
 		assert_eq!(<AuctionEndTime<Runtime>>::iter_prefix(100).count(), 0);
-	});
-}
-
-#[test]
-fn cannot_add_new_auction_when_no_available_id() {
-	ExtBuilder::default().build().execute_with(|| {
-		<AuctionsIndex<Runtime>>::put(AuctionId::max_value());
-		assert_noop!(AuctionModule::new_auction(0, None), Error::<Runtime>::NoAvailableAuctionId);
 	});
 }

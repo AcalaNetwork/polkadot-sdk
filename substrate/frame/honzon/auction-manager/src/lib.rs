@@ -34,6 +34,7 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	pallet_prelude::*,
 	traits::{
+		auction::{Auction, AuctionHandler, Change, OnNewBidResult},
 		fungibles::{self, Balanced, Mutate, MutateHold},
 		tokens::{Precision, Preservation},
 		Get,
@@ -41,11 +42,7 @@ use frame_support::{
 	transactional,
 };
 use frame_system::pallet_prelude::*;
-use pallet_auction;
-use pallet_traits::{
-	Auction, AuctionHandler, AuctionInfo, AuctionManager, CDPTreasury, Change, EmergencyShutdown,
-	OnNewBidResult, PriceProvider, Rate, Swap,
-};
+use pallet_traits::{AuctionManager, CDPTreasury, EmergencyShutdown, PriceProvider, Rate, Swap};
 use scale_info::TypeInfo;
 use sp_runtime::{
 	traits::{AtLeast32BitUnsigned, CheckedDiv, CheckedMul, One, Saturating, Zero},
@@ -99,8 +96,6 @@ pub mod pallet {
 	where
 		<Self as pallet_auction::Config>::Balance: Zero,
 	{
-		/// The overarching event type.
-		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 		/// The currency type for interacting with this pallet.
 		type CurrencyId: frame_support::pallet_prelude::Parameter
 			+ sp_std::cmp::PartialEq
@@ -155,8 +150,6 @@ pub mod pallet {
 				Balance = <Self as pallet_auction::Config>::Balance,
 				Reason = Self::RuntimeHoldReason,
 			>;
-		/// The auction pallet.
-		type Auction: Auction<Self::AccountId, BlockNumberFor<Self>>;
 		/// The emergency shutdown pallet.
 		type EmergencyShutdown: EmergencyShutdown;
 		/// Weight information for extrinsics in this pallet.
@@ -249,9 +242,6 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type TotalTargetInAuction<T: Config> =
 		StorageValue<_, <T as pallet_auction::Config>::Balance, ValueQuery>;
-
-	#[pallet::hooks]
-	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {}

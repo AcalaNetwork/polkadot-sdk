@@ -1,41 +1,88 @@
+// This file is part of Substrate.
+
+// Copyright (C) 2020-2025 Acala Foundation.
+// SPDX-License-Identifier: Apache-2.0
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! # Auction Pallet
+//!
+//! A generic pallet for on-chain auctions that enables creation and management of auctions for
+//! any type of asset.
+//!
+//! ## Pallet API
+//!
+//! See the [`pallet`] module for more information about the interfaces this pallet exposes,
+//! including its configuration trait, dispatchables, storage items, events and errors.
 //!
 //! ## Overview
 //!
 //! This pallet provides a generic framework for on-chain auctions. It allows for the creation
 //! and management of auctions for any type of asset. The core logic of the auction, such as
 //! bid validation and what happens when an auction ends, is customizable through the
-//! `AuctionHandler` trait.
+//! [`AuctionHandler`](frame_support::traits::AuctionHandler) trait.
 //!
 //! This pallet is designed to be flexible and can be used to implement various auction
 //! types, such as English auctions, Dutch auctions, or other custom formats.
 //!
-//! ## Features
+//! ### Features
 //!
 //! - **Generic Auction Mechanism:** Can be used for auctioning any asset.
-//! - **Customizable Logic:** The `AuctionHandler` trait allows for custom implementation of auction
-//!   logic.
+//! - **Customizable Logic:** The [`AuctionHandler`](frame_support::traits::AuctionHandler) trait
+//!   allows for custom implementation of auction logic.
 //! - **Scheduled Auctions:** Auctions can be scheduled to start at a future block number.
 //! - **Automatic Auction Closing:** Auctions are automatically closed at their end block number in
-//!   the `on_finalize` hook.
+//!   the [`on_finalize`] hook.
+//! - **Standard Interface:** Implements the [`Auction`](frame_support::traits::Auction) trait so
+//!   other pallets can query and update auctions via a shared API.
 //!
-//! ## Terminology
+//! ## Low Level / Implementation Details
 //!
-//! - **Auction:** A process of buying and selling goods or services by offering them up for bid,
-//!   taking bids, and then selling the item to the highest bidder.
-//! - **Bid:** An offer of a price.
-//! - **Auction Handler:** A trait implementation that defines the specific logic for an auction,
-//!   such as how to handle new bids and what to do when an auction ends.
+//!
+//! ### Design
+//!
+//! The pallet uses a simple but effective storage design:
+//!
+//! - **`Auctions<T>`:** Maps auction IDs to auction information including current bid and timing
+//! - **`AuctionEndTime<T>`:** Double map from end block to auction ID for efficient batch
+//!   processing of ending auctions
+//! - **`AuctionsIndex<T>`:** Tracks the next available auction ID for new auction creation
+//!
+//! ### Auction Lifecycle
+//!
+//! 1. **Creation:** Auctions are created with a start block and optional end block
+//! 2. **Active Phase:** Bids can be placed during the active period
+//! 3. **Bid Processing:** Each bid is validated by the handler and may extend the auction
+//! 4. **Conclusion:** Auctions are automatically concluded at their end block
+//!
+//!
+//! ### Terminology
+//!
+//! - **Auction:** A process where participants place bids for an item, with the highest bidder
+//!   winning
+//! - **Bid:** An offer of a specific price by a participant
+//! - **Auction Handler:** A [`AuctionHandler`](frame_support::traits::AuctionHandler)
+//!   implementation that defines custom auction logic and validation rules
 
 #![cfg_attr(not(feature = "std"), no_std)]
-// Disable the following two lints since they originate from an external macro (namely decl_storage)
-#![allow(clippy::string_lit_as_bytes)]
-#![allow(clippy::unused_unit)]
+#![warn(missing_docs)]
 
 use codec::MaxEncodedLen;
-use frame_support::pallet_prelude::*;
+use frame_support::{
+	pallet_prelude::*,
+	traits::{Auction, AuctionHandler, AuctionInfo, Change},
+};
 use frame_system::{ensure_signed, pallet_prelude::*};
-use pallet_traits::{Auction, AuctionHandler, AuctionInfo, Change};
 use sp_runtime::{
 	traits::{
 		AtLeast32BitUnsigned, Bounded, CheckedAdd, MaybeSerializeDeserialize, Member, One, Zero,
@@ -43,6 +90,7 @@ use sp_runtime::{
 	DispatchError, DispatchResult,
 };
 
+mod benchmarking;
 mod mock;
 mod tests;
 mod weights;
@@ -76,8 +124,7 @@ pub mod pallet {
 			+ codec::FullCodec
 			+ codec::MaxEncodedLen;
 
-		/// The handler for custom auction logic. This is used to validate bids
-		/// and handle the outcome of an auction.
+		/// The handler for custom auction logic.
 		type Handler: AuctionHandler<
 			Self::AccountId,
 			Self::Balance,
@@ -95,7 +142,8 @@ pub mod pallet {
 		AuctionNotExist,
 		/// The auction has not started yet.
 		AuctionNotStarted,
-		/// The bid was not accepted by the `AuctionHandler`.
+		/// The bid was not accepted by the
+		/// [`AuctionHandler`](frame_support::traits::AuctionHandler) implementation.
 		BidNotAccepted,
 		/// The bid price is invalid. It might be lower than or equal to the
 		/// current highest bid, or it might be zero.
@@ -173,12 +221,27 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		/// Place a bid in an ongoing auction.
 		///
-		/// The dispatch origin for this call must be `Signed`.
+		/// ## Dispatch Origin
 		///
-		/// ## Parameters
+		/// The dispatch origin of this call must be `Signed`.
 		///
-		/// - `id`: The ID of the auction to bid on.
-		/// - `value`: The amount of the bid.
+		/// ## Details
+		///
+		/// This function allows a signed account to place a bid in an auction that has already
+		/// started. The bid amount must be higher than any existing bid and will be validated by
+		/// the [`AuctionHandler`](frame_support::traits::AuctionHandler) implementation.
+		///
+		/// ## Errors
+		///
+		/// - [`BadOrigin`]: The dispatch origin is not a signed account
+		/// - [`AuctionNotExist`]: The specified auction ID does not exist
+		/// - [`AuctionNotStarted`]: The auction has not started yet
+		/// - [`BidNotAccepted`]: The bid was rejected by the auction handler
+		/// - [`InvalidBidPrice`]: The bid amount is zero or not higher than the current highest bid
+		///
+		/// ## Events
+		///
+		/// - [`Bid`]: Emitted when a bid is successfully placed
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::bid_collateral_auction())]
 		pub fn bid(

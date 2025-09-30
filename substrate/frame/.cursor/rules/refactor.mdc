@@ -1,0 +1,5 @@
+---
+description: Developing pallets
+alwaysApply: false
+---
+- Refer to other pallets structure in [substrate/frame](../../../../frame/)

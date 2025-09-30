@@ -62,18 +62,17 @@
 use codec::MaxEncodedLen;
 use frame_support::{
 	pallet_prelude::*,
-	traits::{fungible, fungibles, fungibles::Mutate, tokens::Preservation, UnixTime},
+	traits::{fungible, fungibles, fungibles::Mutate, tokens::Preservation, Change, UnixTime},
 	transactional, PalletId,
 };
 use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
+use num_traits::Signed;
 use pallet_loans::BalanceOf;
 use pallet_traits::{
-	CDPTreasury, CDPTreasuryExtended, Change, DEXManager, EmergencyShutdown, ExchangeRate,
-	FractionalRate, LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, RiskManager,
-	Swap, SwapLimit,
+	CDPTreasury, CDPTreasuryExtended, DEXManager, EmergencyShutdown, ExchangeRate, FractionalRate,
+	LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, RiskManager, Swap, SwapLimit,
 };
 use scale_info::TypeInfo;
-use num_traits::Signed;
 use sp_runtime::{
 	offchain::{
 		storage::StorageValueRef,
@@ -488,9 +487,8 @@ pub mod pallet {
 			let mut collateral_params = Self::collateral_params();
 			if let Change::NewValue(maybe_rate) = interest_rate_per_sec {
 				match (collateral_params.interest_rate_per_sec.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) => {
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
-					},
+					(Some(existing), Some(rate)) =>
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -510,9 +508,8 @@ pub mod pallet {
 			}
 			if let Change::NewValue(maybe_rate) = liquidation_penalty {
 				match (collateral_params.liquidation_penalty.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) => {
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
-					},
+					(Some(existing), Some(rate)) =>
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -664,13 +661,12 @@ impl<T: Config> Pallet<T> {
 				exchange_rate,
 			);
 			match Self::get_liquidation_ratio() {
-				Ok(liquidation_ratio) => {
+				Ok(liquidation_ratio) =>
 					if collateral_ratio < liquidation_ratio {
 						CDPStatus::Unsafe
 					} else {
 						CDPStatus::Safe
-					}
-				},
+					},
 				Err(e) => CDPStatus::ChecksFailed(e),
 			}
 		} else {
@@ -818,12 +814,7 @@ impl<T: Config> Pallet<T> {
 			let negative_debit_adjustment =
 				<T as pallet_loans::Config>::Amount::zero().saturating_sub(debit_adjustment);
 
-			Self::adjust_position(
-				who,
-				collateral_adjustment,
-				negative_debit_adjustment,
-				None,
-			)?;
+			Self::adjust_position(who, collateral_adjustment, negative_debit_adjustment, None)?;
 		} else {
 			let new_stability_fee = Self::get_interest_rate_per_sec()?;
 			let debit_adjustment_abs =
@@ -914,13 +905,12 @@ impl<T: Config> Pallet<T> {
 		)?;
 
 		// update CDP state
-		let collateral_reduction =
-			<LoansOf<T>>::balance_to_amount(decrease_collateral)?;
+		let collateral_reduction = <LoansOf<T>>::balance_to_amount(decrease_collateral)?;
 		let collateral_adjustment =
 			<T as pallet_loans::Config>::Amount::zero().saturating_sub(collateral_reduction);
 		let previous_debit_value = Self::convert_to_debit_value(debit, effective_stability_fee);
-		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount
-			>= previous_debit_value
+		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount >=
+			previous_debit_value
 		{
 			// refund extra stable coin to the CDP owner
 			<T as Config>::Tokens::transfer(
@@ -940,8 +930,7 @@ impl<T: Config> Pallet<T> {
 			)
 		};
 
-		let debit_reduction =
-			<LoansOf<T>>::balance_to_amount(decrease_debit_balance)?;
+		let debit_reduction = <LoansOf<T>>::balance_to_amount(decrease_debit_balance)?;
 		let debit_adjustment =
 			<T as pallet_loans::Config>::Amount::zero().saturating_sub(debit_reduction);
 		Self::adjust_position(who, collateral_adjustment, debit_adjustment, None)?;
@@ -1078,7 +1067,9 @@ impl<T: Config> Pallet<T> {
 type LiquidateByPriority<T> = (LiquidateViaDex<T>, LiquidateViaAuction<T>);
 
 pub struct LiquidateViaDex<T>(PhantomData<T>);
-impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyId, BalanceOf<T>> for LiquidateViaDex<T> {
+impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyId, BalanceOf<T>>
+	for LiquidateViaDex<T>
+{
 	fn liquidate(
 		who: &AccountIdOf<T>,
 		_collateral_currency_id: CurrencyId,
@@ -1203,8 +1194,8 @@ impl<T: Config> Pallet<T> {
 					continue;
 				},
 			};
-			if !is_shutdown
-				&& matches!(
+			if !is_shutdown &&
+				matches!(
 					Self::check_cdp_status(collateral, debit, stability_fee),
 					CDPStatus::Unsafe
 				) {

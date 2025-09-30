@@ -31,12 +31,11 @@ use serde::{Deserialize, Serialize};
 use sp_runtime::{traits::CheckedDiv, DispatchError, DispatchResult, FixedU128, RuntimeDebug};
 use sp_std::prelude::*;
 
-pub mod auction;
 pub mod bounded;
 pub mod dex;
 pub mod honzon;
 
-pub use crate::{auction::*, bounded::*, dex::*, honzon::*};
+pub use crate::{bounded::*, dex::*, honzon::*};
 
 pub mod liquidation;
 
@@ -67,25 +66,6 @@ impl<T> Handler<T> for Tuple {
 		for_tuples!( #( Tuple::handle(t); )* );
 		Ok(())
 	}
-}
-
-/// Represents a potential change to a value.
-#[derive(
-	Encode,
-	Decode,
-	DecodeWithMemTracking,
-	Clone,
-	Eq,
-	PartialEq,
-	RuntimeDebug,
-	TypeInfo,
-	MaxEncodedLen,
-)]
-pub enum Change<Value> {
-	/// No change is required.
-	NoChange,
-	/// The value should be changed to the new value.
-	NewValue(Value),
 }
 
 /// A value with an associated timestamp.

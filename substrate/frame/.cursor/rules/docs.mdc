@@ -1,0 +1,12 @@
+---
+description: Rust doc comments
+alwaysApply: false
+---
+
+- Follow the documentation guidelines in [DOCUMENTATION_GUIDELINES.md](../../../../../docs/contributor/DOCUMENTATION_GUIDELINES.md)
+- Always add Substrate copyright notice in the docs
+- If items already have docs, don't expand it too much, just add more details if needed
+- Don't document conventions in pallet development, like hash function selection, etc.
+- Don't add sophisticated explanations for non-public items.
+- Don't repeat comments that already exist in the trait definition, just focus on the implementation details
+- Don't document why use some trait bounds if not specified explicitly in prompt.

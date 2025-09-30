@@ -22,12 +22,11 @@
 
 use super::*;
 use codec::{Decode, Encode};
-use frame_support::traits::tokens::fungible::UnionOf;
 use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types,
 	pallet_prelude::*,
 	parameter_types,
-	traits::{AsEnsureOriginWithArg, ConstU128, ConstU32},
+	traits::{tokens::fungible::UnionOf, AsEnsureOriginWithArg, ConstU128, ConstU32},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
