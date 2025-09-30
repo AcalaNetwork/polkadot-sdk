@@ -12620,6 +12620,7 @@ version = "1.0.0"
 dependencies = [
  "frame-support",
  "frame-system",
+ "num-traits",
  "pallet-assets",
  "pallet-balances",
  "pallet-cdp-engine",
