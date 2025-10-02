@@ -340,9 +340,17 @@ pub use pallet_assets_freezer;
 #[cfg(feature = "pallet-assets-holder")]
 pub use pallet_assets_holder;
 
+/// Provides precompiles for `pallet-assets`.
+#[cfg(feature = "pallet-assets-precompiles")]
+pub use pallet_assets_precompiles;
+
 /// FRAME atomic swap pallet.
 #[cfg(feature = "pallet-atomic-swap")]
 pub use pallet_atomic_swap;
+
+/// FRAME auction pallet that implements `Auction` trait.
+#[cfg(feature = "pallet-auction")]
+pub use pallet_auction;
 
 /// FRAME AURA consensus pallet.
 #[cfg(feature = "pallet-aura")]
