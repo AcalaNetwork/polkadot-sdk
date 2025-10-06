@@ -39,7 +39,6 @@ pub type CurrencyId = u32;
 type AccountId = u64;
 type Block = frame_system::mocking::MockBlock<Test>;
 type Balance = u128;
-type Amount = i128;
 
 const COLLATERAL_ASSET_ID: CurrencyId = 1;
 const STABLE_ASSET_ID: CurrencyId = 2;
@@ -51,8 +50,8 @@ pub fn set_shutdown(value: bool) {
 }
 
 pub struct DummyOnUpdateLoan;
-impl Handler<(AccountId, Amount, Balance)> for DummyOnUpdateLoan {
-	fn handle(_: &(AccountId, Amount, Balance)) -> DispatchResult {
+impl Handler<(AccountId, pallet_loans::BalanceAdjustment<Balance>, Balance)> for DummyOnUpdateLoan {
+	fn handle(_: &(AccountId, pallet_loans::BalanceAdjustment<Balance>, Balance)) -> DispatchResult {
 		Ok(())
 	}
 }
@@ -226,7 +225,6 @@ impl LiquidationTarget<u64, CurrencyId, Balance> for MockLiquidationStrategy {
 }
 
 impl pallet_loans::Config for Test {
-	type Amount = Amount;
 	type Currency = Balances;
 	type RuntimeHoldReason = pallet_loans::HoldReason;
 	type CurrencyId = CurrencyId;

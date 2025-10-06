@@ -194,12 +194,12 @@ pub trait EmergencyShutdown {
 }
 
 /// A trait for managing the Honzon protocol, intended for use with EVM+.
-pub trait HonzonManager<AccountId, Amount, Balance> {
+pub trait HonzonManager<AccountId, BalanceAdjustment, Balance> {
 	/// Adjusts a CDP loan.
 	fn adjust_loan(
 		who: &AccountId,
-		collateral_adjustment: Amount,
-		debit_adjustment: Amount,
+		collateral_adjustment: BalanceAdjustment,
+		debit_adjustment: BalanceAdjustment,
 	) -> DispatchResult;
 	/// Closes a CDP loan using a DEX.
 	fn close_loan_by_dex(who: AccountId, max_collateral_amount: Balance) -> DispatchResult;

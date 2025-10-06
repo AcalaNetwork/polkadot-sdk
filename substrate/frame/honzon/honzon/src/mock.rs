@@ -50,7 +50,6 @@ pub type BlockNumber = u64;
 
 pub type Balance = u128;
 pub type CurrencyId = u32;
-pub type Amount = i128;
 pub type AuctionId = u32;
 
 pub const ALICE: AccountId = 1;
@@ -234,7 +233,6 @@ impl pallet_loans::Config for Runtime {
 	type CollateralCurrencyId = GetNativeCurrencyId;
 	type OnUpdateLoan = ();
 	type LiquidationStrategy = MockLiquidationStrategy;
-	type Amount = Amount;
 }
 
 pub struct MockPriceProvider;

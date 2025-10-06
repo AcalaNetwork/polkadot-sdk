@@ -207,7 +207,7 @@ pub mod pallet {
 			let remaining_collateral = collateral_confiscate.saturating_sub(liquidated_collateral);
 			let remaining_debit = debit_decrease.saturating_sub(covered_debit);
 
-			// CDP Treasury handles the remaining position
+			// CDP Treasury handles the remaining position to be confiscate
 			if !remaining_collateral.is_zero() {
 				// transfer remaining collateral to cdp treasury
 				T::CDPTreasury::deposit_collateral(&module_account, remaining_collateral)?;

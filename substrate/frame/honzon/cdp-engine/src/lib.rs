@@ -66,7 +66,6 @@ use frame_support::{
 	transactional, PalletId,
 };
 use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
-use num_traits::Signed;
 use pallet_loans::BalanceOf;
 use pallet_traits::{
 	CDPTreasury, CDPTreasuryExtended, DEXManager, EmergencyShutdown, ExchangeRate, FractionalRate,
@@ -779,8 +778,8 @@ impl<T: Config> Pallet<T> {
 
 	pub fn adjust_position(
 		who: &AccountIdOf<T>,
-		collateral_adjustment: <T as pallet_loans::Config>::Amount,
-		debit_adjustment: <T as pallet_loans::Config>::Amount,
+		collateral_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
+		debit_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
 		maybe_new_stability_fee: Option<Rate>,
 	) -> DispatchResult {
 		<LoansOf<T>>::adjust_position(
@@ -794,33 +793,30 @@ impl<T: Config> Pallet<T> {
 
 	pub fn adjust_position_by_debit_value(
 		who: &AccountIdOf<T>,
-		collateral_adjustment: <T as pallet_loans::Config>::Amount,
-		debit_value_adjustment: <T as pallet_loans::Config>::Amount,
+		collateral_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
+		debit_value_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
 	) -> DispatchResult {
-		let debit_value_adjustment_abs =
-			<LoansOf<T>>::amount_to_balance_abs(debit_value_adjustment)?;
+		let debit_value_adjustment_abs = debit_value_adjustment.amount();
 		let Position { debit, stability_fee, .. } = <LoansOf<T>>::positions(who);
 		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
 		let effective_stability_fee = Self::get_effective_stability_fee(position_stability_fee)?;
 
-		if debit_value_adjustment.is_negative() {
+		if debit_value_adjustment.is_decrease() {
 			let debit_adjustment_abs = Self::try_convert_to_debit_balance(
 				debit_value_adjustment_abs,
 				effective_stability_fee,
 			)
 			.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
 			let actual_adjustment_abs = debit.min(debit_adjustment_abs);
-			let debit_adjustment = <LoansOf<T>>::balance_to_amount(actual_adjustment_abs)?;
-			let negative_debit_adjustment =
-				<T as pallet_loans::Config>::Amount::zero().saturating_sub(debit_adjustment);
+			let debit_adjustment = pallet_loans::BalanceAdjustment::decrease(actual_adjustment_abs);
 
-			Self::adjust_position(who, collateral_adjustment, negative_debit_adjustment, None)?;
+			Self::adjust_position(who, collateral_adjustment, debit_adjustment, None)?;
 		} else {
 			let new_stability_fee = Self::get_interest_rate_per_sec()?;
 			let debit_adjustment_abs =
 				Self::try_convert_to_debit_balance(debit_value_adjustment_abs, new_stability_fee)
 					.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
-			let debit_adjustment = <LoansOf<T>>::balance_to_amount(debit_adjustment_abs)?;
+			let debit_adjustment = pallet_loans::BalanceAdjustment::increase(debit_adjustment_abs);
 
 			Self::adjust_position(
 				who,
@@ -856,12 +852,12 @@ impl<T: Config> Pallet<T> {
 		)?;
 
 		// update CDP state
-		let collateral_adjustment = <LoansOf<T>>::balance_to_amount(increase_collateral)?;
+		let collateral_adjustment = pallet_loans::BalanceAdjustment::increase(increase_collateral);
 		let new_stability_fee = Self::get_interest_rate_per_sec()?;
 		let increase_debit_balance =
 			Self::try_convert_to_debit_balance(increase_debit_value, new_stability_fee)
 				.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
-		let debit_adjustment = <LoansOf<T>>::balance_to_amount(increase_debit_balance)?;
+		let debit_adjustment = pallet_loans::BalanceAdjustment::increase(increase_debit_balance);
 		Self::adjust_position(
 			who,
 			collateral_adjustment,
@@ -905,9 +901,7 @@ impl<T: Config> Pallet<T> {
 		)?;
 
 		// update CDP state
-		let collateral_reduction = <LoansOf<T>>::balance_to_amount(decrease_collateral)?;
-		let collateral_adjustment =
-			<T as pallet_loans::Config>::Amount::zero().saturating_sub(collateral_reduction);
+		let collateral_adjustment = pallet_loans::BalanceAdjustment::decrease(decrease_collateral);
 		let previous_debit_value = Self::convert_to_debit_value(debit, effective_stability_fee);
 		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount >=
 			previous_debit_value
@@ -930,9 +924,7 @@ impl<T: Config> Pallet<T> {
 			)
 		};
 
-		let debit_reduction = <LoansOf<T>>::balance_to_amount(decrease_debit_balance)?;
-		let debit_adjustment =
-			<T as pallet_loans::Config>::Amount::zero().saturating_sub(debit_reduction);
+		let debit_adjustment = pallet_loans::BalanceAdjustment::decrease(decrease_debit_balance);
 		Self::adjust_position(who, collateral_adjustment, debit_adjustment, None)?;
 
 		// repay the debit of CDP
