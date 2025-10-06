@@ -21,9 +21,10 @@
 #![cfg(test)]
 
 use super::*;
-use frame_support::traits::fungible::hold::Inspect as HoldInspect;
-use frame_support::traits::fungible::Inspect;
-use frame_support::{assert_noop, assert_ok};
+use frame_support::{
+	assert_noop, assert_ok,
+	traits::fungible::{hold::Inspect as HoldInspect, Inspect},
+};
 use mock::{RuntimeEvent, *};
 use pallet_traits::{Rate, Ratio};
 use sp_arithmetic::traits::{One, Zero};
@@ -37,12 +38,22 @@ fn debits_key() {
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 0);
 		assert_eq!(Loans::positions(&ALICE).debit, 0);
-		assert_ok!(Loans::adjust_position(&ALICE, 200, 100, Some(Rate::one())));
+		assert_ok!(Loans::adjust_position(
+			&ALICE,
+			BalanceAdjustment::Increase(200),
+			BalanceAdjustment::Increase(100),
+			Some(Rate::one())
+		));
 		assert_eq!(Loans::positions(&ALICE).debit, 100);
 		assert_eq!(Collateral::balance(&ALICE), 9800);
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 200);
-		assert_ok!(Loans::adjust_position(&ALICE, -100, -50, None));
+		assert_ok!(Loans::adjust_position(
+			&ALICE,
+			BalanceAdjustment::Decrease(100),
+			BalanceAdjustment::Decrease(50),
+			None
+		));
 		assert_eq!(Loans::positions(&ALICE).debit, 50);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 100);
 	});
@@ -53,13 +64,23 @@ fn check_update_loan_underflow_work() {
 	ExtBuilder::default().build().execute_with(|| {
 		// collateral underflow
 		assert_noop!(
-			Loans::update_loan(&ALICE, -100, 0, None),
+			Loans::update_loan(
+				&ALICE,
+				BalanceAdjustment::Decrease(100),
+				BalanceAdjustment::Increase(0),
+				None
+			),
 			DispatchError::Arithmetic(ArithmeticError::Underflow),
 		);
 
 		// debit underflow
 		assert_noop!(
-			Loans::update_loan(&ALICE, 0, -100, None),
+			Loans::update_loan(
+				&ALICE,
+				BalanceAdjustment::Increase(0),
+				BalanceAdjustment::Decrease(100),
+				None
+			),
 			DispatchError::Arithmetic(ArithmeticError::Underflow),
 		);
 	});
@@ -74,19 +95,34 @@ fn adjust_position_should_work() {
 
 		// balance too low
 		assert_noop!(
-			Loans::adjust_position(&ALICE, 20000, 0, None),
+			Loans::adjust_position(
+				&ALICE,
+				BalanceAdjustment::Increase(20000),
+				BalanceAdjustment::Increase(0),
+				None
+			),
 			DispatchError::Token(TokenError::FundsUnavailable)
 		);
 
 		// mock can't pass required ratio check
 		assert_noop!(
-			Loans::adjust_position(&ALICE, 500, 300, Some(Rate::one())),
+			Loans::adjust_position(
+				&ALICE,
+				BalanceAdjustment::Increase(500),
+				BalanceAdjustment::Increase(300),
+				Some(Rate::one())
+			),
 			sp_runtime::DispatchError::Other("mock below required collateral ratio error")
 		);
 
 		// mock exceed debit value cap
 		assert_noop!(
-			Loans::adjust_position(&ALICE, 2000, 1100, Some(Rate::one())),
+			Loans::adjust_position(
+				&ALICE,
+				BalanceAdjustment::Increase(2000),
+				BalanceAdjustment::Increase(1100),
+				Some(Rate::one())
+			),
 			sp_runtime::DispatchError::Other("mock exceed debit value cap error")
 		);
 
@@ -99,7 +135,12 @@ fn adjust_position_should_work() {
 		assert_eq!(Loans::positions(&ALICE).collateral, 0);
 
 		// success
-		assert_ok!(Loans::adjust_position(&ALICE, 500, 200, Some(Rate::one())));
+		assert_ok!(Loans::adjust_position(
+			&ALICE,
+			BalanceAdjustment::Increase(500),
+			BalanceAdjustment::Increase(200),
+			Some(Rate::one())
+		));
 		assert_eq!(Collateral::balance(&ALICE), 9500);
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 500);
@@ -110,12 +151,17 @@ fn adjust_position_should_work() {
 		assert_eq!(Loans::positions(&ALICE).stability_fee, Rate::one());
 		System::assert_has_event(RuntimeEvent::Loans(Event::PositionUpdated {
 			owner: ALICE,
-			collateral_adjustment: 500,
-			debit_adjustment: 200,
+			collateral_adjustment: BalanceAdjustment::Increase(500),
+			debit_adjustment: BalanceAdjustment::Increase(200),
 		}));
 
 		// collateral_adjustment is negatives
-		assert_ok!(Loans::adjust_position(&ALICE, -500, -200, None));
+		assert_ok!(Loans::adjust_position(
+			&ALICE,
+			BalanceAdjustment::Decrease(500),
+			BalanceAdjustment::Decrease(200),
+			None
+		));
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 0);
 		assert_eq!(Collateral::balance(&ALICE), 10000);
@@ -135,7 +181,12 @@ fn update_loan_should_work() {
 
 		let alice_ref_count_0 = System::consumers(&ALICE);
 
-		assert_ok!(Loans::update_loan(&ALICE, 3000, 2000, Some(Rate::one())));
+		assert_ok!(Loans::update_loan(
+			&ALICE,
+			BalanceAdjustment::Increase(3000),
+			BalanceAdjustment::Increase(2000),
+			Some(Rate::one())
+		));
 
 		// just update records
 		assert_eq!(Loans::total_positions().debit, 2000);
@@ -155,7 +206,12 @@ fn update_loan_should_work() {
 
 		// should remove position storage if zero
 		assert!(<Positions<Runtime>>::contains_key(&ALICE));
-		assert_ok!(Loans::update_loan(&ALICE, -3000, -2000, None));
+		assert_ok!(Loans::update_loan(
+			&ALICE,
+			BalanceAdjustment::Decrease(3000),
+			BalanceAdjustment::Decrease(2000),
+			None
+		));
 		assert_eq!(Loans::positions(&ALICE).debit, 0);
 		assert_eq!(Loans::positions(&ALICE).collateral, 0);
 		assert_eq!(Loans::total_debit_by_stability_fee(Rate::one()), 0);
@@ -170,8 +226,18 @@ fn update_loan_should_work() {
 #[test]
 fn transfer_loan_should_work() {
 	ExtBuilder::default().build().execute_with(|| {
-		assert_ok!(Loans::update_loan(&ALICE, 1000, 500, Some(Rate::one())));
-		assert_ok!(Loans::update_loan(&BOB, 1200, 600, Some(Rate::one())));
+		assert_ok!(Loans::update_loan(
+			&ALICE,
+			BalanceAdjustment::Increase(1000),
+			BalanceAdjustment::Increase(500),
+			Some(Rate::one())
+		));
+		assert_ok!(Loans::update_loan(
+			&BOB,
+			BalanceAdjustment::Increase(1200),
+			BalanceAdjustment::Increase(600),
+			Some(Rate::one())
+		));
 		assert_eq!(Loans::positions(&ALICE).debit, 500);
 		assert_eq!(Loans::positions(&ALICE).collateral, 1000);
 		assert_eq!(Loans::positions(&ALICE).stability_fee, Rate::one());
@@ -198,7 +264,12 @@ fn transfer_loan_should_work() {
 fn confiscate_collateral_and_debit_work() {
 	ExtBuilder::default().build().execute_with(|| {
 		let _hold_reason = RuntimeHoldReason::from(HoldReason::Collateral);
-		assert_ok!(Loans::adjust_position(&BOB, 5000, 1000, Some(Rate::one())));
+		assert_ok!(Loans::adjust_position(
+			&BOB,
+			BalanceAdjustment::Increase(5000),
+			BalanceAdjustment::Increase(1000),
+			Some(Rate::one())
+		));
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 
 		// attempting to confiscate more collateral than held should fail
@@ -213,7 +284,12 @@ fn confiscate_collateral_and_debit_work() {
 fn confiscate_collateral_and_debit_work_success() {
 	ExtBuilder::default().build().execute_with(|| {
 		let hold_reason = RuntimeHoldReason::from(HoldReason::Collateral);
-		assert_ok!(Loans::adjust_position(&ALICE, 500, 200, Some(Rate::one())));
+		assert_ok!(Loans::adjust_position(
+			&ALICE,
+			BalanceAdjustment::Increase(500),
+			BalanceAdjustment::Increase(200),
+			Some(Rate::one())
+		));
 		assert_eq!(CDPTreasuryModule::total_collaterals(), 0);
 		assert_eq!(CDPTreasuryModule::debit_pool(), 0);
 		assert_eq!(Loans::positions(&ALICE).debit, 200);

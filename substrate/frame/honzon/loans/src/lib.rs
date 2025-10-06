@@ -29,6 +29,9 @@
 
 pub use pallet::*;
 
+mod adjustment;
+pub use adjustment::BalanceAdjustment;
+
 #[cfg(test)]
 mod mock;
 #[cfg(test)]
@@ -36,6 +39,7 @@ mod tests;
 
 #[frame_support::pallet]
 pub mod pallet {
+	use crate::BalanceAdjustment;
 	use frame_support::{
 		pallet_prelude::*,
 		traits::{
@@ -47,10 +51,9 @@ pub mod pallet {
 	use pallet_traits::{
 		CDPTreasury, Handler, LiquidationTarget, Position, Rate, Ratio, RiskManager,
 	};
-	use sp_arithmetic::traits::Signed;
 	use sp_runtime::{
-		traits::{AccountIdConversion, Bounded, Saturating, Zero},
-		ArithmeticError, DispatchResult,
+		traits::{AccountIdConversion, Saturating, Zero},
+		DispatchResult,
 	};
 	use sp_std::prelude::*;
 
@@ -59,18 +62,7 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
-		/// The amount type, should be a signed integer.
-		type Amount: Parameter
-			+ Member
-			+ Signed
-			+ Saturating
-			+ sp_runtime::traits::Bounded
-			+ MaybeSerializeDeserialize
-			+ Copy
-			+ Default
-			+ Ord
-			+ TryFrom<BalanceOf<Self>>
-			+ TryInto<BalanceOf<Self>>;
+		// Amount type is no longer needed - we use BalanceAdjustment instead
 
 		/// Currency type for handling collateral holds on user accounts.
 		type Currency: HoldMutate<Self::AccountId, Reason = Self::RuntimeHoldReason>;
@@ -106,7 +98,11 @@ pub mod pallet {
 		type CollateralCurrencyId: Get<Self::CurrencyId>;
 
 		/// Event handler which calls when update loan.
-		type OnUpdateLoan: Handler<(Self::AccountId, Self::Amount, BalanceOf<Self>)>;
+		type OnUpdateLoan: Handler<(
+			Self::AccountId,
+			BalanceAdjustment<BalanceOf<Self>>,
+			BalanceOf<Self>,
+		)>;
 
 		type LiquidationStrategy: LiquidationTarget<
 			Self::AccountId,
@@ -117,7 +113,7 @@ pub mod pallet {
 
 	#[pallet::error]
 	pub enum Error<T> {
-		AmountConvertFailed,
+		// Errors are now handled by the BalanceAdjustment type itself
 	}
 
 	#[pallet::event]
@@ -126,8 +122,8 @@ pub mod pallet {
 		/// Position updated.
 		PositionUpdated {
 			owner: T::AccountId,
-			collateral_adjustment: T::Amount,
-			debit_adjustment: T::Amount,
+			collateral_adjustment: BalanceAdjustment<BalanceOf<T>>,
+			debit_adjustment: BalanceAdjustment<BalanceOf<T>>,
 		},
 		/// Confiscate CDP\'s collateral assets and eliminate its debit.
 		ConfiscateCollateralAndDebit {
@@ -211,10 +207,7 @@ pub mod pallet {
 			let remaining_collateral = collateral_confiscate.saturating_sub(liquidated_collateral);
 			let remaining_debit = debit_decrease.saturating_sub(covered_debit);
 
-			// convert balance type to amount type
-			let collateral_adjustment = Self::balance_to_amount(collateral_confiscate)?;
-			let debit_adjustment = Self::balance_to_amount(debit_decrease)?;
-
+			// CDP Treasury handles the remaining position
 			if !remaining_collateral.is_zero() {
 				// transfer remaining collateral to cdp treasury
 				T::CDPTreasury::deposit_collateral(&module_account, remaining_collateral)?;
@@ -229,13 +222,10 @@ pub mod pallet {
 				T::CDPTreasury::on_system_debit(bad_debt_value)?;
 			}
 
-			// update loan
-			Self::update_loan(
-				who,
-				T::Amount::zero().saturating_sub(collateral_adjustment),
-				T::Amount::zero().saturating_sub(debit_adjustment),
-				None,
-			)?;
+			// update loan - decrease both collateral and debit
+			let collateral_adjustment = BalanceAdjustment::decrease(collateral_confiscate);
+			let debit_adjustment = BalanceAdjustment::decrease(debit_decrease);
+			Self::update_loan(who, collateral_adjustment, debit_adjustment, None)?;
 
 			Self::deposit_event(Event::ConfiscateCollateralAndDebit {
 				owner: who.clone(),
@@ -251,8 +241,8 @@ pub mod pallet {
 		#[transactional]
 		pub fn adjust_position(
 			who: &T::AccountId,
-			collateral_adjustment: T::Amount,
-			debit_adjustment: T::Amount,
+			collateral_adjustment: BalanceAdjustment<BalanceOf<T>>,
+			debit_adjustment: BalanceAdjustment<BalanceOf<T>>,
 			maybe_new_stability_fee: Option<Rate>,
 		) -> DispatchResult {
 			// mutate collateral and debit
@@ -264,59 +254,56 @@ pub mod pallet {
 				maybe_new_stability_fee,
 			)?;
 
-			let collateral_balance_adjustment = Self::amount_to_balance_abs(collateral_adjustment)?;
-			let debit_balance_adjustment = Self::amount_to_balance_abs(debit_adjustment)?;
-
-			if collateral_adjustment.is_positive() {
-				T::Currency::hold(
-					&HoldReason::Collateral.into(),
-					who,
-					collateral_balance_adjustment,
-				)?;
-			} else if collateral_adjustment.is_negative() {
-				let _ = T::Currency::release(
-					&HoldReason::Collateral.into(),
-					who,
-					collateral_balance_adjustment,
-					Precision::Exact,
-				)?;
+			// Handle collateral adjustments
+			match &collateral_adjustment {
+				BalanceAdjustment::Increase(amount) => {
+					T::Currency::hold(&HoldReason::Collateral.into(), who, *amount)?;
+				},
+				BalanceAdjustment::Decrease(amount) => {
+					let _ = T::Currency::release(
+						&HoldReason::Collateral.into(),
+						who,
+						*amount,
+						Precision::Exact,
+					)?;
+				},
 			}
 
-			if debit_adjustment.is_positive() {
-				// check debit cap when increase debit
-				T::RiskManager::check_debit_cap(
-					T::CollateralCurrencyId::get(),
-					Self::total_positions().debit,
-				)?;
+			// Handle debit adjustments
+			match &debit_adjustment {
+				BalanceAdjustment::Increase(amount) => {
+					// check debit cap when increase debit
+					T::RiskManager::check_debit_cap(
+						T::CollateralCurrencyId::get(),
+						Self::total_positions().debit,
+					)?;
 
-				// issue debit with collateral backed by cdp treasury
-				T::CDPTreasury::issue_debit(
-					who,
-					T::RiskManager::get_debit_value(
-						T::CollateralCurrencyId::get(),
-						debit_balance_adjustment,
-					),
-					true,
-				)?;
-			} else if debit_adjustment.is_negative() {
-				// repay debit
-				// burn debit by cdp treasury
-				T::CDPTreasury::burn_debit(
-					who,
-					T::RiskManager::get_debit_value(
-						T::CollateralCurrencyId::get(),
-						debit_balance_adjustment,
-					),
-				)?;
+					// issue debit with collateral backed by cdp treasury
+					T::CDPTreasury::issue_debit(
+						who,
+						T::RiskManager::get_debit_value(T::CollateralCurrencyId::get(), *amount),
+						true,
+					)?;
+				},
+				BalanceAdjustment::Decrease(amount) => {
+					// repay debit
+					// burn debit by cdp treasury
+					T::CDPTreasury::burn_debit(
+						who,
+						T::RiskManager::get_debit_value(T::CollateralCurrencyId::get(), *amount),
+					)?;
+				},
 			}
 
 			// ensure pass risk check
 			let Position { collateral, debit, .. } = Self::positions(who);
+			let is_risk_increasing =
+				collateral_adjustment.is_decrease() || debit_adjustment.is_increase();
 			T::RiskManager::check_position_valid(
 				T::CollateralCurrencyId::get(),
 				collateral,
 				debit,
-				collateral_adjustment.is_negative() || debit_adjustment.is_positive(),
+				is_risk_increasing,
 			)?;
 
 			Ok(())
@@ -344,20 +331,16 @@ pub mod pallet {
 				true,
 			)?;
 
-			// balance -> amount
-			let collateral_adjustment = Self::balance_to_amount(collateral)?;
-			let debit_adjustment = Self::balance_to_amount(debit)?;
-
 			Self::update_loan(
 				from,
-				T::Amount::zero().saturating_sub(collateral_adjustment),
-				T::Amount::zero().saturating_sub(debit_adjustment),
+				BalanceAdjustment::Decrease(collateral),
+				BalanceAdjustment::Decrease(debit),
 				None,
 			)?;
 			Self::update_loan(
 				to,
-				collateral_adjustment,
-				debit_adjustment,
+				BalanceAdjustment::Increase(collateral),
+				BalanceAdjustment::Increase(debit),
 				Some(from_stability_fee),
 			)?;
 
@@ -368,31 +351,20 @@ pub mod pallet {
 		/// mutate records of collaterals and debits
 		pub fn update_loan(
 			who: &T::AccountId,
-			collateral_adjustment: T::Amount,
-			debit_adjustment: T::Amount,
+			collateral_adjustment: BalanceAdjustment<BalanceOf<T>>,
+			debit_adjustment: BalanceAdjustment<BalanceOf<T>>,
 			maybe_new_stability_fee: Option<Rate>,
 		) -> DispatchResult {
-			let collateral_balance = Self::amount_to_balance_abs(collateral_adjustment)?;
-			let debit_balance = Self::amount_to_balance_abs(debit_adjustment)?;
-
 			<Positions<T>>::try_mutate_exists(who, |may_be_position| -> DispatchResult {
 				let mut p = may_be_position.take().unwrap_or_default();
 				let previous_debit = p.debit;
 				let previous_stability_fee = p.stability_fee;
-				let new_collateral = if collateral_adjustment.is_positive() {
-					p.collateral.checked_add(&collateral_balance).ok_or(ArithmeticError::Overflow)
-				} else {
-					p.collateral.checked_sub(&collateral_balance).ok_or(ArithmeticError::Underflow)
-				}?;
-				let new_debit = if debit_adjustment.is_positive() {
-					p.debit.checked_add(&debit_balance).ok_or(ArithmeticError::Overflow)
-				} else {
-					p.debit.checked_sub(&debit_balance).ok_or(ArithmeticError::Underflow)
-				}?;
+				let new_collateral = collateral_adjustment.apply_to(p.collateral)?;
+				let new_debit = debit_adjustment.apply_to(p.debit)?;
 				let mut next_stability_fee =
 					if new_debit.is_zero() { Ratio::zero() } else { p.stability_fee };
 				if let Some(stability_fee) = maybe_new_stability_fee {
-					if debit_adjustment.is_positive() && !new_debit.is_zero() {
+					if debit_adjustment.is_increase() && !new_debit.is_zero() {
 						next_stability_fee = Ratio::from_inner(stability_fee.into_inner());
 					}
 				}
@@ -419,20 +391,20 @@ pub mod pallet {
 				p.debit = new_debit;
 				p.stability_fee = next_stability_fee;
 
+				// Remove the previous debit stability fee tracking record
 				if !previous_debit.is_zero() {
 					let previous_fee_key = Rate::from_inner(previous_stability_fee.into_inner());
-					let mut should_remove = false;
-					TotalDebitByStabilityFee::<T>::mutate(previous_fee_key, |total| {
-						*total = total.saturating_sub(previous_debit);
-						if total.is_zero() {
-							should_remove = true;
+					TotalDebitByStabilityFee::<T>::mutate_exists(previous_fee_key, |maybe_total| {
+						if let Some(total) = maybe_total {
+							*total = total.saturating_sub(previous_debit);
+							if total.is_zero() {
+								*maybe_total = None;
+							}
 						}
 					});
-					if should_remove {
-						TotalDebitByStabilityFee::<T>::remove(previous_fee_key);
-					}
 				}
 
+				// Add the new debit stability in fee tracking
 				if !p.debit.is_zero() {
 					let new_fee_key = Rate::from_inner(p.stability_fee.into_inner());
 					TotalDebitByStabilityFee::<T>::mutate(new_fee_key, |total| {
@@ -454,30 +426,9 @@ pub mod pallet {
 			})?;
 
 			TotalPositions::<T>::try_mutate(|total_positions| -> DispatchResult {
-				total_positions.collateral = if collateral_adjustment.is_positive() {
-					total_positions
-						.collateral
-						.checked_add(&collateral_balance)
-						.ok_or(ArithmeticError::Overflow)
-				} else {
-					total_positions
-						.collateral
-						.checked_sub(&collateral_balance)
-						.ok_or(ArithmeticError::Underflow)
-				}?;
-
-				total_positions.debit = if debit_adjustment.is_positive() {
-					total_positions
-						.debit
-						.checked_add(&debit_balance)
-						.ok_or(ArithmeticError::Overflow)
-				} else {
-					total_positions
-						.debit
-						.checked_sub(&debit_balance)
-						.ok_or(ArithmeticError::Underflow)
-				}?;
-
+				total_positions.collateral =
+					collateral_adjustment.apply_to(total_positions.collateral)?;
+				total_positions.debit = debit_adjustment.apply_to(total_positions.debit)?;
 				Ok(())
 			})?;
 
@@ -487,17 +438,6 @@ pub mod pallet {
 				debit_adjustment,
 			});
 			Ok(())
-		}
-
-		/// Convert `Balance` to `Amount`.
-		pub fn balance_to_amount(b: BalanceOf<T>) -> Result<T::Amount, Error<T>> {
-			b.try_into().map_err(|_| Error::<T>::AmountConvertFailed)
-		}
-
-		/// Convert the absolute value of `Amount` to `Balance`.
-		pub fn amount_to_balance_abs(a: T::Amount) -> Result<BalanceOf<T>, Error<T>> {
-			let b = if a == T::Amount::min_value() { T::Amount::max_value() } else { a.abs() };
-			b.try_into().map_err(|_| Error::<T>::AmountConvertFailed)
 		}
 	}
 }

@@ -16641,6 +16641,7 @@ dependencies = [
  "pallet-assets-holder",
  "pallet-assets-precompiles",
  "pallet-atomic-swap",
+ "pallet-auction",
  "pallet-aura",
  "pallet-authority-discovery",
  "pallet-authorship",

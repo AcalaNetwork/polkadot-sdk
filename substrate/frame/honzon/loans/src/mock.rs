@@ -39,7 +39,6 @@ use std::collections::HashMap;
 
 pub type AccountId = u128;
 pub type Balance = u128;
-pub type Amount = i128;
 pub const ALICE: AccountId = 1;
 pub const BOB: AccountId = 2;
 
@@ -98,6 +97,8 @@ impl pallet_assets::Config for Runtime {
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
 	type Holder = ();
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 #[derive(
@@ -255,8 +256,8 @@ impl Convert<CurrencyId, Either<(), CurrencyId>> for CurrencyIdConvert {
 type LoansMultiCurrency = UnionOf<Collateral, Assets, CurrencyIdConvert, CurrencyId, AccountId>;
 
 pub struct MockOnUpdateLoan;
-impl Handler<(u128, i128, u128)> for MockOnUpdateLoan {
-	fn handle(_info: &(u128, i128, u128)) -> DispatchResult {
+impl Handler<(u128, crate::BalanceAdjustment<u128>, u128)> for MockOnUpdateLoan {
+	fn handle(_info: &(u128, crate::BalanceAdjustment<u128>, u128)) -> DispatchResult {
 		Ok(())
 	}
 }
@@ -269,7 +270,6 @@ parameter_types! {
 pub type Collateral = PalletBalances;
 
 impl Config for Runtime {
-	type Amount = Amount;
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = CDPTreasuryModule;
 	type PalletId = LoansPalletId;
