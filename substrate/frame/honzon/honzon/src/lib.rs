@@ -57,7 +57,7 @@ use frame_system::pallet_prelude::*;
 use pallet_loans::BalanceOf;
 use pallet_traits::{EmergencyShutdown, ExchangeRate, HonzonManager, PriceProvider, Rate, Ratio};
 use sp_core::U256;
-use sp_runtime::DispatchResult;
+use sp_runtime::{traits::StaticLookup, DispatchResult};
 use sp_std::prelude::*;
 
 mod mock;
@@ -106,6 +106,9 @@ pub mod pallet {
 
 		/// Stable currency id
 		type GetStableCurrencyId: Get<CurrencyId<Self>>;
+
+		/// The origin which can update stability fee.
+		type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 	}
 
 	#[pallet::error]
@@ -228,6 +231,32 @@ pub mod pallet {
 				);
 			}
 			// TODO: not implemented
+			Ok(())
+		}
+
+		/// Updates the stability fee for a specific `Position`.
+		///
+		/// - `who`: The account whose `Position` is to be updated.
+		/// - `new_stability_fee`: The new stability fee to be set.
+		///
+		/// This extrinsic can only be called by `AdminOrigin`.
+		#[pallet::call_index(9)]
+		#[pallet::weight(<T as Config>::WeightInfo::set_stability_fee())]
+		pub fn set_stability_fee(
+			origin: OriginFor<T>,
+			who: <T::Lookup as StaticLookup>::Source,
+			new_stability_fee: Rate,
+		) -> DispatchResult {
+			T::AdminOrigin::ensure_origin(origin)?;
+			let who = T::Lookup::lookup(who)?;
+
+			<pallet_loans::Pallet<T>>::adjust_position(
+				&who,
+				pallet_loans::BalanceAdjustment::Increase(0u32.into()),
+				pallet_loans::BalanceAdjustment::Increase(0u32.into()),
+				Some(new_stability_fee),
+			)?;
+
 			Ok(())
 		}
 	}

@@ -57,6 +57,7 @@ pub trait WeightInfo {
 	fn shrink_position_debit() -> Weight;
 	fn transfer_debit() -> Weight;
 	fn precompile_get_current_collateral_ratio() -> Weight;
+	fn set_stability_fee() -> Weight;
 }
 
 /// Weights for module_honzon using the Acala node and recommended hardware.
@@ -226,6 +227,11 @@ impl<T: frame_system::Config> WeightInfo for AcalaWeight<T> {
 		Weight::from_parts(44_244_000, 0)
 			.saturating_add(T::DbWeight::get().reads(11 as u64))
 	}
+	fn set_stability_fee() -> Weight {
+		Weight::from_parts(45_000_000, 0)
+			.saturating_add(T::DbWeight::get().reads(2 as u64))
+			.saturating_add(T::DbWeight::get().writes(1 as u64))
+	}
 }
 
 // For backwards compatibility and tests
@@ -281,5 +287,10 @@ impl WeightInfo for () {
 	fn precompile_get_current_collateral_ratio() -> Weight {
 		Weight::from_parts(44_244_000, 0)
 			.saturating_add(RocksDbWeight::get().reads(11 as u64))
+	}
+	fn set_stability_fee() -> Weight {
+		Weight::from_parts(45_000_000, 0)
+			.saturating_add(RocksDbWeight::get().reads(2 as u64))
+			.saturating_add(RocksDbWeight::get().writes(1 as u64))
 	}
 }

@@ -21,7 +21,6 @@
 #![cfg(test)]
 
 use crate::Config;
-use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	construct_runtime, ord_parameter_types, parameter_types, pallet_prelude::*,
 	traits::{
@@ -39,20 +38,19 @@ use pallet_traits::{
 use scale_info::TypeInfo;
 use sp_core::{H256, U256};
 use sp_runtime::{
-	traits::{AccountIdConversion, BlakeTwo256, Convert, IdentityLookup},
+	traits::{
+		AccountIdConversion, BlakeTwo256, Convert, IdentityLookup,
+	},
 	BuildStorage, DispatchError, DispatchResult, Either, FixedU128, Permill, RuntimeDebug,
 };
 
 pub type AccountId = u128;
-pub type BlockNumber = u64;
 
 pub type Balance = u128;
 pub type CurrencyId = u32;
 pub type AuctionId = u32;
 
 #[derive(
-	Parameter,
-	Member,
 	Default,
 	PartialEq,
 	Eq,
@@ -65,6 +63,7 @@ pub type AuctionId = u32;
 	RuntimeDebug,
 	Ord,
 	PartialOrd,
+	DecodeWithMemTracking,
 )]
 pub enum AssetKind {
 	#[default]
@@ -102,7 +101,6 @@ pub const BOB: AccountId = 2;
 pub const NATIVE_ID: CurrencyId = 0;
 pub const STABLE_ID: CurrencyId = 1;
 pub const NATIVE: AssetKind = AssetKind::Native;
-pub const STABLE: AssetKind = AssetKind::Asset(STABLE_ID);
 
 use crate as honzon_pallet;
 
@@ -447,6 +445,7 @@ impl Config for Runtime {
 	type EmergencyShutdown = MockEmergencyShutdown;
 	type PriceSource = MockPriceProvider;
 	type GetStableCurrencyId = GetStableCurrencyId;
+	type AdminOrigin = EnsureRoot<AccountId>;
 }
 
 pub struct ExtBuilder {
@@ -462,14 +461,26 @@ impl ExtBuilder {
 	pub fn build(self) -> sp_io::TestExternalities {
 		let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
 
+		let (native_balances, asset_balances): (Vec<_>, Vec<_>) =
+			self.balances.into_iter().partition(|b| b.1 == NATIVE_ID);
+
+		pallet_balances::GenesisConfig::<Runtime> {
+			balances: native_balances
+				.into_iter()
+				.map(|(id, _, balance)| (id, balance))
+				.collect(),
+			dev_accounts: None,
+		}
+		.assimilate_storage(&mut t)
+		.unwrap();
+
 		pallet_assets::GenesisConfig::<Runtime> {
 			assets: vec![
 				(STABLE_ID, CDPTreasury::account_id(), true, 1),
 				(NATIVE_ID, CDPTreasury::account_id(), true, 1),
 			],
 			metadata: vec![],
-			accounts: self
-				.balances
+			accounts: asset_balances
 				.into_iter()
 				.map(|(id, asset, balance)| (asset, id, balance))
 				.collect(),
