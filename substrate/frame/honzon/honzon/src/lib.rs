@@ -218,10 +218,10 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::adjust_loan())]
 		pub fn adjust_loan_by_debit_value(
 			origin: OriginFor<T>,
-			_collateral_adjustment: BalanceAdjustmentOf<T>,
+			collateral_adjustment: BalanceAdjustmentOf<T>,
 			debit_value_adjustment: BalanceAdjustmentOf<T>,
 		) -> DispatchResult {
-			let _who = ensure_signed(origin)?;
+			let who = ensure_signed(origin)?;
 
 			// not allowed to adjust the debit after system shutdown
 			if !debit_value_adjustment.is_zero() {
@@ -230,8 +230,12 @@ pub mod pallet {
 					Error::<T>::AlreadyShutdown
 				);
 			}
-			// TODO: not implemented
-			Ok(())
+
+			<pallet_cdp_engine::Pallet<T>>::adjust_position_by_debit_value(
+				&who,
+				collateral_adjustment,
+				debit_value_adjustment,
+			)
 		}
 
 		/// Updates the stability fee for a specific `Position`.
