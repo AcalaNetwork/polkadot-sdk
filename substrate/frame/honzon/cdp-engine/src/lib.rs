@@ -69,7 +69,7 @@ use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
 use pallet_loans::BalanceOf;
 use pallet_asset_conversion::Swap;
 use pallet_traits::{
-	CDPTreasury, CDPTreasuryExtended, DEXManager, EmergencyShutdown, ExchangeRate, FractionalRate,
+	CDPTreasury, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate, FractionalRate,
 	LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 };
 use scale_info::TypeInfo;
@@ -99,7 +99,6 @@ pub mod weights;
 pub use pallet::*;
 pub use weights::WeightInfo;
 
-pub type CurrencyId = u32;
 pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 
 #[derive(RuntimeDebug)]
@@ -160,6 +159,7 @@ pub enum CDPStatus {
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
+	pub type CurrencyIdOf<T> = <T as pallet_loans::Config>::CurrencyId;
 
 	#[pallet::config]
 	pub trait Config:
@@ -194,11 +194,11 @@ pub mod pallet {
 
 		/// Native currency id
 		#[pallet::constant]
-		type GetNativeCurrencyId: Get<CurrencyId>;
+		type GetNativeCurrencyId: Get<CurrencyIdOf<Self>>;
 
 		/// Stablecoin currency id
 		#[pallet::constant]
-		type GetStableCurrencyId: Get<CurrencyId>;
+		type GetStableCurrencyId: Get<CurrencyIdOf<Self>>;
 
 		/// When swap with DEX, the acceptable max slippage for the price from oracle.
 		#[pallet::constant]
@@ -208,11 +208,11 @@ pub mod pallet {
 		type CDPTreasury: CDPTreasuryExtended<
 			Self::AccountId,
 			Balance = pallet_loans::BalanceOf<Self>,
-			CurrencyId = CurrencyId,
+			CurrencyId = CurrencyIdOf<Self>,
 		>;
 
 		/// The price source of all types of currencies related to CDP
-		type PriceSource: PriceProvider<CurrencyId>;
+		type PriceSource: PriceProvider<CurrencyIdOf<Self>>;
 
 		/// A configuration for base priority of unsigned transactions.
 		///
@@ -240,18 +240,18 @@ pub mod pallet {
 		/// Multi-currency interface for working with specific assets.
 		type Tokens: fungibles::Mutate<
 			Self::AccountId,
-			AssetId = CurrencyId,
+			AssetId = CurrencyIdOf<Self>,
 			Balance = pallet_loans::BalanceOf<Self>,
 		>;
 
-		/// Dex
-		type DEX: DEXManager<Self::AccountId, pallet_loans::BalanceOf<Self>, CurrencyId>;
+		/// The kind of asset which can be used for swapping.
+		type AssetKind: Parameter + Member + MaxEncodedLen + Copy + From<CurrencyIdOf<Self>>;
 
 		/// Swap
 		type Swap: Swap<
 			Self::AccountId,
 			Balance = pallet_loans::BalanceOf<Self>,
-			AssetKind = CurrencyId,
+			AssetKind = Self::AssetKind,
 		>;
 
 		#[pallet::constant]
@@ -851,7 +851,7 @@ impl<T: Config> Pallet<T> {
 		// swap stable coin to collateral
 		let increase_collateral = T::Swap::swap_exact_tokens_for_tokens(
 			loans_module_account.clone(),
-			vec![T::GetStableCurrencyId::get(), currency_id],
+			vec![T::GetStableCurrencyId::get().into(), currency_id.into()],
 			increase_debit_value,
 			Some(min_increase_collateral),
 			loans_module_account.clone(),
@@ -902,7 +902,7 @@ impl<T: Config> Pallet<T> {
 		// swap collateral to stable coin
 		let actual_stable_amount = T::Swap::swap_exact_tokens_for_tokens(
 			loans_module_account.clone(),
-			vec![currency_id, stable_currency_id],
+			vec![currency_id.into(), stable_currency_id.into()],
 			decrease_collateral,
 			Some(min_decrease_debit_value),
 			loans_module_account.clone(),
@@ -1063,12 +1063,12 @@ impl<T: Config> Pallet<T> {
 type LiquidateByPriority<T> = (LiquidateViaDex<T>, LiquidateViaAuction<T>);
 
 pub struct LiquidateViaDex<T>(PhantomData<T>);
-impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyId, BalanceOf<T>>
+impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T>>
 	for LiquidateViaDex<T>
 {
 	fn liquidate(
 		who: &AccountIdOf<T>,
-		_collateral_currency_id: CurrencyId,
+		_collateral_currency_id: CurrencyIdOf<T>,
 		amount: BalanceOf<T>,
 		target_stable_amount: BalanceOf<T>,
 	) -> DispatchResult {
@@ -1233,12 +1233,12 @@ impl<T: Config> Pallet<T> {
 }
 
 pub struct LiquidateViaAuction<T>(PhantomData<T>);
-impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyId, BalanceOf<T>>
+impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T>>
 	for LiquidateViaAuction<T>
 {
 	fn liquidate(
 		who: &AccountIdOf<T>,
-		_collateral_currency_id: CurrencyId,
+		_collateral_currency_id: CurrencyIdOf<T>,
 		amount: BalanceOf<T>,
 		target_stable_amount: BalanceOf<T>,
 	) -> DispatchResult {
@@ -1252,13 +1252,13 @@ impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyId, BalanceOf<T>>
 	}
 }
 
-impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyId, BalanceOf<T>, BalanceOf<T>> for Pallet<T> {
-	fn get_debit_value(_currency_id: CurrencyId, debit_balance: BalanceOf<T>) -> BalanceOf<T> {
+impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T>, BalanceOf<T>> for Pallet<T> {
+	fn get_debit_value(_currency_id: CurrencyIdOf<T>, debit_balance: BalanceOf<T>) -> BalanceOf<T> {
 		Self::average_debit_exchange_rate().saturating_mul_int(debit_balance)
 	}
 
 	fn check_position_valid(
-		_currency_id: CurrencyId,
+		_currency_id: CurrencyIdOf<T>,
 		collateral_balance: BalanceOf<T>,
 		debit_balance: BalanceOf<T>,
 		check_required_ratio: bool,
@@ -1306,7 +1306,7 @@ impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyId, BalanceOf<T>, BalanceOf<
 	}
 
 	fn check_debit_cap(
-		_currency_id: CurrencyId,
+		_currency_id: CurrencyIdOf<T>,
 		total_debit_balance: BalanceOf<T>,
 	) -> DispatchResult {
 		let hard_cap = Self::maximum_total_debit_value()?;

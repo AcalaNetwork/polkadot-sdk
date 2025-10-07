@@ -20,29 +20,27 @@
 
 #![cfg(test)]
 
-use super::*;
+use crate::Config;
+use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
-	construct_runtime, ord_parameter_types, parameter_types,
+	construct_runtime, ord_parameter_types, parameter_types, pallet_prelude::*,
 	traits::{
-		AsEnsureOriginWithArg, ConstU16, ConstU32, ConstU64, Everything,
+		tokens::fungible::UnionOf, AsEnsureOriginWithArg, ConstU16, ConstU32, ConstU64, Everything,
 		SortedMembers,
 	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_traits::{ 
-	bounded::FractionalRate,
-	AuctionManager, CDPTreasury as CDPTreasuryTrait, DEXManager,
-	EmergencyShutdown, ExchangeRate, LiquidationTarget, PriceProvider, Rate, RiskManager,
-	SwapLimit,
+use pallet_asset_conversion::{AccountIdConverter, Ascending, Chain, WithFirstAsset};
+use pallet_traits::{
+	bounded::FractionalRate, AuctionManager, EmergencyShutdown, ExchangeRate, LiquidationTarget,
+	PriceProvider, Rate, Ratio, RiskManager,
 };
-use pallet_asset_conversion::Swap as SwapTrait;
-use sp_core::H256;
+use scale_info::TypeInfo;
+use sp_core::{H256, U256};
 use sp_runtime::{
-	traits::{
-		AccountIdConversion, BlakeTwo256, IdentityLookup,
-	},
-	BuildStorage, DispatchError, DispatchResult, FixedU128,
+	traits::{AccountIdConversion, BlakeTwo256, Convert, IdentityLookup},
+	BuildStorage, DispatchError, DispatchResult, Either, FixedU128, Permill, RuntimeDebug,
 };
 
 pub type AccountId = u128;
@@ -52,14 +50,61 @@ pub type Balance = u128;
 pub type CurrencyId = u32;
 pub type AuctionId = u32;
 
+#[derive(
+	Parameter,
+	Member,
+	Default,
+	PartialEq,
+	Eq,
+	Clone,
+	Copy,
+	Encode,
+	Decode,
+	TypeInfo,
+	MaxEncodedLen,
+	RuntimeDebug,
+	Ord,
+	PartialOrd,
+)]
+pub enum AssetKind {
+	#[default]
+	Native,
+	Asset(CurrencyId),
+}
+
+impl From<CurrencyId> for AssetKind {
+	fn from(id: CurrencyId) -> Self {
+		Self::Asset(id)
+	}
+}
+
+pub struct AssetKindConverter;
+impl Convert<AssetKind, Option<CurrencyId>> for AssetKindConverter {
+	fn convert(a: AssetKind) -> Option<CurrencyId> {
+		match a {
+			AssetKind::Native => None,
+			AssetKind::Asset(id) => Some(id),
+		}
+	}
+}
+
+impl Convert<AssetKind, Either<(), CurrencyId>> for AssetKindConverter {
+	fn convert(a: AssetKind) -> Either<(), CurrencyId> {
+		match a {
+			AssetKind::Native => Either::Left(()),
+			AssetKind::Asset(id) => Either::Right(id),
+		}
+	}
+}
+
 pub const ALICE: AccountId = 1;
 pub const BOB: AccountId = 2;
-pub const NATIVE: CurrencyId = 0;
-pub const STABLE: CurrencyId = 1;
+pub const NATIVE_ID: CurrencyId = 0;
+pub const STABLE_ID: CurrencyId = 1;
+pub const NATIVE: AssetKind = AssetKind::Native;
+pub const STABLE: AssetKind = AssetKind::Asset(STABLE_ID);
 
-mod honzon_pallet {
-	pub use super::super::*;
-}
+use crate as honzon_pallet;
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;
 type Block = frame_system::mocking::MockBlock<Runtime>;
@@ -75,6 +120,7 @@ construct_runtime! {
 		Loans: pallet_loans,
 		CDPEngine: pallet_cdp_engine,
 		Timestamp: pallet_timestamp,
+		AssetConversion: pallet_asset_conversion,
 	}
 }
 
@@ -208,7 +254,7 @@ impl RiskManager<AccountId, CurrencyId, Balance, Balance> for MockRiskManager {
 
 parameter_types! {
 	pub const LoansPalletId: PalletId = PalletId(*b"aca/loan");
-	pub const GetNativeCurrencyId: CurrencyId = NATIVE;
+	pub const GetNativeCurrencyId: CurrencyId = NATIVE_ID;
 }
 
 pub struct MockLiquidationStrategy;
@@ -273,84 +319,12 @@ impl AuctionManager<AccountId> for MockAuctionManager {
 	}
 }
 
-pub struct MockAssetSwap;
-impl SwapTrait<AccountId> for MockAssetSwap {
-	type Balance = Balance;
-	type AssetKind = CurrencyId;
-
-	fn max_path_len() -> u32 {
-		4
-	}
-
-	fn swap_exact_tokens_for_tokens(
-		_sender: AccountId,
-		_path: Vec<Self::AssetKind>,
-		_amount_in: Self::Balance,
-		_amount_out_min: Option<Self::Balance>,
-		_send_to: AccountId,
-		_keep_alive: bool,
-	) -> Result<Self::Balance, DispatchError> {
-		Ok(1)
-	}
-
-	fn swap_tokens_for_exact_tokens(
-		_sender: AccountId,
-		_path: Vec<Self::AssetKind>,
-		_amount_out: Self::Balance,
-		_amount_in_max: Option<Self::Balance>,
-		_send_to: AccountId,
-		_keep_alive: bool,
-	) -> Result<Self::Balance, DispatchError> {
-		Ok(1)
-	}
-}
-
 ord_parameter_types! {
 	pub const One: AccountId = 1;
 }
 
-pub struct MockSwap;
-
-impl DEXManager<AccountId, Balance, CurrencyId> for MockSwap {
-	fn get_liquidity_pool(
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> (Balance, Balance) {
-		(1, 1)
-	}
-
-	fn get_swap_amount(
-		_path: &[u32],
-		_limit: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)> {
-		None
-	}
-
-	fn add_liquidity(
-		_who: &AccountId,
-		_currency_id_a: u32,
-		_currency_id_b: u32,
-		_max_amount_a: Balance,
-		_max_amount_b: Balance,
-		_min_share_increment: Balance,
-	) -> Result<(Balance, Balance, Balance), DispatchError> {
-		unimplemented!()
-	}
-
-	fn remove_liquidity(
-		_who: &AccountId,
-		_currency_id_a: u32,
-		_currency_id_b: u32,
-		_remove_share: Balance,
-		_min_withdrawn_a: Balance,
-		_min_withdrawn_b: Balance,
-	) -> Result<(Balance, Balance), DispatchError> {
-		unimplemented!()
-	}
-}
-
 parameter_types! {
-	pub const GetStableCurrencyId: CurrencyId = STABLE;
+	pub const GetStableCurrencyId: CurrencyId = STABLE_ID;
 	pub const CDPTreasuryPalletId: PalletId = PalletId(*b"aca/cdpt");
 	pub TreasuryAccount: AccountId = PalletId(*b"aca/hztr").into_account_truncating();
 }
@@ -361,13 +335,56 @@ impl pallet_cdp_treasury::Config for Runtime {
 	type AuctionManagerHandler = MockAuctionManager;
 	type Balance = Balance;
 	type CurrencyId = CurrencyId;
+	type AssetKind = AssetKind;
 	type MaxAuctionsCount = ConstU32<10_000>;
 	type TreasuryAccount = TreasuryAccount;
 	type PalletId = CDPTreasuryPalletId;
 	type WeightInfo = ();
 	type GetStableCurrencyId = GetStableCurrencyId;
 	type GetBaseCurrencyId = GetNativeCurrencyId;
-	type Swap = MockAssetSwap;
+	type Swap = AssetConversion;
+}
+
+parameter_types! {
+	pub const AssetConversionPalletId: PalletId = PalletId(*b"aca/acsv");
+	pub const LPFee: u32 = 3;
+	pub const PoolSetupFee: Balance = 1;
+	pub const MintMinLiquidity: Balance = 1;
+	pub const MaxSwapPathLength: u32 = 4;
+	pub LiquidityWithdrawalFee: Permill = Permill::from_percent(0);
+}
+
+pub type NativeAndAssets = UnionOf<PalletBalances, Fungibles, AssetKindConverter, AssetKind, Balance>;
+pub type PoolIdToAccountId =
+	AccountIdConverter<AssetConversionPalletId, (AssetKind, AssetKind)>;
+pub type AscendingLocator = Ascending<AccountId, AssetKind, PoolIdToAccountId>;
+
+parameter_types! {
+	pub const GetNativeAssetKind: AssetKind = NATIVE;
+}
+
+pub type WithFirstAssetLocator =
+	WithFirstAsset<GetNativeAssetKind, AccountId, AssetKind, PoolIdToAccountId>;
+
+impl pallet_asset_conversion::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type Balance = Balance;
+	type AssetKind = AssetKind;
+	type Assets = NativeAndAssets;
+	type PoolId = (Self::AssetKind, Self::AssetKind);
+	type PoolLocator = Chain<WithFirstAssetLocator, AscendingLocator>;
+	type PoolAssetId = CurrencyId;
+	type PoolAssets = Fungibles;
+	type LPFee = LPFee;
+	type PoolSetupFee = PoolSetupFee;
+	type PoolSetupFeeAsset = GetNativeCurrencyId;
+	type PoolSetupFeeTarget = ();
+	type LiquidityWithdrawalFee = LiquidityWithdrawalFee;
+	type MintMinLiquidity = MintMinLiquidity;
+	type MaxSwapPathLength = MaxSwapPathLength;
+	type PalletId = AssetConversionPalletId;
+	type WeightInfo = ();
+	type HigherPrecisionBalance = U256;
 }
 
 parameter_types! {
@@ -393,6 +410,7 @@ impl pallet_cdp_engine::Config for Runtime {
 	type MinimumCollateralAmount = MinimumCollateralAmount;
 	type GetNativeCurrencyId = GetNativeCurrencyId;
 	type GetStableCurrencyId = GetStableCurrencyId;
+	type AssetKind = AssetKind;
 	type MaxSwapSlippageCompareToOracle = MaxSwapSlippageCompareToOracle;
 	type CDPTreasury = CDPTreasury;
 	type PriceSource = MockPriceProvider;
@@ -400,8 +418,7 @@ impl pallet_cdp_engine::Config for Runtime {
 	type EmergencyShutdown = MockEmergencyShutdown;
 	type Currency = PalletBalances;
 	type Tokens = Fungibles;
-	type DEX = MockSwap;
-	type Swap = MockAssetSwap;
+	type Swap = AssetConversion;
 }
 
 impl pallet_timestamp::Config for Runtime {
@@ -433,12 +450,11 @@ impl Config for Runtime {
 }
 
 pub struct ExtBuilder {
-	balances: Vec<(AccountId, CurrencyId, Balance)>,
-}
+	balances: Vec<(AccountId, CurrencyId, Balance)>,}
 
 impl Default for ExtBuilder {
 	fn default() -> Self {
-		Self { balances: vec![(ALICE, NATIVE, 1000), (BOB, NATIVE, 1000)] }
+		Self { balances: vec![(ALICE, NATIVE_ID, 1000), (BOB, NATIVE_ID, 1000)] }
 	}
 }
 
@@ -448,8 +464,8 @@ impl ExtBuilder {
 
 		pallet_assets::GenesisConfig::<Runtime> {
 			assets: vec![
-				(STABLE, CDPTreasury::account_id(), true, 1),
-				(NATIVE, CDPTreasury::account_id(), true, 1),
+				(STABLE_ID, CDPTreasury::account_id(), true, 1),
+				(NATIVE_ID, CDPTreasury::account_id(), true, 1),
 			],
 			metadata: vec![],
 			accounts: self

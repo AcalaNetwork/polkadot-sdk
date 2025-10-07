@@ -31,10 +31,9 @@ use sp_runtime::{traits::CheckedDiv, DispatchError, DispatchResult, FixedU128, R
 use sp_std::prelude::*;
 
 pub mod bounded;
-pub mod dex;
 pub mod honzon;
 
-pub use crate::{bounded::*, dex::*, honzon::*};
+pub use crate::{bounded::*, honzon::*};
 
 pub mod liquidation;
 
@@ -93,11 +92,7 @@ pub trait PriceProvider<CurrencyId> {
 	}
 }
 
-/// Provides a relative price from a DEX.
-pub trait DEXPriceProvider<CurrencyId> {
-	/// Get the relative price of two currencies from a DEX.
-	fn get_relative_price(base: CurrencyId, quote: CurrencyId) -> Option<ExchangeRate>;
-}
+
 
 /// Used to lock and unlock prices.
 pub trait LockablePrice<CurrencyId> {

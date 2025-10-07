@@ -99,8 +99,11 @@ pub mod pallet {
 		/// The currency ID of the base currency.
 		type GetBaseCurrencyId: Get<Self::CurrencyId>;
 
+		/// The kind of asset which can be used for swapping.
+		type AssetKind: Parameter + Member + MaxEncodedLen + Copy + From<Self::CurrencyId>;
+
 		/// The swap instance for trading currencies.
-		type Swap: Swap<Self::AccountId, Balance = Self::Balance, AssetKind = Self::CurrencyId>;
+		type Swap: Swap<Self::AccountId, Balance = Self::Balance, AssetKind = Self::AssetKind>;
 	}
 
 	#[pallet::error]
@@ -485,7 +488,10 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 			);
 		}
 
-		let path = vec![T::GetBaseCurrencyId::get(), T::GetStableCurrencyId::get()];
+		let path = vec![
+			T::GetBaseCurrencyId::get().into(),
+			T::GetStableCurrencyId::get().into(),
+		];
 		match limit {
 			SwapLimit::ExactSupply(supply_amount, min_target_amount) => {
 				let swapped = T::Swap::swap_exact_tokens_for_tokens(

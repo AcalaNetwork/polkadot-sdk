@@ -28,7 +28,16 @@ use sp_std::{
 	prelude::*,
 };
 
-use crate::{dex::*, ExchangeRate, Ratio};
+use crate::{ExchangeRate, Ratio};
+
+/// A limit on the amount of assets to swap.
+#[derive(Encode, Decode, Eq, PartialEq, Copy, Clone, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+pub enum SwapLimit<Balance> {
+	/// Swap with exact supply amount, and minimum target amount.
+	ExactSupply(Balance, Balance),
+	/// Swap with exact target amount, and maximum supply amount.
+	ExactTarget(Balance, Balance),
+}
 
 /// A collateralized debt position.
 #[derive(

@@ -26,7 +26,7 @@ use frame_support::{
 };
 use pallet_asset_conversion::Swap;
 use pallet_traits::{
-	CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager, EmergencyShutdown, ExchangeRate,
+	CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate,
 	Handler, LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 };
 use sp_runtime::{
@@ -270,50 +270,8 @@ impl EmergencyShutdown for MockEmergencyShutdown {
 	}
 }
 
-pub struct MockDEXManager;
-impl<AccountId, Balance, CurrencyId> DEXManager<AccountId, Balance, CurrencyId> for MockDEXManager
-where
-	Balance: From<u128> + Copy,
-{
-	fn get_liquidity_pool(
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-	) -> (Balance, Balance) {
-		(Balance::from(1u128), Balance::from(1u128))
-	}
-
-	fn get_swap_amount(
-		_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)> {
-		let _ = (_path, _limit);
-		Some((Balance::from(1u128), Balance::from(1u128)))
-	}
-
-	fn add_liquidity(
-		_who: &AccountId,
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-		_max_amount_a: Balance,
-		_max_amount_b: Balance,
-		_min_share_increment: Balance,
-	) -> Result<(Balance, Balance, Balance), DispatchError> {
-		Ok((Balance::from(0u128), Balance::from(0u128), Balance::from(0u128)))
-	}
-
-	fn remove_liquidity(
-		_who: &AccountId,
-		_currency_id_a: CurrencyId,
-		_currency_id_b: CurrencyId,
-		_remove_share: Balance,
-		_min_withdrawn_a: Balance,
-		_min_withdrawn_b: Balance,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((Balance::from(0u128), Balance::from(0u128)))
-	}
-}
-
-impl<AccountId> Swap<AccountId> for MockDEXManager
+pub struct MockSwap;
+impl<AccountId> Swap<AccountId> for MockSwap
 where
 	AccountId: Clone,
 {
@@ -350,6 +308,7 @@ where
 
 impl Config for Test {
 	type UpdateOrigin = frame_system::EnsureRoot<Self::AccountId>;
+	type AssetKind = CurrencyId;
 	type DefaultLiquidationRatio = ConstRatio150;
 	type DefaultDebitExchangeRate = DefaultDebitExchangeRate;
 	type DefaultLiquidationPenalty = DefaultPenalty;
@@ -365,8 +324,7 @@ impl Config for Test {
 	type UnixTime = MockUnixTime;
 	type Currency = Balances;
 	type Tokens = Assets;
-	type DEX = MockDEXManager;
-	type Swap = MockDEXManager;
+	type Swap = MockSwap;
 	type PalletId = CDPEnginePalletId;
 	type WeightInfo = ();
 }
