@@ -49,8 +49,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::unused_unit)]
 
-use codec::{EncodeLike, FullCodec, MaxEncodedLen};
-use core::fmt::Debug;
 use frame_support::{
 	pallet_prelude::*,
 	traits::{Get, NamedReservableCurrency},
@@ -59,10 +57,7 @@ use frame_system::pallet_prelude::*;
 use pallet_loans::BalanceOf;
 use pallet_traits::{EmergencyShutdown, ExchangeRate, HonzonManager, PriceProvider, Rate, Ratio};
 use sp_core::U256;
-use sp_runtime::{
-	traits::{AtLeast32BitUnsigned, MaybeSerializeDeserialize, StaticLookup, Zero},
-	ArithmeticError, DispatchResult,
-};
+use sp_runtime::DispatchResult;
 use sp_std::prelude::*;
 
 mod mock;
@@ -86,8 +81,6 @@ pub mod pallet {
 	pub trait Config:
 		frame_system::Config + pallet_cdp_engine::Config + pallet_loans::Config
 	{
-		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
 		/// Currency for authorization reserved.
 		type Currency: NamedReservableCurrency<
 			Self::AccountId,
@@ -122,10 +115,6 @@ pub mod pallet {
 		// The system has been shutdown
 		AlreadyShutdown,
 	}
-
-	#[pallet::event]
-	#[pallet::generate_deposit(pub(super) fn deposit_event)]
-	pub enum Event<T: Config> {}
 
 	#[pallet::pallet]
 	#[pallet::without_storage_info]
@@ -182,8 +171,8 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::expand_position_collateral())]
 		pub fn expand_position_collateral(
 			origin: OriginFor<T>,
-			increase_debit_value: BalanceOf<T>,
-			min_increase_collateral: BalanceOf<T>,
+			_increase_debit_value: BalanceOf<T>,
+			_min_increase_collateral: BalanceOf<T>,
 		) -> DispatchResult {
 			let _who = ensure_signed(origin)?;
 			// TODO: not implemented
@@ -201,8 +190,8 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::shrink_position_debit())]
 		pub fn shrink_position_debit(
 			origin: OriginFor<T>,
-			decrease_collateral: BalanceOf<T>,
-			min_decrease_debit_value: BalanceOf<T>,
+			_decrease_collateral: BalanceOf<T>,
+			_min_decrease_debit_value: BalanceOf<T>,
 		) -> DispatchResult {
 			let _who = ensure_signed(origin)?;
 			// TODO: not implemented
@@ -226,7 +215,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::adjust_loan())]
 		pub fn adjust_loan_by_debit_value(
 			origin: OriginFor<T>,
-			collateral_adjustment: BalanceAdjustmentOf<T>,
+			_collateral_adjustment: BalanceAdjustmentOf<T>,
 			debit_value_adjustment: BalanceAdjustmentOf<T>,
 		) -> DispatchResult {
 			let _who = ensure_signed(origin)?;
@@ -272,8 +261,8 @@ impl<T: Config> Pallet<T> {
 	}
 
 	fn do_close_loan_by_dex(
-		who: <T as frame_system::Config>::AccountId,
-		max_collateral_amount: BalanceOf<T>,
+		_who: <T as frame_system::Config>::AccountId,
+		_max_collateral_amount: BalanceOf<T>,
 	) -> DispatchResult {
 		ensure!(
 			!<T as crate::Config>::EmergencyShutdown::is_shutdown(),

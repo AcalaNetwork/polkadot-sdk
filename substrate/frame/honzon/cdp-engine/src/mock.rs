@@ -19,15 +19,15 @@
 //! Mock runtime for CDP Engine pallet
 
 use super::*;
-use core::sync::atomic::{AtomicBool, Ordering};
+
 use frame_support::{
 	construct_runtime, parameter_types,
 	traits::{ConstU128, ConstU32, ConstU64, Get, UnixTime},
 };
+use pallet_asset_conversion::Swap;
 use pallet_traits::{
-	CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager, EmergencyShutdown,
-	ExchangeRate, Handler, LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager,
-	Swap, SwapLimit,
+	CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DEXManager, EmergencyShutdown, ExchangeRate,
+	Handler, LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 };
 use sp_runtime::{
 	traits::{BlakeTwo256, IdentityLookup, Zero},
@@ -43,10 +43,23 @@ type Balance = u128;
 const COLLATERAL_ASSET_ID: CurrencyId = 1;
 const STABLE_ASSET_ID: CurrencyId = 2;
 
-static IS_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+#[frame_support::pallet(dev_mode)]
+pub mod shutdown_mock {
+	use frame_support::pallet_prelude::*;
+
+	#[pallet::config]
+	pub trait Config: frame_system::Config {}
+
+	#[pallet::pallet]
+	pub struct Pallet<T>(_);
+
+	#[pallet::storage]
+	#[pallet::getter(fn is_shutdown_storage)]
+	pub type IsShutdown<T: Config> = StorageValue<_, bool, ValueQuery>;
+}
 
 pub fn set_shutdown(value: bool) {
-	IS_SHUTDOWN.store(value, Ordering::SeqCst);
+	shutdown_mock::IsShutdown::<Test>::put(value);
 }
 
 pub struct DummyOnUpdateLoan;
@@ -65,8 +78,11 @@ construct_runtime!(
 		Balances: pallet_balances,
 		Loans: pallet_loans,
 		CDPEngine: crate,
+		ShutdownMock: shutdown_mock,
 	}
 );
+
+impl shutdown_mock::Config for Test {}
 
 impl frame_system::Config for Test {
 	type BaseCallFilter = frame_support::traits::Everything;
@@ -250,7 +266,7 @@ impl PriceProvider<CurrencyId> for MockPriceProvider {
 pub struct MockEmergencyShutdown;
 impl EmergencyShutdown for MockEmergencyShutdown {
 	fn is_shutdown() -> bool {
-		IS_SHUTDOWN.load(Ordering::SeqCst)
+		shutdown_mock::Pallet::<Test>::is_shutdown_storage()
 	}
 }
 
@@ -297,36 +313,38 @@ where
 	}
 }
 
-impl<AccountId, Balance, CurrencyId> Swap<AccountId, Balance, CurrencyId> for MockDEXManager
+impl<AccountId> Swap<AccountId> for MockDEXManager
 where
-	Balance: From<u128> + Copy,
-	CurrencyId: Clone,
+	AccountId: Clone,
 {
-	fn get_swap_amount(
-		supply_currency_id: CurrencyId,
-		target_currency_id: CurrencyId,
-		limit: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)> {
-		let _ = (supply_currency_id, target_currency_id, limit);
-		Some((Balance::from(1u128), Balance::from(1u128)))
+	type Balance = Balance;
+	type AssetKind = CurrencyId;
+	fn max_path_len() -> u32 {
+		8
 	}
 
-	fn swap(
-		_who: &AccountId,
-		_supply_currency_id: CurrencyId,
-		_target_currency_id: CurrencyId,
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((Balance::from(1u128), Balance::from(1u128)))
+	fn swap_exact_tokens_for_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		amount_in: Self::Balance,
+		_amount_out_min: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		// Return a mock amount out
+		Ok(amount_in)
 	}
 
-	fn swap_by_path(
-		_who: &AccountId,
-		swap_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		let _ = (swap_path, _limit);
-		Ok((Balance::from(1u128), Balance::from(1u128)))
+	fn swap_tokens_for_exact_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		amount_out: Self::Balance,
+		_amount_in_max: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		// Return a mock amount in
+		Ok(amount_out)
 	}
 }
 
@@ -486,7 +504,6 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 
 	let mut ext = sp_io::TestExternalities::from(storage);
 	ext.execute_with(|| {
-		set_shutdown(false);
 		pallet_loans::TotalPositions::<Test>::put(Position::default());
 		pallet_loans::TotalDebitByStabilityFee::<Test>::remove_all(None);
 		pallet_loans::Positions::<Test>::remove_all(None);

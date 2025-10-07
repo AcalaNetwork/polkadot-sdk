@@ -19,12 +19,10 @@
 //! This module provides traits for interacting with a Decentralized Exchange (DEX).
 
 use codec::{Decode, Encode};
-use frame_support::{ensure, traits::Get};
+
 use scale_info::TypeInfo;
-#[cfg(feature = "std")]
-use serde::{Deserialize, Serialize};
-use sp_core::H160;
-use sp_runtime::{DispatchError, DispatchResult, RuntimeDebug};
+
+use sp_runtime::{DispatchError, RuntimeDebug};
 use sp_std::{cmp::PartialEq, prelude::*, result::Result};
 
 /// Specifies the limit for a swap operation.
@@ -71,33 +69,6 @@ pub trait DEXManager<AccountId, Balance, CurrencyId> {
 		remove_share: Balance,
 		min_withdrawn_a: Balance,
 		min_withdrawn_b: Balance,
-	) -> Result<(Balance, Balance), DispatchError>;
-}
-
-pub trait Swap<AccountId, Balance, CurrencyId>
-where
-	CurrencyId: Clone,
-{
-	/// Returns the swap amount for a given supply and target currency.
-	fn get_swap_amount(
-		supply_currency_id: CurrencyId,
-		target_currency_id: CurrencyId,
-		limit: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)>;
-
-	/// Swaps a supply currency for a target currency.
-	fn swap(
-		who: &AccountId,
-		supply_currency_id: CurrencyId,
-		target_currency_id: CurrencyId,
-		limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError>;
-
-	/// Swaps currencies along a given path.
-	fn swap_by_path(
-		who: &AccountId,
-		swap_path: &[CurrencyId],
-		limit: SwapLimit<Balance>,
 	) -> Result<(Balance, Balance), DispatchError>;
 }
 

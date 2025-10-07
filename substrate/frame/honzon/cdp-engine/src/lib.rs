@@ -67,9 +67,10 @@ use frame_support::{
 };
 use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
 use pallet_loans::BalanceOf;
+use pallet_asset_conversion::Swap;
 use pallet_traits::{
 	CDPTreasury, CDPTreasuryExtended, DEXManager, EmergencyShutdown, ExchangeRate, FractionalRate,
-	LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, RiskManager, Swap, SwapLimit,
+	LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 };
 use scale_info::TypeInfo;
 use sp_runtime::{
@@ -79,7 +80,7 @@ use sp_runtime::{
 		Duration,
 	},
 	traits::{
-		AccountIdConversion, Bounded, One, Saturating, StaticLookup, UniqueSaturatedInto, Zero,
+		Bounded, One, Saturating, StaticLookup, UniqueSaturatedInto, Zero,
 	},
 	transaction_validity::{
 		InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
@@ -247,7 +248,11 @@ pub mod pallet {
 		type DEX: DEXManager<Self::AccountId, pallet_loans::BalanceOf<Self>, CurrencyId>;
 
 		/// Swap
-		type Swap: Swap<Self::AccountId, pallet_loans::BalanceOf<Self>, CurrencyId>;
+		type Swap: Swap<
+			Self::AccountId,
+			Balance = pallet_loans::BalanceOf<Self>,
+			AssetKind = CurrencyId,
+		>;
 
 		#[pallet::constant]
 		type PalletId: Get<PalletId>;
@@ -844,11 +849,13 @@ impl<T: Config> Pallet<T> {
 		<T as Config>::CDPTreasury::issue_debit(&loans_module_account, increase_debit_value, true)?;
 
 		// swap stable coin to collateral
-		let limit = SwapLimit::ExactSupply(increase_debit_value, min_increase_collateral);
-		let (_, increase_collateral) = T::Swap::swap_by_path(
-			&loans_module_account,
-			&[T::GetStableCurrencyId::get(), currency_id],
-			limit,
+		let increase_collateral = T::Swap::swap_exact_tokens_for_tokens(
+			loans_module_account.clone(),
+			vec![T::GetStableCurrencyId::get(), currency_id],
+			increase_debit_value,
+			Some(min_increase_collateral),
+			loans_module_account.clone(),
+			true,
 		)?;
 
 		// update CDP state
@@ -893,11 +900,13 @@ impl<T: Config> Pallet<T> {
 		ensure!(decrease_collateral <= collateral, Error::<T>::CollateralNotEnough);
 
 		// swap collateral to stable coin
-		let limit = SwapLimit::ExactSupply(decrease_collateral, min_decrease_debit_value);
-		let (_, actual_stable_amount) = T::Swap::swap_by_path(
-			&loans_module_account,
-			&[currency_id, stable_currency_id],
-			limit,
+		let actual_stable_amount = T::Swap::swap_exact_tokens_for_tokens(
+			loans_module_account.clone(),
+			vec![currency_id, stable_currency_id],
+			decrease_collateral,
+			Some(min_decrease_debit_value),
+			loans_module_account.clone(),
+			true,
 		)?;
 
 		// update CDP state
@@ -967,7 +976,6 @@ impl<T: Config> Pallet<T> {
 		who: AccountIdOf<T>,
 		max_collateral_amount: BalanceOf<T>,
 	) -> DispatchResult {
-		let currency_id = T::GetNativeCurrencyId::get();
 		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
 		let stability_fee = Rate::from_inner(stability_fee.into_inner());
 		ensure!(!debit.is_zero(), Error::<T>::NoDebitValue);
@@ -1006,7 +1014,6 @@ impl<T: Config> Pallet<T> {
 
 	// liquidate unsafe cdp
 	pub fn liquidate_unsafe_cdp(who: AccountIdOf<T>) -> Result<Weight, DispatchError> {
-		let currency_id = T::GetNativeCurrencyId::get();
 		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
 		let stability_fee = Rate::from_inner(stability_fee.into_inner());
 
@@ -1051,9 +1058,6 @@ impl<T: Config> Pallet<T> {
 		LiquidateByPriority::<T>::liquidate(who, currency_id, amount, target_stable_amount)
 	}
 
-	fn account_id() -> AccountIdOf<T> {
-		<T as Config>::PalletId::get().into_account_truncating()
-	}
 }
 
 type LiquidateByPriority<T> = (LiquidateViaDex<T>, LiquidateViaAuction<T>);

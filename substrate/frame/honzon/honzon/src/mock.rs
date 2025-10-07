@@ -21,23 +21,23 @@
 #![cfg(test)]
 
 use super::*;
-use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	construct_runtime, ord_parameter_types, parameter_types,
 	traits::{
-		AsEnsureOriginWithArg, ConstU128, ConstU16, ConstU32, ConstU64, Everything,
-		SortedMembers, UnixTime,
+		AsEnsureOriginWithArg, ConstU16, ConstU32, ConstU64, Everything,
+		SortedMembers,
 	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_traits::{
+use pallet_traits::{ 
 	bounded::FractionalRate,
 	AuctionManager, CDPTreasury as CDPTreasuryTrait, DEXManager,
-	EmergencyShutdown, ExchangeRate, LiquidationTarget, PriceProvider, Rate, RiskManager, Swap,
+	EmergencyShutdown, ExchangeRate, LiquidationTarget, PriceProvider, Rate, RiskManager,
 	SwapLimit,
 };
-use sp_core::{H160, H256};
+use pallet_asset_conversion::Swap as SwapTrait;
+use sp_core::H256;
 use sp_runtime::{
 	traits::{
 		AccountIdConversion, BlakeTwo256, IdentityLookup,
@@ -273,37 +273,43 @@ impl AuctionManager<AccountId> for MockAuctionManager {
 	}
 }
 
+pub struct MockAssetSwap;
+impl SwapTrait<AccountId> for MockAssetSwap {
+	type Balance = Balance;
+	type AssetKind = CurrencyId;
+
+	fn max_path_len() -> u32 {
+		4
+	}
+
+	fn swap_exact_tokens_for_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_in: Self::Balance,
+		_amount_out_min: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(1)
+	}
+
+	fn swap_tokens_for_exact_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_out: Self::Balance,
+		_amount_in_max: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(1)
+	}
+}
+
 ord_parameter_types! {
 	pub const One: AccountId = 1;
 }
 
 pub struct MockSwap;
-impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
-	fn swap(
-		_who: &AccountId,
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
-	}
-
-	fn get_swap_amount(
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_limit: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)> {
-		None
-	}
-
-	fn swap_by_path(
-		_who: &AccountId,
-		_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
-	}
-}
 
 impl DEXManager<AccountId, Balance, CurrencyId> for MockSwap {
 	fn get_liquidity_pool(
@@ -327,7 +333,6 @@ impl DEXManager<AccountId, Balance, CurrencyId> for MockSwap {
 		_max_amount_a: Balance,
 		_max_amount_b: Balance,
 		_min_share_increment: Balance,
-		_stake: bool,
 	) -> Result<(Balance, Balance, Balance), DispatchError> {
 		unimplemented!()
 	}
@@ -362,7 +367,7 @@ impl pallet_cdp_treasury::Config for Runtime {
 	type WeightInfo = ();
 	type GetStableCurrencyId = GetStableCurrencyId;
 	type GetBaseCurrencyId = GetNativeCurrencyId;
-	type Swap = MockSwap;
+	type Swap = MockAssetSwap;
 }
 
 parameter_types! {
@@ -396,7 +401,7 @@ impl pallet_cdp_engine::Config for Runtime {
 	type Currency = PalletBalances;
 	type Tokens = Fungibles;
 	type DEX = MockSwap;
-	type Swap = MockSwap;
+	type Swap = MockAssetSwap;
 }
 
 impl pallet_timestamp::Config for Runtime {
@@ -418,7 +423,6 @@ parameter_types! {
 }
 
 impl Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
 	type Currency = PalletBalances;
 	type DepositPerAuthorization = DepositPerAuthorization;
 	type CollateralCurrencyId = GetNativeCurrencyId;

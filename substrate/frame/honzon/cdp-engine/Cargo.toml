@@ -20,6 +20,7 @@ serde = { features = ["derive"], workspace = true, optional = true }
 pallet-traits = { workspace = true, default-features = false }
 pallet-loans = { workspace = true, default-features = false }
 num-traits = { workspace = true, default-features = false }
+pallet-asset-conversion = { workspace = true, default-features = false }
 
 [dev-dependencies]
 sp-core = { workspace = true, features = ["std"] }
@@ -47,6 +48,7 @@ std = [
 	"pallet-loans/std",
 	"pallet-balances/std",
 	"num-traits/std",
+	"pallet-asset-conversion/std",
 ]
 try-runtime = [
 	"frame-support/try-runtime",
@@ -54,4 +56,5 @@ try-runtime = [
 	"pallet-traits/try-runtime",
 	"pallet-loans/try-runtime",
 	"pallet-balances/try-runtime",
+	"pallet-asset-conversion/try-runtime",
 ]

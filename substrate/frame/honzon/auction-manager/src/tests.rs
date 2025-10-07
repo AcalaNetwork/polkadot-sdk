@@ -21,23 +21,20 @@
 #![cfg(test)]
 
 use super::pallet::Error;
-use crate::{
-	mock::{
+use crate::{ 
+	mock::{ 
 		mock_shutdown, AccountId, Assets, AuctionId, AuctionManagerModule, AuctionModule, Balance,
-		BlockNumber, CDPTreasuryModule, CurrencyId, ExtBuilder, MockPriceSource, Runtime,
-		RuntimeEvent, RuntimeOrigin, System, TreasuryAccount, ALICE, BOB, CAROL, NATIVE, STABLE,
+		BlockNumber, CDPTreasuryModule, ExtBuilder, Runtime, RuntimeEvent, RuntimeOrigin, System,
+		ALICE, BOB, CAROL, NATIVE, STABLE,
 	},
 	pallet::{CollateralAuctions, Event, TotalCollateralInAuction, TotalTargetInAuction},
 };
-use frame_support::{
+use frame_support::{ 
 	assert_noop, assert_ok,
-	traits::{OnInitialize, OriginTrait},
+	traits::AuctionHandler,
 };
-use pallet_traits::{AuctionHandler, AuctionManager, CDPTreasury, Rate};
-use sp_runtime::{
-	traits::{BadOrigin, One},
-	FixedPointNumber,
-};
+use pallet_traits::{AuctionManager, CDPTreasury, Rate};
+
 
 // #[test]
 // fn get_auction_time_to_close_work() {

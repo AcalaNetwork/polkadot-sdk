@@ -25,15 +25,15 @@ use frame_support::{
 	construct_runtime, defensive, derive_impl, ord_parameter_types, parameter_types,
 	traits::{
 		tokens::{
-			fungibles, fungibles::Mutate, DepositConsequence, Fortitude, Precision, Preservation,
+			fungibles, DepositConsequence, Fortitude, Precision, Preservation,
 			Provenance, WithdrawConsequence,
 		},
-		AsEnsureOriginWithArg, ConstBool, ConstU128, ConstU32, ConstU64, Everything,
+		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, Everything,
 	},
 	PalletId,
 };
 use frame_system::EnsureSignedBy;
-use pallet_traits::{EmergencyShutdown, PriceProvider, Rate, Swap, SwapLimit};
+use pallet_traits::{EmergencyShutdown, PriceProvider, Rate};
 use sp_core::H256;
 use sp_runtime::{
 	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup, One as OneT},
@@ -279,30 +279,34 @@ impl pallet_traits::CDPTreasury<AccountId> for MockCDPTreasury {
 }
 
 pub struct MockSwap;
-impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
-	fn get_swap_amount(
-		_supply_currency_id: CurrencyId,
-		_target_currency_id: CurrencyId,
-		_limit: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)> {
-		None
+impl pallet_asset_conversion::Swap<AccountId> for MockSwap {
+	type Balance = Balance;
+	type AssetKind = CurrencyId;
+
+	fn max_path_len() -> u32 {
+		2
 	}
 
-	fn swap(
-		_who: &AccountId,
-		_supply_currency_id: CurrencyId,
-		_target_currency_id: CurrencyId,
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Err(DispatchError::Other("Not implemented"))
+	fn swap_exact_tokens_for_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_in: Self::Balance,
+		_amount_out_min: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(0)
 	}
 
-	fn swap_by_path(
-		_who: &AccountId,
-		_swap_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Err(DispatchError::Other("Not implemented"))
+	fn swap_tokens_for_exact_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_out: Self::Balance,
+		_amount_in_max: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(0)
 	}
 }
 
@@ -357,10 +361,8 @@ parameter_types! {
 pub struct MockCurrency;
 
 impl pallet::Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
 	type RuntimeHoldReason = MockHoldReason;
 	type Currency = MockCurrency;
-	type Auction = AuctionModule;
 	type MinimumIncrementSize = MinimumIncrementSize;
 	type AuctionTimeToClose = ConstU64<100>;
 	type AuctionDurationSoftCap = ConstU64<2000>;
@@ -371,7 +373,6 @@ impl pallet::Config for Runtime {
 	type EmergencyShutdown = MockEmergencyShutdown;
 	type WeightInfo = ();
 	type CurrencyId = CurrencyId;
-	type Swap = MockSwap;
 }
 
 pub struct ExtBuilder {
@@ -422,14 +423,7 @@ impl ExtBuilder {
 		t.into()
 	}
 
-	pub fn lots_of_accounts() -> Self {
-		let mut balances = Vec::new();
-		for i in 0..1001 {
-			let account_id: AccountId = i;
-			balances.push((account_id, NATIVE, 1000));
-		}
-		Self { balances }
-	}
+
 }
 
 impl fungibles::Inspect<AccountId> for MockCurrency {

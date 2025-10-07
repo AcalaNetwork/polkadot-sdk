@@ -24,6 +24,7 @@ pallet-timestamp = { workspace = true }
 pallet-cdp-treasury = { workspace = true, default-features = false }
 pallet-assets = { workspace = true, default-features = false }
 sp-arithmetic = { workspace = true, default-features = false }
+pallet-asset-conversion = { workspace = true, default-features = false }
 
 [features]
 default = ["std"]
@@ -42,7 +43,8 @@ std = [
 	"pallet-loans/std",
 	"pallet-timestamp/std",
 	"pallet-traits/std",
-	"sp-arithmetic/std"
+	"sp-arithmetic/std",
+	"pallet-asset-conversion/std"
 ]
 try-runtime = [
 	"frame-support/try-runtime",

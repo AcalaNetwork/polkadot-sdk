@@ -38,7 +38,8 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use num_traits::ops::checked::CheckedRem;
-use pallet_traits::{AuctionManager, CDPTreasury, CDPTreasuryExtended, Ratio, Swap, SwapLimit};
+use pallet_asset_conversion::Swap;
+use pallet_traits::{AuctionManager, CDPTreasury, CDPTreasuryExtended, Ratio, SwapLimit};
 use sp_runtime::{
 	traits::{AccountIdConversion, One, Saturating, Zero},
 	ArithmeticError, DispatchError, DispatchResult, FixedPointNumber,
@@ -99,7 +100,7 @@ pub mod pallet {
 		type GetBaseCurrencyId: Get<Self::CurrencyId>;
 
 		/// The swap instance for trading currencies.
-		type Swap: Swap<Self::AccountId, Self::Balance, Self::CurrencyId>;
+		type Swap: Swap<Self::AccountId, Balance = Self::Balance, AssetKind = Self::CurrencyId>;
 	}
 
 	#[pallet::error]
@@ -484,12 +485,31 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 			);
 		}
 
-		T::Swap::swap(
-			&Self::account_id(),
-			T::GetBaseCurrencyId::get(),
-			T::GetStableCurrencyId::get(),
-			limit,
-		)
+		let path = vec![T::GetBaseCurrencyId::get(), T::GetStableCurrencyId::get()];
+		match limit {
+			SwapLimit::ExactSupply(supply_amount, min_target_amount) => {
+				let swapped = T::Swap::swap_exact_tokens_for_tokens(
+					Self::account_id(),
+					path,
+					supply_amount,
+					Some(min_target_amount),
+					Self::account_id(),
+					true,
+				)?;
+				Ok((supply_amount, swapped))
+			},
+			SwapLimit::ExactTarget(max_supply_amount, exact_target_amount) => {
+				let swapped = T::Swap::swap_tokens_for_exact_tokens(
+					Self::account_id(),
+					path,
+					exact_target_amount,
+					Some(max_supply_amount),
+					Self::account_id(),
+					true,
+				)?;
+				Ok((swapped, exact_target_amount))
+			},
+		}
 	}
 
 	/// Creates collateral auctions.

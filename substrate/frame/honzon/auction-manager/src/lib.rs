@@ -35,18 +35,18 @@ use frame_support::{
 	pallet_prelude::*,
 	traits::{
 		auction::{Auction, AuctionHandler, Change, OnNewBidResult},
-		fungibles::{self, Balanced, Mutate, MutateHold},
+		fungibles::{self, Mutate, MutateHold},
 		tokens::{Precision, Preservation},
 		Get,
 	},
 	transactional,
 };
 use frame_system::pallet_prelude::*;
-use pallet_traits::{AuctionManager, CDPTreasury, EmergencyShutdown, PriceProvider, Rate, Swap};
+use pallet_traits::{AuctionManager, CDPTreasury, EmergencyShutdown, PriceProvider, Rate};
 use scale_info::TypeInfo;
 use sp_runtime::{
-	traits::{AtLeast32BitUnsigned, CheckedDiv, CheckedMul, One, Saturating, Zero},
-	DispatchError, DispatchResult, FixedPointNumber, RuntimeDebug,
+	traits::{AtLeast32BitUnsigned, Saturating, Zero},
+	DispatchResult, FixedPointNumber, RuntimeDebug,
 };
 
 mod mock;
@@ -118,12 +118,6 @@ pub mod pallet {
 		>;
 		/// The price provider.
 		type PriceSource: PriceProvider<Self::CurrencyId>;
-		/// The swap pallet.
-		type Swap: Swap<
-			Self::AccountId,
-			<Self as pallet_auction::Config>::Balance,
-			Self::CurrencyId,
-		>;
 		/// The hold reason for this pallet.
 		type RuntimeHoldReason: From<HoldReason>;
 		/// The minimum increment size for bids in an auction.

@@ -21,8 +21,9 @@
 use super::*;
 use frame_support::{assert_err, assert_noop, assert_ok};
 use frame_support::traits::fungible::MutateHold;
+use frame_support::traits::Change;
 use mock::{new_test_ext, set_shutdown, CDPEngine, MockEmergencyShutdown, RuntimeOrigin, Test};
-use pallet_traits::Change;
+use pallet_loans::BalanceAdjustment;
 
 type Loans = pallet_loans::Pallet<Test>;
 type Balances = pallet_balances::Pallet<Test>;
@@ -58,7 +59,12 @@ fn adjust_position_works() {
 	new_test_ext().execute_with(|| {
 		frame_system::Pallet::<Test>::set_block_number(1);
 		let account_id = 1u64;
-		assert_ok!(CDPEngine::adjust_position(&account_id, 1000i128, 150i128, Some(Rate::one()),));
+		assert_ok!(CDPEngine::adjust_position(
+			&account_id,
+			BalanceAdjustment::increase(1000),
+			BalanceAdjustment::increase(150),
+			Some(Rate::one()),
+		));
 
 		let position = Loans::positions(&account_id);
 		assert_eq!(position.collateral, 1000u128);
@@ -77,8 +83,8 @@ fn adjust_position_fails_with_insufficient_collateral_ratio() {
 		assert_err!(
 			CDPEngine::adjust_position(
 				&account_id,
-				100i128, // low collateral
-				150i128, // high debit
+				BalanceAdjustment::increase(100), // low collateral
+				BalanceAdjustment::increase(150), // high debit
 				Some(Rate::one()),
 			),
 			Error::<Test>::BelowRequiredCollateralRatio
@@ -91,6 +97,18 @@ fn emergency_shutdown_blocks_liquidation() {
 	new_test_ext().execute_with(|| {
 		frame_system::Pallet::<Test>::set_block_number(1);
 		let account_id = 1u64;
+		// Create an unsafe position
+		let unsafe_position =
+			Position { collateral: 100u128, debit: 1000u128, stability_fee: Ratio::one() };
+		pallet_loans::Positions::<Test>::insert(account_id, unsafe_position);
+		pallet_loans::TotalPositions::<Test>::put(unsafe_position);
+		pallet_loans::TotalDebitByStabilityFee::<Test>::insert(Rate::one(), unsafe_position.debit);
+		assert_ok!(Balances::hold(
+			&pallet_loans::HoldReason::Collateral.into(),
+			&account_id,
+			unsafe_position.collateral,
+		));
+
 		assert!(!MockEmergencyShutdown::is_shutdown());
 
 		set_shutdown(true);
@@ -155,7 +173,12 @@ fn settle_cdp_works() {
 		let account_id = 1u64;
 
 	// Create a position with debit and collateral
-	assert_ok!(CDPEngine::adjust_position(&account_id, 1000i128, 500i128, Some(Rate::one())));
+	assert_ok!(CDPEngine::adjust_position(
+		&account_id,
+		BalanceAdjustment::increase(1000),
+		BalanceAdjustment::increase(500),
+		Some(Rate::one())
+	));
 
 	// Enable shutdown before settlement
 	set_shutdown(true);
