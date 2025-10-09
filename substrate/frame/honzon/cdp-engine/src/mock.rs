@@ -25,7 +25,7 @@ use frame_support::{
 	traits::{ConstU128, ConstU32, ConstU64, Get, UnixTime},
 };
 use pallet_asset_conversion::Swap;
-use pallet_traits::{
+use frame_support::traits::honzon::{
 	CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate,
 	Handler, LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 };

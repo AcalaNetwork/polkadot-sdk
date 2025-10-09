@@ -28,14 +28,17 @@ pub use pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
-	use frame_support::traits::fungibles::Mutate as FungiblesMutate;
 	use frame_support::{
 		pallet_prelude::*,
-		traits::{fungibles, Get},
+		traits::{
+			fungibles,
+			fungibles::Mutate as FungiblesMutate,
+			honzon::{CDPTreasury, LiquidationTarget, PriceProvider},
+			Get,
+		},
 		PalletId,
 	};
 	use frame_system::pallet_prelude::*;
-	use pallet_traits::{CDPTreasury, LiquidationTarget, PriceProvider};
 	use sp_arithmetic::FixedPointNumber;
 	use sp_runtime::{
 		traits::{AccountIdConversion, Saturating, Zero},

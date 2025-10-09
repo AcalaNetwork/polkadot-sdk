@@ -5,37 +5,41 @@ authors = ["Acala Developers"]
 edition = { workspace = true }
 
 [dependencies]
-log = { workspace = true, default-features = false }
-rand_chacha = { workspace = true, default-features = false }
 codec = { workspace = true, default-features = false }
-scale-info = { workspace = true, default-features = false }
 frame-support = { workspace = true, default-features = false }
 frame-system = { workspace = true, default-features = false }
-sp-application-crypto = { workspace = true, default-features = false }
-sp-io = { workspace = true, default-features = false }
-sp-core = { workspace = true, default-features = false }
-sp-runtime = { workspace = true, default-features = false }
-sp-std = { workspace = true, default-features = false }
-serde = { features = ["derive"], workspace = true, optional = true }
-pallet-traits = { workspace = true, default-features = false }
-pallet-loans = { workspace = true, default-features = false }
+log = { workspace = true, default-features = false }
 num-traits = { workspace = true, default-features = false }
 pallet-asset-conversion = { workspace = true, default-features = false }
+pallet-loans = { workspace = true, default-features = false }
+rand_chacha = { workspace = true, default-features = false }
+scale-info = { workspace = true, default-features = false }
+serde = { features = ["derive"], workspace = true, optional = true }
+sp-application-crypto = { workspace = true, default-features = false }
+sp-core = { workspace = true, default-features = false }
+sp-io = { workspace = true, default-features = false }
+sp-runtime = { workspace = true, default-features = false }
+sp-std = { workspace = true, default-features = false }
 
 [dev-dependencies]
-sp-core = { workspace = true, features = ["std"] }
-pallet-balances = { workspace = true, features = ["std"] }
-sp-io = { workspace = true, features = ["std"] }
 pallet-assets = { workspace = true, features = ["std"] }
 pallet-assets-holder = { workspace = true, features = ["std"] }
+pallet-balances = { workspace = true, features = ["std"] }
 pallet-cdp-treasury = { path = "../cdp-treasury", features = ["std"] }
+sp-core = { workspace = true, features = ["std"] }
+sp-io = { workspace = true, features = ["std"] }
 
 [features]
 default = ["std"]
 std = [
 	"codec/std",
 	"frame-support/std",
+	"frame-support/std",
 	"frame-system/std",
+	"num-traits/std",
+	"pallet-asset-conversion/std",
+	"pallet-balances/std",
+	"pallet-loans/std",
 	"rand_chacha/std",
 	"scale-info/std",
 	"serde",
@@ -44,17 +48,11 @@ std = [
 	"sp-io/std",
 	"sp-runtime/std",
 	"sp-std/std",
-	"pallet-traits/std",
-	"pallet-loans/std",
-	"pallet-balances/std",
-	"num-traits/std",
-	"pallet-asset-conversion/std",
 ]
 try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
-	"pallet-traits/try-runtime",
-	"pallet-loans/try-runtime",
-	"pallet-balances/try-runtime",
 	"pallet-asset-conversion/try-runtime",
+	"pallet-balances/try-runtime",
+	"pallet-loans/try-runtime",
 ]

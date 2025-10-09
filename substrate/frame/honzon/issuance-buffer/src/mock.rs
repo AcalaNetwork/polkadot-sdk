@@ -23,12 +23,15 @@
 use super::*;
 use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types, parameter_types,
-	traits::{tokens::fungible::UnionOf, AsEnsureOriginWithArg, ConstU128, ConstU32, Everything},
+	traits::{
+		honzon::{AuctionManager, PriceProvider, Swap},
+		tokens::fungible::UnionOf,
+		AsEnsureOriginWithArg, ConstU128, ConstU32, Everything,
+	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
 use pallet_assets as assets;
-use pallet_traits::{AuctionManager, PriceProvider, Swap};
 use sp_core::H256;
 use sp_runtime::{
 	traits::Convert, BuildStorage, DispatchError, DispatchResult, Either, FixedU128, Permill,
@@ -163,7 +166,7 @@ impl<AccountId> AuctionManager<AccountId> for MockAuctionManager<AccountId> {
 }
 
 pub struct MockSwap;
-use pallet_traits::SwapLimit;
+use frame_support::traits::honzon::SwapLimit;
 impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
 	fn swap(
 		_source: &AccountId,

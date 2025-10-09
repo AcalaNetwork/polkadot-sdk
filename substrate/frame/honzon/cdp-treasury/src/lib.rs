@@ -32,6 +32,7 @@ use frame_support::{
 	pallet_prelude::*,
 	traits::{
 		fungibles::{Inspect, Mutate},
+		honzon::{AuctionManager, CDPTreasury, CDPTreasuryExtended, Ratio, SwapLimit},
 		tokens::{Balance as BalanceT, Fortitude, Precision, Preservation},
 	},
 	transactional, PalletId,
@@ -39,7 +40,6 @@ use frame_support::{
 use frame_system::pallet_prelude::*;
 use num_traits::ops::checked::CheckedRem;
 use pallet_asset_conversion::Swap;
-use pallet_traits::{AuctionManager, CDPTreasury, CDPTreasuryExtended, Ratio, SwapLimit};
 use sp_runtime::{
 	traits::{AccountIdConversion, One, Saturating, Zero},
 	ArithmeticError, DispatchError, DispatchResult, FixedPointNumber,
@@ -475,8 +475,8 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 
 		if collateral_in_auction {
 			ensure!(
-				Self::total_collaterals() >= supply_limit
-					&& T::AuctionManagerHandler::get_total_collateral_in_auction(
+				Self::total_collaterals() >= supply_limit &&
+					T::AuctionManagerHandler::get_total_collateral_in_auction(
 						T::GetBaseCurrencyId::get()
 					) >= supply_limit,
 				Error::<T>::CollateralNotEnough,
@@ -488,10 +488,7 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 			);
 		}
 
-		let path = vec![
-			T::GetBaseCurrencyId::get().into(),
-			T::GetStableCurrencyId::get().into(),
-		];
+		let path = vec![T::GetBaseCurrencyId::get().into(), T::GetStableCurrencyId::get().into()];
 		match limit {
 			SwapLimit::ExactSupply(supply_amount, min_target_amount) => {
 				let swapped = T::Swap::swap_exact_tokens_for_tokens(
@@ -534,10 +531,10 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 		let mut unhandled_target = target;
 		let expected_collateral_auction_size = Self::expected_collateral_auction_size();
 		let max_auctions_count: T::Balance = T::MaxAuctionsCount::get().into();
-		let lots_count = if !split
-			|| max_auctions_count.is_zero()
-			|| expected_collateral_auction_size.is_zero()
-			|| amount <= expected_collateral_auction_size
+		let lots_count = if !split ||
+			max_auctions_count.is_zero() ||
+			expected_collateral_auction_size.is_zero() ||
+			amount <= expected_collateral_auction_size
 		{
 			One::one()
 		} else {

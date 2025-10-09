@@ -41,7 +41,7 @@
 
 use frame_support::pallet_prelude::*;
 use frame_system::{ensure_signed, pallet_prelude::*};
-use pallet_traits::{AuctionManager, CDPTreasury, EmergencyShutdown, LockablePrice, Ratio};
+use frame_support::traits::honzon::{AuctionManager, CDPTreasury, EmergencyShutdown, LockablePrice, Ratio};
 
 use sp_runtime::{traits::Zero, FixedPointNumber};
 use sp_std::prelude::*;

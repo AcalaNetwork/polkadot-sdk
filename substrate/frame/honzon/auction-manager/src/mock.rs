@@ -24,16 +24,16 @@ use super::{pallet, *};
 use frame_support::{
 	construct_runtime, defensive, derive_impl, ord_parameter_types, parameter_types,
 	traits::{
+		honzon::{CDPTreasury, EmergencyShutdown, PriceProvider, Rate},
 		tokens::{
-			fungibles, DepositConsequence, Fortitude, Precision, Preservation,
-			Provenance, WithdrawConsequence,
+			fungibles, DepositConsequence, Fortitude, Precision, Preservation, Provenance,
+			WithdrawConsequence,
 		},
 		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, Everything,
 	},
 	PalletId,
 };
 use frame_system::EnsureSignedBy;
-use pallet_traits::{EmergencyShutdown, PriceProvider, Rate};
 use sp_core::H256;
 use sp_runtime::{
 	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup, One as OneT},
@@ -191,6 +191,8 @@ impl pallet_assets::Config for Runtime {
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
 	type Holder = AssetsHolder;
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 impl pallet_auction::Config for Runtime {
@@ -227,7 +229,7 @@ impl pallet_cdp_treasury::Config for Runtime {
 }
 
 pub struct MockCDPTreasury;
-impl pallet_traits::CDPTreasury<AccountId> for MockCDPTreasury {
+impl CDPTreasury<AccountId> for MockCDPTreasury {
 	fn account_id() -> AccountId {
 		TreasuryAccount::get()
 	}
@@ -422,8 +424,6 @@ impl ExtBuilder {
 
 		t.into()
 	}
-
-
 }
 
 impl fungibles::Inspect<AccountId> for MockCurrency {

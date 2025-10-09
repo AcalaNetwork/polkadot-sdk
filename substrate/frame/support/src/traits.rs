@@ -138,7 +138,7 @@ pub use tasks::Task;
 mod proving;
 pub use proving::*;
 
-mod honzon;
+pub mod honzon;
 pub use honzon::*;
 
 #[cfg(feature = "try-runtime")]

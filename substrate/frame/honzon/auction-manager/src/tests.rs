@@ -21,20 +21,21 @@
 #![cfg(test)]
 
 use super::pallet::Error;
-use crate::{ 
-	mock::{ 
+use crate::{
+	mock::{
 		mock_shutdown, AccountId, Assets, AuctionId, AuctionManagerModule, AuctionModule, Balance,
 		BlockNumber, CDPTreasuryModule, ExtBuilder, Runtime, RuntimeEvent, RuntimeOrigin, System,
 		ALICE, BOB, CAROL, NATIVE, STABLE,
 	},
 	pallet::{CollateralAuctions, Event, TotalCollateralInAuction, TotalTargetInAuction},
 };
-use frame_support::{ 
+use frame_support::{
 	assert_noop, assert_ok,
-	traits::AuctionHandler,
+	traits::{
+		honzon::{AuctionManager, CDPTreasury, Rate},
+		AuctionHandler,
+	},
 };
-use pallet_traits::{AuctionManager, CDPTreasury, Rate};
-
 
 // #[test]
 // fn get_auction_time_to_close_work() {

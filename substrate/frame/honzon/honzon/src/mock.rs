@@ -22,25 +22,25 @@
 
 use crate::Config;
 use frame_support::{
-	construct_runtime, ord_parameter_types, parameter_types, pallet_prelude::*,
+	construct_runtime, ord_parameter_types,
+	pallet_prelude::*,
+	parameter_types,
 	traits::{
-		tokens::fungible::UnionOf, AsEnsureOriginWithArg, ConstU16, ConstU32, ConstU64, Everything,
-		SortedMembers,
+		honzon::{
+			bounded::FractionalRate, AuctionManager, EmergencyShutdown, ExchangeRate,
+			LiquidationTarget, PriceProvider, Rate, Ratio, RiskManager,
+		},
+		tokens::fungible::UnionOf,
+		AsEnsureOriginWithArg, ConstU16, ConstU32, ConstU64, Everything, SortedMembers,
 	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
 use pallet_asset_conversion::{AccountIdConverter, Ascending, Chain, WithFirstAsset};
-use pallet_traits::{
-	bounded::FractionalRate, AuctionManager, EmergencyShutdown, ExchangeRate, LiquidationTarget,
-	PriceProvider, Rate, Ratio, RiskManager,
-};
 use scale_info::TypeInfo;
 use sp_core::{H256, U256};
 use sp_runtime::{
-	traits::{
-		AccountIdConversion, BlakeTwo256, Convert, IdentityLookup,
-	},
+	traits::{AccountIdConversion, BlakeTwo256, Convert, IdentityLookup},
 	BuildStorage, DispatchError, DispatchResult, Either, FixedU128, Permill, RuntimeDebug,
 };
 
@@ -228,6 +228,8 @@ impl pallet_assets::Config for Runtime {
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
 	type Holder = ();
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 pub struct MockRiskManager;
@@ -352,9 +354,9 @@ parameter_types! {
 	pub LiquidityWithdrawalFee: Permill = Permill::from_percent(0);
 }
 
-pub type NativeAndAssets = UnionOf<PalletBalances, Fungibles, AssetKindConverter, AssetKind, Balance>;
-pub type PoolIdToAccountId =
-	AccountIdConverter<AssetConversionPalletId, (AssetKind, AssetKind)>;
+pub type NativeAndAssets =
+	UnionOf<PalletBalances, Fungibles, AssetKindConverter, AssetKind, Balance>;
+pub type PoolIdToAccountId = AccountIdConverter<AssetConversionPalletId, (AssetKind, AssetKind)>;
 pub type AscendingLocator = Ascending<AccountId, AssetKind, PoolIdToAccountId>;
 
 parameter_types! {
@@ -449,7 +451,8 @@ impl Config for Runtime {
 }
 
 pub struct ExtBuilder {
-	balances: Vec<(AccountId, CurrencyId, Balance)>,}
+	balances: Vec<(AccountId, CurrencyId, Balance)>,
+}
 
 impl Default for ExtBuilder {
 	fn default() -> Self {
@@ -465,10 +468,7 @@ impl ExtBuilder {
 			self.balances.into_iter().partition(|b| b.1 == NATIVE_ID);
 
 		pallet_balances::GenesisConfig::<Runtime> {
-			balances: native_balances
-				.into_iter()
-				.map(|(id, _, balance)| (id, balance))
-				.collect(),
+			balances: native_balances.into_iter().map(|(id, _, balance)| (id, balance)).collect(),
 			dev_accounts: None,
 		}
 		.assimilate_storage(&mut t)

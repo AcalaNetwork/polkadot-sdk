@@ -1,43 +1,30 @@
-// This file is part of Acala.
+// This file is part of Substrate.
 
-// Copyright (C) 2020-2025 Acala Foundation.
-// SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
+// Copyright (C) Parity Technologies (UK) Ltd.
+// SPDX-License-Identifier: Apache-2.0
 
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+//! Types for the Honzon protocol.
 
-// You should have received a copy of the GNU General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-// TODO: this is not a pallet, but a traits library, need to rename it or break it
-
-#![doc = "This crate provides a collection of shared traits and types for the Honzon protocol and its related pallets."]
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(clippy::upper_case_acronyms)]
-#![allow(clippy::from_over_into)]
-#![allow(clippy::type_complexity)]
 
-use codec::{Decode, Encode};
+use codec::{Decode, Encode, MaxEncodedLen};
+use scale_info::TypeInfo;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 use sp_runtime::{traits::CheckedDiv, DispatchError, DispatchResult, FixedU128, RuntimeDebug};
 use sp_std::prelude::*;
-
-pub mod bounded;
-pub mod honzon;
-
-pub use crate::{bounded::*, honzon::*};
-
-pub mod liquidation;
-
-pub use crate::liquidation::*;
 
 pub trait GetByKey<Key, Value> {
 	fn get(key: &Key) -> Value;
@@ -92,8 +79,6 @@ pub trait PriceProvider<CurrencyId> {
 	}
 }
 
-
-
 /// Used to lock and unlock prices.
 pub trait LockablePrice<CurrencyId> {
 	/// Lock the price of a currency.
@@ -139,4 +124,26 @@ impl<AccountId, CurrencyId: Clone, Balance: Clone>
 		let last_error = last_error.unwrap_or(DispatchError::Other("No liquidation impl."));
 		Err(last_error)
 	}
+}
+
+/// A limit on the amount of assets to swap.
+#[derive(Encode, Decode, Eq, PartialEq, Copy, Clone, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+pub enum SwapLimit<Balance> {
+	/// Swap with exact supply amount, and minimum target amount.
+	ExactSupply(Balance, Balance),
+	/// Swap with exact target amount, and maximum supply amount.
+	ExactTarget(Balance, Balance),
+}
+
+/// A collateralized debt position.
+#[derive(
+	Encode, Decode, Eq, PartialEq, Copy, Clone, RuntimeDebug, Default, MaxEncodedLen, TypeInfo,
+)]
+pub struct Position<Balance> {
+	/// The amount of collateral.
+	pub collateral: Balance,
+	/// The amount of debit.
+	pub debit: Balance,
+	/// The stability fee used for this position.
+	pub stability_fee: Ratio,
 }

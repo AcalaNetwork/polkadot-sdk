@@ -68,7 +68,7 @@ use frame_support::{
 use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
 use pallet_loans::BalanceOf;
 use pallet_asset_conversion::Swap;
-use pallet_traits::{
+use frame_support::traits::honzon::{
 	CDPTreasury, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate, FractionalRate,
 	LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 };

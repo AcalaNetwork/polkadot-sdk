@@ -20,34 +20,29 @@
 
 #![cfg(test)]
 
-use crate::mock::{Honzon, ExtBuilder, RuntimeOrigin, ALICE};
-use frame_support::{assert_noop, assert_ok};
-use pallet_traits::Rate;
+use crate::mock::{ExtBuilder, Honzon, RuntimeOrigin, ALICE};
+use frame_support::{assert_noop, assert_ok, traits::honzon::Rate};
 use sp_runtime::DispatchError;
 
 fn new_test_ext() -> sp_io::TestExternalities {
-    ExtBuilder::default().build()
+	ExtBuilder::default().build()
 }
 
 #[test]
 fn set_stability_fee_should_work_for_admin() {
-    new_test_ext().execute_with(|| {
-        let new_fee = Rate::from_rational(1, 100); // 1%
-        assert_ok!(Honzon::set_stability_fee(
-            RuntimeOrigin::root(),
-            ALICE,
-            new_fee
-        ));
-    });
+	new_test_ext().execute_with(|| {
+		let new_fee = Rate::from_rational(1, 100); // 1%
+		assert_ok!(Honzon::set_stability_fee(RuntimeOrigin::root(), ALICE, new_fee));
+	});
 }
 
 #[test]
 fn set_stability_fee_should_fail_for_non_admin() {
-    new_test_ext().execute_with(|| {
-        let new_fee = Rate::from_rational(1, 100); // 1%
-        assert_noop!(
-            Honzon::set_stability_fee(RuntimeOrigin::signed(ALICE), ALICE, new_fee),
-            DispatchError::BadOrigin
-        );
-    });
+	new_test_ext().execute_with(|| {
+		let new_fee = Rate::from_rational(1, 100); // 1%
+		assert_noop!(
+			Honzon::set_stability_fee(RuntimeOrigin::signed(ALICE), ALICE, new_fee),
+			DispatchError::BadOrigin
+		);
+	});
 }

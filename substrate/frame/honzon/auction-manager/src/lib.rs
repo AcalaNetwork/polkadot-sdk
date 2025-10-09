@@ -42,7 +42,7 @@ use frame_support::{
 	transactional,
 };
 use frame_system::pallet_prelude::*;
-use pallet_traits::{AuctionManager, CDPTreasury, EmergencyShutdown, PriceProvider, Rate};
+use frame_support::traits::honzon::{AuctionManager, CDPTreasury, EmergencyShutdown, PriceProvider, Rate};
 use scale_info::TypeInfo;
 use sp_runtime::{
 	traits::{AtLeast32BitUnsigned, Saturating, Zero},

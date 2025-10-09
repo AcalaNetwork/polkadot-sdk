@@ -47,15 +47,18 @@
 //! After a system shutdown, some operations will be restricted.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(clippy::unused_unit)]
 
 use frame_support::{
 	pallet_prelude::*,
-	traits::{Get, NamedReservableCurrency},
+	traits::{
+		honzon::{
+			EmergencyShutdown, ExchangeRate, HonzonManager, Position, PriceProvider, Rate, Ratio,
+		},
+		Get, NamedReservableCurrency,
+	},
 };
 use frame_system::pallet_prelude::*;
 use pallet_loans::BalanceOf;
-use pallet_traits::{EmergencyShutdown, ExchangeRate, HonzonManager, PriceProvider, Rate, Ratio};
 use sp_core::U256;
 use sp_runtime::{traits::StaticLookup, DispatchResult};
 use sp_std::prelude::*;
@@ -325,9 +328,7 @@ impl<T: Config>
 		Self::do_close_loan_by_dex(who, max_collateral_amount)
 	}
 
-	fn get_position(
-		who: &<T as frame_system::Config>::AccountId,
-	) -> pallet_traits::Position<BalanceOf<T>> {
+	fn get_position(who: &<T as frame_system::Config>::AccountId) -> Position<BalanceOf<T>> {
 		<pallet_loans::Pallet<T>>::positions(who)
 	}
 
@@ -344,8 +345,7 @@ impl<T: Config>
 
 	fn get_current_collateral_ratio(who: &<T as frame_system::Config>::AccountId) -> Option<Ratio> {
 		let currency_id = <T as crate::Config>::CollateralCurrencyId::get();
-		let position: pallet_traits::Position<BalanceOf<T>> =
-			<pallet_loans::Pallet<T>>::positions(who);
+		let position: Position<BalanceOf<T>> = <pallet_loans::Pallet<T>>::positions(who);
 		let stable_currency_id = <T as crate::Config>::GetStableCurrencyId::get();
 		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
 

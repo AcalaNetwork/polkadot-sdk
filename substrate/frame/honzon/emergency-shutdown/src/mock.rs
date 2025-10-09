@@ -29,7 +29,7 @@ use frame_support::{
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_traits::{
+use frame_support::traits::honzon::{
 	AuctionManager, CDPTreasury, LockablePrice, PriceProvider, RiskManager,
 	Swap, SwapLimit,
 };

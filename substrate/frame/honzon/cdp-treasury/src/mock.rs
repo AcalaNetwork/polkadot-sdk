@@ -25,13 +25,13 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	construct_runtime, derive_impl, parameter_types,
 	traits::{
+		honzon::{AuctionManager, SwapLimit},
 		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, EitherOfDiverse, Everything,
 		Incrementable, InstanceFilter, OnUnbalanced, SortedMembers,
 	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_traits::{AuctionManager, Swap, SwapLimit};
 use scale_info::TypeInfo;
 use sp_core::H256;
 use sp_runtime::{traits::IdentityLookup, BuildStorage, DispatchError, DispatchResult, Permill};

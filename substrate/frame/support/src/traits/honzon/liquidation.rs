@@ -1,4 +1,3 @@
-
 use sp_runtime::DispatchError;
 
 /// A trait for something that can participate in a liquidation.
@@ -30,8 +29,8 @@ pub trait LiquidationTarget<AccountId, CurrencyId, Balance> {
 #[derive(Default, Clone, Copy, Eq, PartialEq, Debug)]
 pub struct MockLiquidationStrategy;
 
-impl<AccountId, CurrencyId, Balance: Default>
-	LiquidationTarget<AccountId, CurrencyId, Balance> for MockLiquidationStrategy
+impl<AccountId, CurrencyId, Balance: Default> LiquidationTarget<AccountId, CurrencyId, Balance>
+	for MockLiquidationStrategy
 {
 	fn liquidate(
 		_who: &AccountId,

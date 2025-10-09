@@ -1,2 +1,35 @@
+// This file is part of Substrate.
+
+// Copyright (C) Parity Technologies (UK) Ltd.
+// SPDX-License-Identifier: Apache-2.0
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Traits related to honzon protocol
 pub mod auction;
+pub mod auction_manager;
+pub mod bounded;
+pub mod cdp_treasury;
+pub mod honzon_manager;
+pub mod liquidation;
+pub mod risk_manager;
+pub mod types;
+
 pub use auction::*;
+pub use auction_manager::*;
+pub use bounded::*;
+pub use cdp_treasury::*;
+pub use honzon_manager::*;
+pub use liquidation::*;
+pub use risk_manager::*;
+pub use types::*;
