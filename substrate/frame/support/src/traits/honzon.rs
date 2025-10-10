@@ -24,6 +24,7 @@ pub mod honzon_manager;
 pub mod liquidation;
 pub mod risk_manager;
 pub mod types;
+pub mod connections;
 
 pub use auction::*;
 pub use auction_manager::*;
@@ -33,3 +34,4 @@ pub use honzon_manager::*;
 pub use liquidation::*;
 pub use risk_manager::*;
 pub use types::*;
+pub use connections::*;

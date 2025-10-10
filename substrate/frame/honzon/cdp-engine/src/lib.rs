@@ -59,10 +59,10 @@
 #![allow(clippy::unused_unit)]
 #![allow(clippy::upper_case_acronyms)]
 
-use codec::MaxEncodedLen;
+use codec::{Encode, MaxEncodedLen};
 use frame_support::{
 	pallet_prelude::*,
-	traits::{fungible, fungibles, fungibles::Mutate, tokens::Preservation, Change, UnixTime},
+	traits::{fungible::{self, Mutate}, fungibles::{self, Mutate as FungiblesMutate}, tokens::Preservation, Change, UnixTime},
 	transactional, PalletId,
 };
 use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
@@ -71,6 +71,7 @@ use pallet_asset_conversion::Swap;
 use frame_support::traits::honzon::{
 	CDPTreasury, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate, FractionalRate,
 	LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
+	VaultProvider,
 };
 use scale_info::TypeInfo;
 use sp_runtime::{
@@ -80,7 +81,8 @@ use sp_runtime::{
 		Duration,
 	},
 	traits::{
-		Bounded, One, Saturating, StaticLookup, UniqueSaturatedInto, Zero,
+		AccountIdConversion, AtLeast32BitUnsigned, Bounded, One, Saturating, StaticLookup,
+		UniqueSaturatedInto, Zero,
 	},
 	transaction_validity::{
 		InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
@@ -232,10 +234,10 @@ pub mod pallet {
 
 		/// Single-currency interface used for loan accounting and collateral holds.
 		type Currency: fungible::MutateHold<
-			Self::AccountId,
-			Balance = pallet_loans::BalanceOf<Self>,
-			Reason = <Self as pallet_loans::Config>::RuntimeHoldReason,
-		>;
+				Self::AccountId,
+				Balance = pallet_loans::BalanceOf<Self>,
+				Reason = <Self as pallet_loans::Config>::RuntimeHoldReason,
+			> + fungible::Mutate<Self::AccountId, Balance = pallet_loans::BalanceOf<Self>>;
 
 		/// Multi-currency interface for working with specific assets.
 		type Tokens: fungibles::Mutate<
@@ -256,6 +258,15 @@ pub mod pallet {
 
 		#[pallet::constant]
 		type PalletId: Get<PalletId>;
+
+		/// The unique identifier for a vault.
+		type VaultId: Member
+			+ Parameter
+			+ AtLeast32BitUnsigned
+			+ Default
+			+ Copy
+			+ MaxEncodedLen
+			+ Encode;
 
 		/// Weight information for the extrinsics in this module.
 		type WeightInfo: WeightInfo;
@@ -1328,5 +1339,156 @@ impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T>, Balan
 		ensure!(total_debit_value <= hard_cap, Error::<T>::ExceedDebitValueHardCap);
 
 		Ok(())
+	}
+}
+
+fn vault_account_id<T: Config>(vault_id: T::VaultId) -> T::AccountId {
+	<T as pallet::Config>::PalletId::get().into_sub_account_truncating(vault_id)
+}
+
+impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::VaultId> for Pallet<T> {
+	type AssetId = CurrencyIdOf<T>;
+
+	fn create_vault(_vault_id: T::VaultId, _owner: &T::AccountId) -> DispatchResult {
+		// No-op, as positions in pallet-loans are created on the first adjustment.
+		Ok(())
+	}
+
+	#[transactional]
+	fn deposit_collateral(
+		vault_id: &T::VaultId,
+		from: &T::AccountId,
+		amount: BalanceOf<T>,
+	) -> DispatchResult {
+		let vault_account = vault_account_id::<T>(*vault_id);
+
+		// Transfer collateral from the user to the vault's account.
+		<T as pallet::Config>::Currency::transfer(from, &vault_account, amount, Preservation::Preserve)?;
+
+		// Increase the collateral in the vault's position.
+		let collateral_adjustment = pallet_loans::BalanceAdjustment::increase(amount);
+		let debit_adjustment = pallet_loans::BalanceAdjustment::increase(BalanceOf::<T>::zero());
+		<LoansOf<T>>::adjust_position(
+			&vault_account,
+			collateral_adjustment,
+			debit_adjustment,
+			None,
+		)?;
+
+		Ok(())
+	}
+
+	#[transactional]
+	fn withdraw_collateral(
+		vault_id: &T::VaultId,
+		to: &T::AccountId,
+		amount: BalanceOf<T>,
+	) -> DispatchResult {
+		let vault_account = vault_account_id::<T>(*vault_id);
+
+		// Decrease the collateral in the vault's position.
+		let collateral_adjustment = pallet_loans::BalanceAdjustment::decrease(amount);
+		let debit_adjustment = pallet_loans::BalanceAdjustment::increase(BalanceOf::<T>::zero());
+		<LoansOf<T>>::adjust_position(
+			&vault_account,
+			collateral_adjustment,
+			debit_adjustment,
+			None,
+		)?;
+
+		// Transfer the released collateral from the vault's account back to the user.
+		<T as pallet::Config>::Currency::transfer(&vault_account, to, amount, Preservation::Preserve)?;
+
+		Ok(())
+	}
+
+	#[transactional]
+	fn mint(vault_id: &T::VaultId, to: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
+		let vault_account = vault_account_id::<T>(*vault_id);
+		let stable_currency_id = T::GetStableCurrencyId::get();
+
+		// Convert the stablecoin amount to the equivalent debit amount.
+		let debit_amount = Self::try_convert_to_debit_balance(
+			amount,
+			Self::get_interest_rate_per_sec()?,
+		)
+		.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
+
+		// Increase the debit in the vault's position. This will mint stablecoin to the vault's
+		// account.
+		let debit_adjustment = pallet_loans::BalanceAdjustment::increase(debit_amount);
+		let collateral_adjustment =
+			pallet_loans::BalanceAdjustment::increase(BalanceOf::<T>::zero());
+		<LoansOf<T>>::adjust_position(
+			&vault_account,
+			collateral_adjustment,
+			debit_adjustment,
+			Some(Self::get_interest_rate_per_sec()?),
+		)?;
+
+		// Transfer the newly minted stablecoin from the vault's account to the user.
+		<T as Config>::Tokens::transfer(
+			stable_currency_id,
+			&vault_account,
+			to,
+			amount,
+			Preservation::Preserve,
+		)?;
+
+		Ok(())
+	}
+
+	#[transactional]
+	fn repay(vault_id: &T::VaultId, from: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
+		let vault_account = vault_account_id::<T>(*vault_id);
+		let stable_currency_id = T::GetStableCurrencyId::get();
+		let position = <LoansOf<T>>::positions(&vault_account);
+		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
+
+		// Transfer stablecoin from the user to the vault's account for repayment.
+		<T as Config>::Tokens::transfer(
+			stable_currency_id,
+			from,
+			&vault_account,
+			amount,
+			Preservation::Preserve,
+		)?;
+
+		// Convert the stablecoin amount to the equivalent debit amount.
+		let debit_amount = Self::try_convert_to_debit_balance(
+			amount,
+			Self::get_effective_stability_fee(stability_fee)?,
+		)
+		.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
+
+		// Decrease the debit in the vault's position. This will burn the stablecoin from the
+		// vault's account.
+		let debit_adjustment = pallet_loans::BalanceAdjustment::decrease(debit_amount);
+		let collateral_adjustment =
+			pallet_loans::BalanceAdjustment::increase(BalanceOf::<T>::zero());
+		<LoansOf<T>>::adjust_position(
+			&vault_account,
+			collateral_adjustment,
+			debit_adjustment,
+			None,
+		)?;
+
+		Ok(())
+	}
+
+	fn close_vault(vault_id: &T::VaultId) -> DispatchResult {
+		let vault_account = vault_account_id::<T>(*vault_id);
+		let position = <LoansOf<T>>::positions(&vault_account);
+		ensure!(
+			position.collateral.is_zero() && position.debit.is_zero(),
+			"Vault is not empty"
+		);
+		Ok(())
+	}
+
+	fn has_debt(vault_id: &T::VaultId) -> Result<bool, DispatchError> {
+		let vault_account = vault_account_id::<T>(*vault_id);
+		let position = <LoansOf<T>>::positions(&vault_account);
+		Ok(!position.debit.is_zero())
 	}
 }

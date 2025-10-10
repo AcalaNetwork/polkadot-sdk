@@ -48,7 +48,7 @@ pub mod pallet {
 		},
 		transactional, PalletId,
 	};
-	use pallet_traits::{
+	use frame_support::traits::honzon::{
 		CDPTreasury, Handler, LiquidationTarget, Position, Rate, Ratio, RiskManager,
 	};
 	use sp_runtime::{

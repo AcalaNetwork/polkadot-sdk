@@ -147,3 +147,28 @@ pub struct Position<Balance> {
 	/// The stability fee used for this position.
 	pub stability_fee: Ratio,
 }
+
+/// The current status of a connection.
+#[derive(Clone, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, PartialEq)]
+pub enum ConnectionStatus<Balance, BlockNumber> {
+	/// The connection is active and collateral can be withdrawn.
+	Active,
+	/// A withdrawal has been initiated and the pallet is waiting for the destination to complete it.
+	WithdrawalInProgress {
+		/// The amount of stables being withdrawn.
+		amount: Balance,
+		/// The block number when the withdrawal was initiated.
+		initiated_at: BlockNumber,
+	},
+}
+
+/// Represents an integrated position across a vault and a liquidity destination.
+#[derive(Clone, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, PartialEq)]
+pub struct Connection<AccountId, DestinationId, Balance, BlockNumber> {
+	/// The owner of the connection.
+	pub owner: AccountId,
+	/// The destination where liquidity is deposited.
+	pub destination_id: DestinationId,
+	/// The current status of the connection.
+	pub status: ConnectionStatus<Balance, BlockNumber>,
+}

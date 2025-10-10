@@ -3,11 +3,9 @@
 
 pub use pallet::*;
 
-mod traits;
-mod types;
-
-pub use traits::{LiquidityRouter, VaultProvider};
-pub use types::{Connection, ConnectionStatus};
+use frame_support::traits::honzon::{
+    Connection, ConnectionStatus, LiquidityRouter, VaultProvider,
+};
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -31,8 +29,15 @@ pub mod pallet {
         type Balance: Member + Parameter + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
         /// The block number type.
         type BlockNumber: Member + Parameter + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
+        /// The currency ID type.
+        type CurrencyId: Member + Parameter + Copy + sp_runtime::traits::MaybeSerializeDeserialize + Ord + MaxEncodedLen;
         /// The provider for vault management logic.
-        type VaultProvider: VaultProvider<Self::AccountId, Self::Balance, Self::ConnectionId>;
+        type VaultProvider: VaultProvider<
+            Self::AccountId,
+            Self::Balance,
+            Self::CurrencyId,
+            Self::ConnectionId,
+        >;
         /// The router for liquidity destination logic.
         type LiquidityRouter: LiquidityRouter<Self::AccountId, Self::Balance, Self::ConnectionId>;
         /// The origin that can add new liquidity destinations.
