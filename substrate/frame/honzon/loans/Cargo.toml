@@ -15,8 +15,6 @@ sp-arithmetic = { workspace = true, default-features = false }
 sp-runtime = { workspace = true, default-features = false }
 sp-std = { workspace = true, default-features = false }
 
-pallet-traits = { workspace = true, default-features = false }
-
 [dev-dependencies]
 pallet-assets = { workspace = true, features = ["std"] }
 pallet-assets-holder = { workspace = true, features = ["std"] }
@@ -32,7 +30,6 @@ std = [
 	"codec/std",
 	"frame-support/std",
 	"frame-system/std",
-	"pallet-traits/std",
 	"scale-info/std",
 	"sp-arithmetic/std",
 	"sp-runtime/std",

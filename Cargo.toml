@@ -388,12 +388,12 @@ members = [
 	"substrate/frame/honzon/auction-manager",
 	"substrate/frame/honzon/cdp-engine",
 	"substrate/frame/honzon/cdp-treasury",
+	"substrate/frame/honzon/connections",
 	"substrate/frame/honzon/emergency-shutdown",
 	"substrate/frame/honzon/honzon",
 	"substrate/frame/honzon/issuance-buffer",
 	"substrate/frame/honzon/loans",
 	"substrate/frame/honzon/savings",
-	"substrate/frame/honzon/traits",
 	"substrate/frame/honzon/oracle",
 	"substrate/frame/honzon/oracle/runtime-api",
 	"substrate/frame/identity",
@@ -644,11 +644,11 @@ pallet-auction = { path = "substrate/frame/honzon/auction", default-features = f
 pallet-auction-manager = { path = "substrate/frame/honzon/auction-manager", default-features = false }
 pallet-cdp-engine = { path = "substrate/frame/honzon/cdp-engine", default-features = false }
 pallet-cdp-treasury = { path = "substrate/frame/honzon/cdp-treasury", default-features = false }
+pallet-connections = { path = "substrate/frame/honzon/connections", default-features = false }
 pallet-emergency-shutdown = { path = "substrate/frame/honzon/emergency-shutdown", default-features = false }
 pallet-honzon = { path = "substrate/frame/honzon/honzon", default-features = false }
 pallet-issuance-buffer = { path = "substrate/frame/honzon/issuance-buffer", default-features = false }
 pallet-loans = { path = "substrate/frame/honzon/loans", default-features = false }
-pallet-traits = { path = "substrate/frame/honzon/traits", default-features = false }
 pallet-savings = { path = "substrate/frame/honzon/savings", default-features = false }
 pallet-oracle = { path = "substrate/frame/honzon/oracle", default-features = false }
 pallet-oracle-runtime-api = { path = "substrate/frame/honzon/oracle/runtime-api", default-features = false }

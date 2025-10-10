@@ -11608,7 +11608,6 @@ dependencies = [
  "pallet-auction",
  "pallet-balances",
  "pallet-cdp-treasury",
- "pallet-traits",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -11980,7 +11979,6 @@ dependencies = [
  "pallet-balances",
  "pallet-cdp-treasury",
  "pallet-loans",
- "pallet-traits",
  "parity-scale-codec",
  "rand_chacha 0.3.1",
  "scale-info",
@@ -12004,7 +12002,6 @@ dependencies = [
  "pallet-assets",
  "pallet-auction",
  "pallet-balances",
- "pallet-traits",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -12079,6 +12076,22 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core 28.0.0",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-connections"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "pallet-assets",
+ "pallet-balances",
  "parity-scale-codec",
  "scale-info",
  "sp-core 28.0.0",
@@ -12451,7 +12464,6 @@ dependencies = [
  "pallet-balances",
  "pallet-cdp-treasury",
  "pallet-loans",
- "pallet-traits",
  "parity-scale-codec",
  "scale-info",
  "sp-core 28.0.0",
@@ -12713,7 +12725,6 @@ dependencies = [
  "pallet-cdp-treasury",
  "pallet-loans",
  "pallet-timestamp",
- "pallet-traits",
  "parity-scale-codec",
  "scale-info",
  "sp-arithmetic",
@@ -12798,7 +12809,6 @@ dependencies = [
  "pallet-cdp-treasury",
  "pallet-loans",
  "pallet-oracle",
- "pallet-traits",
  "parity-scale-codec",
  "scale-info",
  "sp-arithmetic",
@@ -12819,7 +12829,6 @@ dependencies = [
  "pallet-assets-holder",
  "pallet-balances",
  "pallet-cdp-treasury",
- "pallet-traits",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -14193,23 +14202,6 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-storage 19.0.0",
-]
-
-[[package]]
-name = "pallet-traits"
-version = "1.0.0"
-dependencies = [
- "frame-support",
- "frame-system",
- "impl-trait-for-tuples",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "serde_json",
- "sp-core 28.0.0",
- "sp-io",
- "sp-runtime",
- "sp-std 14.0.0",
 ]
 
 [[package]]
