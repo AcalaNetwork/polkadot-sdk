@@ -1,31 +1,55 @@
-// This file is part of Acala.
+// This file is part of Substrate.
 
 // Copyright (C) 2020-2025 Acala Foundation.
-// SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
+// SPDX-License-Identifier: Apache-2.0
 
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
-
-// You should have received a copy of the GNU General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-//! # Loans Module
+//! # Loans Pallet
+//!
+//! A pallet for managing Collateralized Debt Positions (CDPs) with automated liquidation and risk
+//! management.
+//!
+//! ## Pallet API
+//!
+//! See the [`pallet`] module for more information about the interfaces this pallet exposes,
+//! including its configuration trait, dispatchables, storage items, events and errors.
 //!
 //! ## Overview
 //!
-//! Loans module manages CDP\'s collateral assets and the debits backed by these
-//! assets.
+//! The Loans pallet enables users to create and manage Collateralized Debt Positions (CDPs) by
+//! locking collateral assets and borrowing stable currency against them. The pallet provides
+//! automated risk management through liquidation mechanisms and stability fee tracking.
+//!
+//! Key features include:
+//!
+//! - **Position Management**: Create, modify, and close CDP positions
+//! - **Risk Management**: Automated liquidation when positions become undercollateralized
+//! - **Stability Fees**: Track and apply interest rates to borrowed amounts
+//! - **Atomic Operations**: All position adjustments are atomic to prevent inconsistent states
+//! - **Transfer Support**: Transfer entire loan positions between accounts
+//!
+//! ### Terminology
+//!
+//! - **CDP (Collateralized Debt Position)**: A position where a user locks collateral and borrows
+//!   stable currency
+//! - **Collateral**: Assets locked by users to back their borrowed stable currency
+//! - **Debit**: The amount of stable currency borrowed against collateral
+//! - **Stability Fee**: Interest rate applied to borrowed amounts
+//! - **Liquidation**: Process of selling collateral to repay debt when position becomes risky
+//! - **Risk Manager**: Component responsible for validating position safety and liquidation logic
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(clippy::unused_unit)]
-#![allow(clippy::collapsible_if)]
 
 pub use pallet::*;
 
@@ -44,12 +68,10 @@ pub mod pallet {
 		pallet_prelude::*,
 		traits::{
 			fungible::{hold::Mutate as HoldMutate, Inspect},
+			honzon::{CDPTreasury, Handler, LiquidationTarget, Position, Rate, Ratio, RiskManager},
 			tokens::{Fortitude, Precision, Restriction},
 		},
 		transactional, PalletId,
-	};
-	use frame_support::traits::honzon::{
-		CDPTreasury, Handler, LiquidationTarget, Position, Rate, Ratio, RiskManager,
 	};
 	use sp_runtime::{
 		traits::{AccountIdConversion, Saturating, Zero},
@@ -62,8 +84,6 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
-		// Amount type is no longer needed - we use BalanceAdjustment instead
-
 		/// Currency type for handling collateral holds on user accounts.
 		type Currency: HoldMutate<Self::AccountId, Reason = Self::RuntimeHoldReason>;
 
@@ -383,9 +403,6 @@ pub mod pallet {
 				}
 
 				// use the collateral amount as the shares for Loans incentives
-				// NOTE: but for KSM loans in Karura, the debit amount was used before,
-				// and the data will been messed up, before migration or calibration,
-				// it is forbidden to turn on incentives for pool LoansIncentive(KSM).
 				T::OnUpdateLoan::handle(&(who.clone(), collateral_adjustment, p.collateral))?;
 				p.collateral = new_collateral;
 				p.debit = new_debit;
@@ -412,8 +429,8 @@ pub mod pallet {
 					});
 				}
 
+				// decrease account ref if zero position
 				if p.collateral.is_zero() && p.debit.is_zero() {
-					// decrease account ref if zero position
 					frame_system::Pallet::<T>::dec_consumers(who);
 
 					// remove position storage if zero position
@@ -425,6 +442,7 @@ pub mod pallet {
 				Ok(())
 			})?;
 
+			// update total positions
 			TotalPositions::<T>::try_mutate(|total_positions| -> DispatchResult {
 				total_positions.collateral =
 					collateral_adjustment.apply_to(total_positions.collateral)?;

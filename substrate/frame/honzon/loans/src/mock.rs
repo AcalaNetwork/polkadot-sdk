@@ -1,4 +1,4 @@
-// This file is part of Acala.
+// This file is part of Substrate.
 
 // Copyright (C) 2020-2025 Acala Foundation.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
@@ -20,17 +20,21 @@
 
 #![cfg(test)]
 
-use super::*;
-use codec::{Decode, Encode};
+use crate as pallet_loans;
+use codec::{Decode, DecodeWithMemTracking, Encode};
 use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types,
 	pallet_prelude::*,
 	parameter_types,
-	traits::{tokens::fungible::UnionOf, AsEnsureOriginWithArg, ConstU128, ConstU32},
+	traits::{
+		honzon::{AuctionManager, Handler, MockLiquidationStrategy, RiskManager},
+		tokens::fungible::UnionOf,
+		AsEnsureOriginWithArg, ConstU128, ConstU32,
+	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_traits::{honzon::*, Handler, MockLiquidationStrategy, Swap, SwapLimit};
+use serde::{Deserialize, Serialize};
 use sp_runtime::{
 	traits::{AccountIdConversion, Convert, IdentityLookup},
 	BuildStorage, DispatchResult, Either,
@@ -45,7 +49,7 @@ pub const BOB: AccountId = 2;
 construct_runtime!(
 	pub enum Runtime {
 		System: frame_system,
-		Loans: pallet,
+		Loans: pallet_loans,
 		Assets: pallet_assets,
 		PalletBalances: pallet_balances,
 		CDPTreasuryModule: pallet_cdp_treasury,
@@ -114,9 +118,10 @@ impl pallet_assets::Config for Runtime {
 	MaxEncodedLen,
 	TypeInfo,
 	Default,
-	codec::DecodeWithMemTracking,
+	DecodeWithMemTracking,
+	Serialize,
+	Deserialize,
 )]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub enum CurrencyId {
 	#[default]
 	Native,
@@ -156,37 +161,9 @@ ord_parameter_types! {
 }
 
 parameter_types! {
-	pub const CDPTreasuryPalletId: PalletId = PalletId(*b"aca/cdpt");
-	pub TreasuryAccount: AccountId = PalletId(*b"aca/hztr").into_account_truncating();
+	pub const CDPTreasuryPalletId: PalletId = PalletId(*b"py/cdptr");
+	pub TreasuryAccount: AccountId = PalletId(*b"py/cdpta").into_account_truncating();
 	pub const StableCurrencyIdValue: CurrencyId = CurrencyId::Stable;
-}
-
-pub struct MockSwap;
-impl Swap<u128, u128, CurrencyId> for MockSwap {
-	fn swap(
-		_who: &u128,
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_limit: SwapLimit<u128>,
-	) -> Result<(u128, u128), DispatchError> {
-		Ok((1, 1))
-	}
-
-	fn get_swap_amount(
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_limit: SwapLimit<u128>,
-	) -> Option<(u128, u128)> {
-		Some((1, 1))
-	}
-
-	fn swap_by_path(
-		_who: &u128,
-		_path: &[CurrencyId],
-		_limit: SwapLimit<u128>,
-	) -> Result<(u128, u128), DispatchError> {
-		Ok((1, 1))
-	}
 }
 
 impl pallet_cdp_treasury::Config for Runtime {
@@ -202,8 +179,40 @@ impl pallet_cdp_treasury::Config for Runtime {
 	type GetBaseCurrencyId = CollateralCurrencyIdValue;
 	type Swap = MockSwap;
 	type Balance = Balance;
+	type AssetKind = CurrencyId;
 }
 
+pub struct MockSwap;
+impl pallet_asset_conversion::Swap<AccountId> for MockSwap {
+	type Balance = Balance;
+	type AssetKind = CurrencyId;
+
+	fn max_path_len() -> u32 {
+		2
+	}
+
+	fn swap_exact_tokens_for_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_in: Self::Balance,
+		_amount_out_min: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(0)
+	}
+
+	fn swap_tokens_for_exact_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_out: Self::Balance,
+		_amount_in_max: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(0)
+	}
+}
 // mock risk manager
 pub struct MockRiskManager;
 impl RiskManager<AccountId, CurrencyId, Balance, Balance> for MockRiskManager {
@@ -263,13 +272,13 @@ impl Handler<(u128, crate::BalanceAdjustment<u128>, u128)> for MockOnUpdateLoan 
 }
 
 parameter_types! {
-	pub const LoansPalletId: PalletId = PalletId(*b"aca/loan");
+	pub const LoansPalletId: PalletId = PalletId(*b"py/loans");
 	pub const CollateralCurrencyIdValue: CurrencyId = CurrencyId::Native;
 }
 
 pub type Collateral = PalletBalances;
 
-impl Config for Runtime {
+impl pallet_loans::Config for Runtime {
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = CDPTreasuryModule;
 	type PalletId = LoansPalletId;
@@ -282,15 +291,18 @@ impl Config for Runtime {
 }
 
 pub struct ExtBuilder {
-	balances: Vec<(AccountId, CurrencyId, Balance)>,
-	asset_balances: Vec<(AccountId, Balance)>,
+	balances: Vec<(AccountId, Balance)>,
+	asset_balances: Vec<(AccountId, CurrencyId, Balance)>,
 }
 
 impl Default for ExtBuilder {
 	fn default() -> Self {
 		Self {
-			balances: vec![(ALICE, CurrencyId::Stable, 10000), (BOB, CurrencyId::Stable, 10000)],
-			asset_balances: vec![(ALICE, 10000), (BOB, 10000)],
+			balances: vec![(ALICE, 10000), (BOB, 10000)],
+			asset_balances: vec![
+				(ALICE, CurrencyId::Stable, 10000),
+				(BOB, CurrencyId::Stable, 10000),
+			],
 		}
 	}
 }
@@ -300,7 +312,7 @@ impl ExtBuilder {
 		let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
 
 		pallet_balances::GenesisConfig::<Runtime> {
-			balances: self.asset_balances.iter().map(|(acc, b)| (*acc, *b)).collect(),
+			balances: self.balances.iter().map(|(acc, b)| (*acc, *b)).collect(),
 			dev_accounts: None,
 		}
 		.assimilate_storage(&mut t)
@@ -310,7 +322,7 @@ impl ExtBuilder {
 			assets: vec![(CurrencyId::Stable, ALICE, true, 1)],
 			metadata: vec![(CurrencyId::Stable, b"Stable".to_vec(), b"STB".to_vec(), 12)],
 			accounts: self
-				.balances
+				.asset_balances
 				.into_iter()
 				.map(|(account, asset, balance)| (asset, account, balance))
 				.collect(),

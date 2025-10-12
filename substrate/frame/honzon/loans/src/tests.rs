@@ -1,4 +1,4 @@
-// This file is part of Acala.
+// This file is part of Substrate.
 
 // Copyright (C) 2020-2025 Acala Foundation.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
@@ -23,10 +23,12 @@
 use super::*;
 use frame_support::{
 	assert_noop, assert_ok,
-	traits::fungible::{hold::Inspect as HoldInspect, Inspect},
+	traits::{
+		fungible::{hold::Inspect as HoldInspect, Inspect},
+		honzon::{Rate, Ratio},
+	},
 };
 use mock::{RuntimeEvent, *};
-use pallet_traits::{Rate, Ratio};
 use sp_arithmetic::traits::{One, Zero};
 use sp_runtime::{ArithmeticError, DispatchError, TokenError};
 

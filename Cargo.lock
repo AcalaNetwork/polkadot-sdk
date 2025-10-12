@@ -12822,11 +12822,12 @@ dependencies = [
 name = "pallet-loans"
 version = "1.0.0"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",
+ "pallet-asset-conversion",
  "pallet-assets",
- "pallet-assets-holder",
  "pallet-balances",
  "pallet-cdp-treasury",
  "parity-scale-codec",
