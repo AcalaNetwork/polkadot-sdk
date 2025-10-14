@@ -175,8 +175,8 @@ impl pallet_cdp_treasury::Config for Runtime {
 	type TreasuryAccount = TreasuryAccount;
 	type WeightInfo = ();
 	type CurrencyId = CurrencyId;
-	type GetStableCurrencyId = StableCurrencyIdValue;
-	type GetBaseCurrencyId = CollateralCurrencyIdValue;
+	type StableCurrencyId = StableCurrencyIdValue;
+	type CollateralCurrencyId = CollateralCurrencyIdValue;
 	type Swap = MockSwap;
 	type Balance = Balance;
 	type AssetKind = CurrencyId;

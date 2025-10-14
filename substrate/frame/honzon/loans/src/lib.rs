@@ -17,8 +17,7 @@
 
 //! # Loans Pallet
 //!
-//! A pallet for managing Collateralized Debt Positions (CDPs) with automated liquidation and risk
-//! management.
+//! A pallet for managing Collateralized Debt Positions (CDPs)
 //!
 //! ## Pallet API
 //!
@@ -27,17 +26,18 @@
 //!
 //! ## Overview
 //!
-//! The Loans pallet enables users to create and manage Collateralized Debt Positions (CDPs) by
-//! locking collateral assets and borrowing stable currency against them. The pallet provides
-//! automated risk management through liquidation mechanisms and stability fee tracking.
+//! The Loans pallet is responsible for locking collateral
+//! assets and borrowing stable currency against them.
 //!
 //! Key features include:
 //!
-//! - **Position Management**: Create, modify, and close CDP positions
-//! - **Risk Management**: Automated liquidation when positions become undercollateralized
-//! - **Stability Fees**: Track and apply interest rates to borrowed amounts
-//! - **Atomic Operations**: All position adjustments are atomic to prevent inconsistent states
-//! - **Transfer Support**: Transfer entire loan positions between accounts
+//! - **Position Management**: Responsible for managing CDP positions, including adjusting
+//!   collateral and debit balances, transferring loan positions between accounts, and executing
+//!   liquidations.
+//! - **CDP Treasury Integration**: issues/burns debits, handles bad debts via the `T::CDPTreasury`,
+//! - **Risk Management Integration**: position risk and total debit checks via the `T::RiskManager`
+//! - **Liquidation Strategy Integration**: liquidating CDP positions via the
+//!   `T::LiquidationStrategy`
 //!
 //! ### Terminology
 //!
@@ -47,8 +47,6 @@
 //! - **Debit**: The amount of stable currency borrowed against collateral
 //! - **Stability Fee**: Interest rate applied to borrowed amounts
 //! - **Liquidation**: Process of selling collateral to repay debt when position becomes risky
-//! - **Risk Manager**: Component responsible for validating position safety and liquidation logic
-
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub use pallet::*;
@@ -93,7 +91,7 @@ pub mod pallet {
 		/// The currency ID type
 		type CurrencyId: Parameter + Member + Copy + MaybeSerializeDeserialize + Ord;
 
-		/// Risk manager is used to limit the debit size of CDP
+		/// Risk manager for limiting the total debit size and checking position validity
 		type RiskManager: RiskManager<
 			Self::AccountId,
 			Self::CurrencyId,
@@ -101,8 +99,7 @@ pub mod pallet {
 			BalanceOf<Self>,
 		>;
 
-		/// CDP treasury for issuing/burning stable currency adjust debit value
-		/// adjustment
+		/// CDP treasury for issuing/burning stable currency and handling bad debts
 		type CDPTreasury: CDPTreasury<
 			Self::AccountId,
 			CurrencyId = Self::CurrencyId,
@@ -124,16 +121,12 @@ pub mod pallet {
 			BalanceOf<Self>,
 		)>;
 
+		/// Liquidation strategy for liquidating CDP positions
 		type LiquidationStrategy: LiquidationTarget<
 			Self::AccountId,
 			Self::CurrencyId,
 			BalanceOf<Self>,
 		>;
-	}
-
-	#[pallet::error]
-	pub enum Error<T> {
-		// Errors are now handled by the BalanceAdjustment type itself
 	}
 
 	#[pallet::event]
@@ -265,7 +258,7 @@ pub mod pallet {
 			debit_adjustment: BalanceAdjustment<BalanceOf<T>>,
 			maybe_new_stability_fee: Option<Rate>,
 		) -> DispatchResult {
-			// mutate collateral and debit
+			// mutate collateral and debit accounting records
 			// Note: if a new position, will inc consumer
 			Self::update_loan(
 				who,
@@ -330,6 +323,9 @@ pub mod pallet {
 		}
 
 		/// transfer whole loan of `from` to `to`
+		///
+		/// Ensured atomic.
+		#[transactional]
 		pub fn transfer_loan(from: &T::AccountId, to: &T::AccountId) -> DispatchResult {
 			// get `from` position data
 			let Position { collateral, debit, stability_fee } = Self::positions(from);
@@ -368,8 +364,8 @@ pub mod pallet {
 			Ok(())
 		}
 
-		/// mutate records of collaterals and debits
-		pub fn update_loan(
+		/// mutate accounting records of collaterals and debits
+		pub(crate) fn update_loan(
 			who: &T::AccountId,
 			collateral_adjustment: BalanceAdjustment<BalanceOf<T>>,
 			debit_adjustment: BalanceAdjustment<BalanceOf<T>>,

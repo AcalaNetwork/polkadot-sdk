@@ -40,8 +40,6 @@ use sp_std::prelude::*;
 	DecodeWithMemTracking,
 	Eq,
 	PartialEq,
-	Ord,
-	PartialOrd,
 	TypeInfo,
 	MaxEncodedLen,
 )]
