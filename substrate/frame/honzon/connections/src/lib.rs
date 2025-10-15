@@ -139,7 +139,6 @@ pub mod pallet {
             let connection_id = Self::next_connection_id();
             let next_connection_id = connection_id.checked_add(&One::one()).ok_or(Error::<T>::IdOverflow)?;
 
-            T::VaultProvider::create_vault(connection_id, &owner).map_err(|_| Error::<T>::VaultCreationFailed)?;
             T::VaultProvider::deposit_collateral(&connection_id, &owner, collateral_amount).map_err(|_| Error::<T>::InsufficientCollateral)?;
             T::VaultProvider::mint(&connection_id, &Self::account_id(), mint_amount).map_err(|_| Error::<T>::MintFailed)?;
 

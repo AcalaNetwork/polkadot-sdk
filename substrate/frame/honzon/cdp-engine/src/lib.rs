@@ -1349,11 +1349,6 @@ fn vault_account_id<T: Config>(vault_id: T::VaultId) -> T::AccountId {
 impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::VaultId> for Pallet<T> {
 	type AssetId = CurrencyIdOf<T>;
 
-	fn create_vault(_vault_id: T::VaultId, _owner: &T::AccountId) -> DispatchResult {
-		// No-op, as positions in pallet-loans are created on the first adjustment.
-		Ok(())
-	}
-
 	#[transactional]
 	fn deposit_collateral(
 		vault_id: &T::VaultId,

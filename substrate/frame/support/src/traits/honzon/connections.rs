@@ -33,7 +33,6 @@ pub trait LiquidityRouter<AccountId, Balance, ConnectionId> {
 
 pub trait VaultProvider<AccountId, Balance, CurrencyId, VaultId> {
 	type AssetId;
-	fn create_vault(vault_id: VaultId, owner: &AccountId) -> DispatchResult;
 	fn deposit_collateral(vault_id: &VaultId, from: &AccountId, amount: Balance) -> DispatchResult;
 	fn withdraw_collateral(vault_id: &VaultId, to: &AccountId, amount: Balance) -> DispatchResult;
 	fn mint(vault_id: &VaultId, to: &AccountId, amount: Balance) -> DispatchResult;

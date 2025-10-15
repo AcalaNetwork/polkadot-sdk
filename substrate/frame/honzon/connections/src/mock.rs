@@ -101,7 +101,6 @@ impl pallet_assets::Config for Test {
 
 pub struct MockVaultProvider;
 impl VaultProvider<u64, u128, u32> for MockVaultProvider {
-    fn create_vault(_vault_id: u32, _owner: &u64) -> DispatchResult { Ok(()) }
     fn deposit_collateral(_vault_id: &u32, _from: &u64, _amount: u128) -> DispatchResult { Ok(()) }
     fn withdraw_collateral(_vault_id: &u32, _to: &u64, _amount: u128) -> DispatchResult { Ok(()) }
     fn mint(_vault_id: &u32, to: &u64, amount: u128) -> DispatchResult {
