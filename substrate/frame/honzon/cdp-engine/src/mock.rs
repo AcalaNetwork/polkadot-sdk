@@ -327,6 +327,7 @@ impl Config for Test {
 	type Swap = MockSwap;
 	type PalletId = CDPEnginePalletId;
 	type WeightInfo = ();
+	type VaultId = u64;
 }
 
 parameter_types! {

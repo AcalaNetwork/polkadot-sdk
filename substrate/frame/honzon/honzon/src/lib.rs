@@ -252,7 +252,7 @@ pub mod pallet {
 		pub fn set_stability_fee(
 			origin: OriginFor<T>,
 			who: <T::Lookup as StaticLookup>::Source,
-			new_stability_fee: Rate,
+			new_stability_fee: Option<Rate>,
 		) -> DispatchResult {
 			T::AdminOrigin::ensure_origin(origin)?;
 			let who = T::Lookup::lookup(who)?;
@@ -261,7 +261,7 @@ pub mod pallet {
 				&who,
 				pallet_loans::BalanceAdjustment::Increase(0u32.into()),
 				pallet_loans::BalanceAdjustment::Increase(0u32.into()),
-				Some(new_stability_fee),
+				new_stability_fee,
 			)?;
 
 			Ok(())

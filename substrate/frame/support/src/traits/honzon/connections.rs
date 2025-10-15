@@ -37,6 +37,10 @@ pub trait VaultProvider<AccountId, Balance, CurrencyId, VaultId> {
 	fn withdraw_collateral(vault_id: &VaultId, to: &AccountId, amount: Balance) -> DispatchResult;
 	fn mint(vault_id: &VaultId, to: &AccountId, amount: Balance) -> DispatchResult;
 	fn repay(vault_id: &VaultId, from: &AccountId, amount: Balance) -> DispatchResult;
+	fn set_stability_fee(
+		vault_id: &VaultId,
+		stability_fee: Option<super::Rate>,
+	) -> DispatchResult;
 	fn close_vault(vault_id: &VaultId) -> DispatchResult;
 	fn has_debt(vault_id: &VaultId) -> Result<bool, DispatchError>;
 }

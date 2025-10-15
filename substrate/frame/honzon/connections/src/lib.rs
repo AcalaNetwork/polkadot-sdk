@@ -13,12 +13,18 @@ pub mod pallet {
     use frame_support::{
         dispatch::DispatchResult,
         pallet_prelude::*,
-        traits::EnsureOrigin,
+        traits::{honzon::Rate, EnsureOrigin},
         PalletId,
     };
     use sp_runtime::traits::{AccountIdConversion, BlockNumberProvider};
     use frame_system::pallet_prelude::*;
     use sp_runtime::traits::{AtLeast32BitUnsigned, CheckedAdd, One, Saturating};
+
+    pub type DestinationIdOf<T> = <<T as Config>::LiquidityRouter as LiquidityRouter<
+        <T as frame_system::Config>::AccountId,
+        <T as Config>::Balance,
+        <T as Config>::ConnectionId,
+    >>::DestinationId;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -84,6 +90,10 @@ pub mod pallet {
         ConnectionClosed {
             connection_id: T::ConnectionId,
         },
+        StabilityFeeOverrideSet {
+            destination_id: DestinationIdOf<T>,
+            new_value: Option<Rate>,
+        },
     }
 
     #[pallet::error]
@@ -124,6 +134,11 @@ pub mod pallet {
     #[pallet::getter(fn next_connection_id)]
     pub type NextConnectionId<T: Config> = StorageValue<_, T::ConnectionId, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn stability_fee_overrides)]
+    pub type StabilityFeeOverrides<T: Config> =
+        StorageMap<_, Blake2_128Concat, DestinationIdOf<T>, Rate, OptionQuery>;
+
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
@@ -138,6 +153,10 @@ pub mod pallet {
 
             let connection_id = Self::next_connection_id();
             let next_connection_id = connection_id.checked_add(&One::one()).ok_or(Error::<T>::IdOverflow)?;
+
+            if let Some(stability_fee) = Self::stability_fee_overrides(destination_id) {
+                T::VaultProvider::set_stability_fee(&connection_id, Some(stability_fee))?;
+            }
 
             T::VaultProvider::deposit_collateral(&connection_id, &owner, collateral_amount).map_err(|_| Error::<T>::InsufficientCollateral)?;
             T::VaultProvider::mint(&connection_id, &Self::account_id(), mint_amount).map_err(|_| Error::<T>::MintFailed)?;
@@ -262,6 +281,32 @@ pub mod pallet {
         }
 
         #[pallet::call_index(5)]
+        #[pallet::weight(Weight::zero())] // TODO: Proper benchmarking
+        pub fn set_stability_fee(
+            origin: OriginFor<T>,
+            destination_id: DestinationIdOf<T>,
+            override_value: Option<Rate>,
+        ) -> DispatchResult {
+            T::GovernanceOrigin::ensure_origin(origin)?;
+
+            if let Some(value) = override_value {
+                StabilityFeeOverrides::<T>::insert(destination_id, value);
+            } else {
+                StabilityFeeOverrides::<T>::remove(destination_id);
+            }
+
+            for (connection_id, connection) in Connections::<T>::iter() {
+                if connection.destination_id == destination_id {
+                    T::VaultProvider::set_stability_fee(&connection_id, override_value)?;
+                }
+            }
+
+            Self::deposit_event(Event::StabilityFeeOverrideSet { destination_id, new_value: override_value });
+
+            Ok(())
+        }
+
+        #[pallet::call_index(6)]
         #[pallet::weight(Weight::zero())]
         pub fn cancel_withdrawal(
             origin: OriginFor<T>,

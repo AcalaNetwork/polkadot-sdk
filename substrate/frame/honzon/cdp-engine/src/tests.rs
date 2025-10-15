@@ -126,15 +126,15 @@ fn check_cdp_status_works() {
 	new_test_ext().execute_with(|| {
 		frame_system::Pallet::<Test>::set_block_number(1);
 		// Safe CDP
-		let status = CDPEngine::check_cdp_status(2000u128, 1000u128, Rate::one());
+		let status = CDPEngine::check_cdp_status(2000u128, 1000u128, Rate::one(), &1);
 		assert_eq!(status, CDPStatus::Safe);
 
 		// Unsafe CDP
-		let status = CDPEngine::check_cdp_status(100u128, 1000u128, Rate::one());
+		let status = CDPEngine::check_cdp_status(100u128, 1000u128, Rate::one(), &1);
 		assert_eq!(status, CDPStatus::Unsafe);
 
 		// Zero debit should be safe
-		let status = CDPEngine::check_cdp_status(100u128, 0u128, Rate::one());
+		let status = CDPEngine::check_cdp_status(100u128, 0u128, Rate::one(), &1);
 		assert_eq!(status, CDPStatus::Safe);
 	});
 }
