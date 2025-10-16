@@ -2,12 +2,16 @@
 
 use sp_runtime::{DispatchError, DispatchResult};
 
-pub trait LiquidityRouter<AccountId, Balance, ConnectionId> {
-	/// The type of identifier for a destination.
+pub trait LiquidityDestination<AccountId, Balance> {
+	fn deposit(who: &AccountId, amount: Balance) -> DispatchResult;
+	fn withdraw(who: &AccountId, amount: Balance) -> DispatchResult;
+	fn withdraw_all(who: &AccountId) -> DispatchResult;
+}
+
+pub trait LiquidityRouter<AccountId, Balance> {
 	type DestinationId: frame_support::pallet_prelude::Member
 		+ frame_support::pallet_prelude::Parameter
 		+ Copy
-		+ Default
 		+ frame_support::pallet_prelude::MaxEncodedLen
 		+ codec::Encode
 		+ codec::Decode
@@ -19,15 +23,17 @@ pub trait LiquidityRouter<AccountId, Balance, ConnectionId> {
 	) -> Result<AccountId, DispatchError>;
 	fn deposit(
 		destination_id: Self::DestinationId,
-		connection_id: ConnectionId,
-		who: &AccountId,
+		connection_account: &AccountId,
 		amount: Balance,
 	) -> DispatchResult;
 	fn withdraw(
 		destination_id: Self::DestinationId,
-		connection_id: ConnectionId,
-		who: &AccountId,
+		connection_account: &AccountId,
 		amount: Balance,
+	) -> DispatchResult;
+	fn withdraw_all(
+		destination_id: Self::DestinationId,
+		connection_account: &AccountId,
 	) -> DispatchResult;
 }
 
@@ -35,8 +41,10 @@ pub trait VaultProvider<AccountId, Balance, CurrencyId, VaultId> {
 	type AssetId;
 	fn deposit_collateral(vault_id: &VaultId, from: &AccountId, amount: Balance) -> DispatchResult;
 	fn withdraw_collateral(vault_id: &VaultId, to: &AccountId, amount: Balance) -> DispatchResult;
+	fn withdraw_all_collateral(vault_id: &VaultId, to: &AccountId) -> DispatchResult;
 	fn mint(vault_id: &VaultId, to: &AccountId, amount: Balance) -> DispatchResult;
 	fn repay(vault_id: &VaultId, from: &AccountId, amount: Balance) -> DispatchResult;
+	fn get_position(vault_id: &VaultId) -> Result<(Balance, Balance), DispatchError>;
 	fn set_stability_fee(
 		vault_id: &VaultId,
 		stability_fee: Option<super::Rate>,

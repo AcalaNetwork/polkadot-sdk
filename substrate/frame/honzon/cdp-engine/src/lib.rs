@@ -1374,6 +1374,24 @@ fn vault_account_id<T: Config>(vault_id: T::VaultId) -> T::AccountId {
 impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::VaultId> for Pallet<T> {
 	type AssetId = CurrencyIdOf<T>;
 
+	fn get_position(
+		vault_id: &T::VaultId,
+	) -> Result<(BalanceOf<T>, BalanceOf<T>), DispatchError> {
+		let vault_account = vault_account_id::<T>(*vault_id);
+		let position = <LoansOf<T>>::positions(&vault_account);
+		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
+		let effective_stability_fee =
+			Self::get_effective_stability_fee(stability_fee, &vault_account)?;
+		let debit_value = Self::convert_to_debit_value(position.debit, effective_stability_fee);
+		Ok((position.collateral, debit_value))
+	}
+
+	fn withdraw_all_collateral(vault_id: &T::VaultId, to: &T::AccountId) -> DispatchResult {
+		let vault_account = vault_account_id::<T>(*vault_id);
+		let position = <LoansOf<T>>::positions(&vault_account);
+		Self::withdraw_collateral(vault_id, to, position.collateral)
+	}
+
 	fn set_stability_fee(
 		vault_id: &T::VaultId,
 		stability_fee: Option<Rate>,

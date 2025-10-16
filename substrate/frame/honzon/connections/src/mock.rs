@@ -11,8 +11,10 @@ use sp_runtime::{
     testing::Header,
     traits::{BlakeTwo256, IdentityLookup, AccountIdConversion},
 };
-use crate::{VaultProvider, LiquidityRouter};
-use frame_support::dispatch::{DispatchResult, DispatchError};
+use crate::{LiquidityRouter, VaultProvider};
+use frame_support::dispatch::{DispatchError, DispatchResult};
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -99,30 +101,117 @@ impl pallet_assets::Config for Test {
     type CallbackHandle = ();
 }
 
+#[derive(Default, Clone)]
+pub struct Vault {
+    pub collateral: u128,
+    pub debt: u128,
+}
+
+thread_local! {
+    static VAULTS: RefCell<BTreeMap<u32, Vault>> = RefCell::new(BTreeMap::new());
+}
+
 pub struct MockVaultProvider;
-impl VaultProvider<u64, u128, u32> for MockVaultProvider {
-    fn deposit_collateral(_vault_id: &u32, _from: &u64, _amount: u128) -> DispatchResult { Ok(()) }
-    fn withdraw_collateral(_vault_id: &u32, _to: &u64, _amount: u128) -> DispatchResult { Ok(()) }
-    fn mint(_vault_id: &u32, to: &u64, amount: u128) -> DispatchResult {
-        let stable_asset_id = 1;
-        Assets::mint_into(stable_asset_id, to, amount).unwrap();
+impl VaultProvider<u64, u128, u32, u32> for MockVaultProvider {
+    fn get_position(vault_id: &u32) -> Result<(u128, u128), DispatchError> {
+        let vault = VAULTS.with(|v| v.borrow().get(vault_id).cloned().unwrap_or_default());
+        Ok((vault.collateral, vault.debt))
+    }
+
+    fn deposit_collateral(vault_id: &u32, _from: &u64, amount: u128) -> DispatchResult {
+        VAULTS.with(|v| {
+            let mut vaults = v.borrow_mut();
+            let vault = vaults.entry(*vault_id).or_default();
+            vault.collateral += amount;
+        });
         Ok(())
     }
-    fn repay(_vault_id: &u32, from: &u64, amount: u128) -> DispatchResult {
+    fn withdraw_collateral(vault_id: &u32, _to: &u64, amount: u128) -> DispatchResult {
+        VAULTS.with(|v| {
+            let mut vaults = v.borrow_mut();
+            let vault = vaults.entry(*vault_id).or_default();
+            vault.collateral = vault.collateral.checked_sub(amount).ok_or("Not enough collateral")?;
+            Ok(())
+        })
+    }
+    fn mint(vault_id: &u32, to: &u64, amount: u128) -> DispatchResult {
         let stable_asset_id = 1;
-        Assets::burn_from(stable_asset_id, from, amount).unwrap();
+        Assets::mint_into(stable_asset_id.into(), to, amount).unwrap();
+        VAULTS.with(|v| {
+            let mut vaults = v.borrow_mut();
+            let vault = vaults.entry(*vault_id).or_default();
+            vault.debt += amount;
+        });
         Ok(())
     }
-    fn close_vault(_vault_id: &u32) -> DispatchResult { Ok(()) }
-    fn has_debt(_vault_id: &u32) -> Result<bool, DispatchError> { Ok(false) }
+    fn repay(vault_id: &u32, from: &u64, amount: u128) -> DispatchResult {
+        let stable_asset_id = 1;
+        Assets::burn_from(stable_asset_id.into(), from, amount).unwrap();
+        VAULTS.with(|v| {
+            let mut vaults = v.borrow_mut();
+            let vault = vaults.entry(*vault_id).or_default();
+            vault.debt = vault.debt.checked_sub(amount).ok_or("Not enough debt to repay")?;
+            Ok(())
+        })
+    }
+    fn close_vault(vault_id: &u32) -> DispatchResult {
+        VAULTS.with(|v| {
+            let mut vaults = v.borrow_mut();
+            let vault = vaults.get(vault_id).ok_or("Vault not found")?;
+            if vault.collateral != 0 || vault.debt != 0 {
+                return Err("Vault not empty".into());
+            }
+            vaults.remove(vault_id);
+            Ok(())
+        })
+    }
+    fn has_debt(vault_id: &u32) -> Result<bool, DispatchError> {
+        let vault = VAULTS.with(|v| v.borrow().get(vault_id).cloned().unwrap_or_default());
+        Ok(vault.debt > 0)
+    }
+}
+
+thread_local! {
+    static LIQUIDITY: RefCell<BTreeMap<(u32, u64), u128>> = RefCell::new(BTreeMap::new());
 }
 
 pub struct MockLiquidityRouter;
-impl LiquidityRouter<u64, u128, u32> for MockLiquidityRouter {
+impl LiquidityRouter<u64, u128> for MockLiquidityRouter {
     type DestinationId = u32;
-    fn deposit(_destination_id: Self::DestinationId, _connection_id: u32, _who: &u64, _amount: u128) -> DispatchResult { Ok(()) }
-    fn withdraw(_destination_id: Self::DestinationId, _connection_id: u32, _who: &u64, _amount: u128) -> DispatchResult { Ok(()) }
-    fn get_destination_account(_destination_id: Self::DestinationId) -> Result<u64, DispatchError> { Ok(99) } // 99 is the destination account
+
+    fn deposit(destination_id: Self::DestinationId, who: &u64, amount: u128) -> DispatchResult {
+        LIQUIDITY.with(|l| {
+            let mut liquidity = l.borrow_mut();
+            *liquidity.entry((destination_id, *who)).or_default() += amount;
+        });
+        Ok(())
+    }
+
+    fn withdraw(destination_id: Self::DestinationId, who: &u64, amount: u128) -> DispatchResult {
+        LIQUIDITY.with(|l| {
+            let mut liquidity = l.borrow_mut();
+            let balance = liquidity.entry((destination_id, *who)).or_default();
+            *balance = balance.checked_sub(amount).ok_or("not enough liquidity")?;
+            Ok(())
+        })
+    }
+
+    fn withdraw_all(
+        destination_id: Self::DestinationId,
+        who: &u64,
+    ) -> Result<u128, DispatchError> {
+        LIQUIDITY.with(|l| {
+            let mut liquidity = l.borrow_mut();
+            let amount = liquidity.remove(&(destination_id, *who)).unwrap_or_default();
+            Ok(amount)
+        })
+    }
+
+    fn get_destination_account(
+        _destination_id: Self::DestinationId,
+    ) -> Result<u64, DispatchError> {
+        Ok(99) // 99 is the destination account
+    }
 }
 
 parameter_types! {
@@ -132,11 +221,16 @@ parameter_types! {
 impl crate::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type Balance = u128;
+    type CurrencyId = u32;
     type VaultProvider = MockVaultProvider;
     type LiquidityRouter = MockLiquidityRouter;
     type GovernanceOrigin = frame_system::EnsureRoot<u64>;
     type ConnectionId = u32;
     type PalletId = ConnectionsPalletId;
+    type BlockNumberProvider = System;
+    type WithdrawalTimeout = ConstU64<10>;
+    type StableCurrencyId = ConstU32<1>;
+    type Fungibles = Assets;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

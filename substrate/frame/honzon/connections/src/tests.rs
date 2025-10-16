@@ -165,9 +165,12 @@ fn withdraw_collateral_works() {
 }
 
 #[test]
-fn close_connection_works() {
+fn close_connection_with_debt_no_leftover_works() {
     new_test_ext().execute_with(|| {
         setup_asset();
+        let initial_owner_balance = Balances::free_balance(&USER_A);
+
+        // Open connection with debt
         assert_ok!(Connections::open_connection(
             RuntimeOrigin::signed(USER_A),
             DESTINATION_ID,
@@ -175,8 +178,64 @@ fn close_connection_works() {
             MINT_AMOUNT
         ));
 
-        // In mock, has_debt is always false
+        // Check that collateral was taken from user
+        assert_eq!(Balances::free_balance(&USER_A), initial_owner_balance - COLLATERAL_AMOUNT);
+        assert_eq!(Assets::balance(STABLE_ASSET_ID, &USER_A), 0);
+
+        // Close the connection
         assert_ok!(Connections::close_connection(RuntimeOrigin::signed(USER_A), 0));
+
+        // Check connection is closed
         assert!(Connections::connections(0).is_none());
+
+        // Check collateral is returned
+        assert_eq!(Balances::free_balance(&USER_A), initial_owner_balance);
+
+        // Check no leftover stablecoins are returned to owner
+        assert_eq!(Assets::balance(STABLE_ASSET_ID, &USER_A), 0);
+    });
+}
+
+#[test]
+fn close_connection_with_debt_and_leftover_works() {
+    new_test_ext().execute_with(|| {
+        setup_asset();
+        let initial_owner_balance = Balances::free_balance(&USER_A);
+
+        // Open connection with debt
+        assert_ok!(Connections::open_connection(
+            RuntimeOrigin::signed(USER_A),
+            DESTINATION_ID,
+            COLLATERAL_AMOUNT,
+            MINT_AMOUNT
+        ));
+
+        let connection_account = ConnectionsPalletId::get().into_sub_account_truncating(0 as u32);
+
+        // Manually add extra funds to the liquidity router for the connection to test leftovers
+        const EXTRA_FUNDS: u128 = 10;
+        assert_ok!(mock::MockLiquidityRouter::deposit(
+            DESTINATION_ID,
+            &connection_account,
+            EXTRA_FUNDS
+        ));
+
+        // Check that collateral was taken from user
+        assert_eq!(Balances::free_balance(&USER_A), initial_owner_balance - COLLATERAL_AMOUNT);
+
+        // Close the connection
+        assert_ok!(Connections::close_connection(RuntimeOrigin::signed(USER_A), 0));
+
+        // Check connection is closed
+        assert!(Connections::connections(0).is_none());
+
+        // Check collateral is returned
+        assert_eq!(Balances::free_balance(&USER_A), initial_owner_balance);
+
+        // Check leftover stablecoins are returned to owner
+        // withdrawn = MINT_AMOUNT + EXTRA_FUNDS
+        // debt = MINT_AMOUNT
+        // leftover = EXTRA_FUNDS
+        assert_eq!(Assets::balance(STABLE_ASSET_ID, &USER_A), EXTRA_FUNDS);
     });
 }
