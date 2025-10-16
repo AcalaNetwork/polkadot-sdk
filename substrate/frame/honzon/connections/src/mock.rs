@@ -2,6 +2,8 @@
 //! Mock runtime for `pallet-connections`.
 
 use crate as pallet_connections;
+#[cfg(feature = "runtime-benchmarks")]
+use crate::BenchmarkHelper;
 use frame_support::{
     construct_runtime, parameter_types, PalletId,
     traits::{AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, GenesisBuild, FindAuthor, ConstU8, BlockNumberProvider},
@@ -15,6 +17,10 @@ use crate::{LiquidityRouter, VaultProvider};
 use frame_support::dispatch::{DispatchError, DispatchResult};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+#[cfg(feature = "runtime-benchmarks")]
+use frame_system::RawOrigin;
+#[cfg(feature = "runtime-benchmarks")]
+use frame_support::traits::tokens::fungibles::Inspect;
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -231,6 +237,8 @@ impl crate::Config for Test {
     type WithdrawalTimeout = ConstU64<10>;
     type StableCurrencyId = ConstU32<1>;
     type Fungibles = Assets;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = BenchHelper;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
@@ -238,4 +246,48 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     let mut ext = sp_io::TestExternalities::new(t);
     ext.execute_with(|| System::set_block_number(1));
     ext
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+pub struct BenchHelper;
+
+#[cfg(feature = "runtime-benchmarks")]
+impl BenchmarkHelper<u64, u128, u32, u32, u64> for BenchHelper {
+    fn destination_id(seed: u32) -> u32 {
+        seed.saturating_add(1)
+    }
+
+    fn collateral_amount() -> u128 {
+        1_000
+    }
+
+    fn mint_amount() -> u128 {
+        500
+    }
+
+    fn prepare_open(
+        owner: &u64,
+        _connection_id: u32,
+        connection_account: &u64,
+        _destination_id: u32,
+        _collateral_amount: u128,
+        _mint_amount: u128,
+    ) -> DispatchResult {
+        let _ = connection_account;
+        let stable_asset_id: u32 = 1;
+        if !Assets::asset_exists(stable_asset_id.into()) {
+            Assets::force_create(
+                RawOrigin::Root.into(),
+                stable_asset_id.into(),
+                owner.clone(),
+                true,
+                1,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn set_block_number(block: u64) {
+        System::set_block_number(block);
+    }
 }
