@@ -21,6 +21,9 @@
 #![cfg(test)]
 
 use super::*;
+use frame_support::traits::honzon::{
+	AuctionManager, CDPTreasury, LockablePrice, PriceProvider, RiskManager, Swap, SwapLimit,
+};
 use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types, parameter_types,
 	traits::{
@@ -29,10 +32,6 @@ use frame_support::{
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use frame_support::traits::honzon::{
-	AuctionManager, CDPTreasury, LockablePrice, PriceProvider, RiskManager,
-	Swap, SwapLimit,
-};
 use sp_runtime::{
 	traits::{AccountIdConversion, IdentityLookup},
 	BuildStorage, DispatchError, DispatchResult, FixedU128,

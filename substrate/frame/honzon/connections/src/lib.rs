@@ -3,386 +3,413 @@
 
 pub use pallet::*;
 
-use frame_support::traits::{honzon::{Connection, ConnectionStatus, LiquidityRouter, VaultProvider}, fungibles::{Inspect, Mutate}};
+use frame_support::traits::{
+	fungibles::{Inspect, Mutate},
+	honzon::{Connection, ConnectionStatus, LiquidityRouter, VaultProvider},
+};
 
 #[frame_support::pallet]
 pub mod pallet {
-    use super::*;
-    use frame_support::{
-        dispatch::DispatchResult,
-        pallet_prelude::*,
-        traits::{honzon::Rate, EnsureOrigin},
-        PalletId,
-    };
-    use sp_runtime::traits::{AccountIdConversion, BlockNumberProvider};
-    use frame_system::pallet_prelude::*;
-    use sp_runtime::traits::{AtLeast32BitUnsigned, CheckedAdd, One, Saturating};
+	use super::*;
+	use frame_support::{
+		dispatch::DispatchResult,
+		pallet_prelude::*,
+		traits::{honzon::Rate, EnsureOrigin},
+		PalletId,
+	};
+	use frame_system::pallet_prelude::*;
+	use sp_runtime::traits::{AccountIdConversion, BlockNumberProvider};
+	use sp_runtime::traits::{AtLeast32BitUnsigned, CheckedAdd, One, Saturating};
 
-    pub type DestinationIdOf<T> = <<T as Config>::LiquidityRouter as LiquidityRouter<
-        <T as frame_system::Config>::AccountId,
-        <T as Config>::Balance,
-    >>::DestinationId;
+	pub type DestinationIdOf<T> = <<T as Config>::LiquidityRouter as LiquidityRouter<
+		<T as frame_system::Config>::AccountId,
+		<T as Config>::Balance,
+	>>::DestinationId;
 
-    #[pallet::pallet]
-    pub struct Pallet<T>(_);
+	#[pallet::pallet]
+	pub struct Pallet<T>(_);
 
-    #[pallet::config]
-    pub trait Config: frame_system::Config {
-        /// The type used for balance representation.
-        type Balance: Member + Parameter + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
-        /// The block number type.
-        type BlockNumber: Member + Parameter + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
-        /// The currency ID type.
-        type CurrencyId: Member
-            + Parameter
-            + Copy
-            + sp_runtime::traits::MaybeSerializeDeserialize
-            + Ord
-            + MaxEncodedLen;
-        /// The provider for vault management logic.
-        type VaultProvider: VaultProvider<
-            Self::AccountId,
-            Self::Balance,
-            Self::CurrencyId,
-            Self::ConnectionId,
-        >;
-        /// The router for liquidity destination logic.
-        type LiquidityRouter: LiquidityRouter<Self::AccountId, Self::Balance>;
-        /// The origin that can add new liquidity destinations.
-        type GovernanceOrigin: EnsureOrigin<Self::RuntimeOrigin>;
-        /// The unique identifier for a connection.
-        type ConnectionId: Member + Parameter + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
-        /// The provider for the current block number.
-        type BlockNumberProvider: BlockNumberProvider<BlockNumber = Self::BlockNumber>;
+	#[pallet::config]
+	pub trait Config: frame_system::Config {
+		/// The type used for balance representation.
+		type Balance: Member + Parameter + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
+		/// The block number type.
+		type BlockNumber: Member + Parameter + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
+		/// The currency ID type.
+		type CurrencyId: Member
+			+ Parameter
+			+ Copy
+			+ sp_runtime::traits::MaybeSerializeDeserialize
+			+ Ord
+			+ MaxEncodedLen;
+		/// The provider for vault management logic.
+		type VaultProvider: VaultProvider<
+			Self::AccountId,
+			Self::Balance,
+			Self::CurrencyId,
+			Self::ConnectionId,
+		>;
+		/// The router for liquidity destination logic.
+		type LiquidityRouter: LiquidityRouter<Self::AccountId, Self::Balance>;
+		/// The origin that can add new liquidity destinations.
+		type GovernanceOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+		/// The unique identifier for a connection.
+		type ConnectionId: Member
+			+ Parameter
+			+ AtLeast32BitUnsigned
+			+ Default
+			+ Copy
+			+ MaxEncodedLen;
+		/// The provider for the current block number.
+		type BlockNumberProvider: BlockNumberProvider<BlockNumber = Self::BlockNumber>;
 
-        /// The currency ID for the stablecoin.
-        #[pallet::constant]
-        type StableCurrencyId: Get<Self::CurrencyId>;
+		/// The currency ID for the stablecoin.
+		#[pallet::constant]
+		type StableCurrencyId: Get<Self::CurrencyId>;
 
-        /// The fungibles handling logic.
-        type Fungibles: Mutate<
-            Self::AccountId,
-            AssetId = Self::CurrencyId,
-            Balance = Self::Balance,
-        >;
+		/// The fungibles handling logic.
+		type Fungibles: Mutate<Self::AccountId, AssetId = Self::CurrencyId, Balance = Self::Balance>;
 
-        /// The duration in blocks that a withdrawal must wait before it can be cancelled.
-        #[pallet::constant]
-        type WithdrawalTimeout: Get<Self::BlockNumber>;
+		/// The duration in blocks that a withdrawal must wait before it can be cancelled.
+		#[pallet::constant]
+		type WithdrawalTimeout: Get<Self::BlockNumber>;
 
-        /// The pallet id for this pallet.
-        #[pallet::constant]
-        type PalletId: Get<PalletId>;
-    }
+		/// The pallet id for this pallet.
+		#[pallet::constant]
+		type PalletId: Get<PalletId>;
+	}
 
-    #[pallet::event]
-    #[pallet::generate_deposit(pub(super) fn deposit_event)]
-    pub enum Event<T: Config> {
-        ConnectionOpened {
-            connection_id: T::ConnectionId,
-            owner: T::AccountId,
-            destination_id: <T::LiquidityRouter as LiquidityRouter<T::AccountId, T::Balance>>::DestinationId,
-            collateral_deposited: T::Balance,
-            stables_minted: T::Balance,
-        },
-        WithdrawalInitiated {
-            connection_id: T::ConnectionId,
-            stables_amount: T::Balance,
-        },
-        WithdrawalCompleted {
-            connection_id: T::ConnectionId,
-            stables_repaid: T::Balance,
-        },
-        WithdrawalCancelled {
-            connection_id: T::ConnectionId,
-        },
-        CollateralWithdrawn {
-            connection_id: T::ConnectionId,
-            amount: T::Balance,
-        },
-        ConnectionClosed {
-            connection_id: T::ConnectionId,
-        },
-        StabilityFeeOverrideSet {
-            destination_id: DestinationIdOf<T>,
-            new_value: Option<Rate>,
-        },
-    }
+	#[pallet::event]
+	#[pallet::generate_deposit(pub(super) fn deposit_event)]
+	pub enum Event<T: Config> {
+		ConnectionOpened {
+			connection_id: T::ConnectionId,
+			owner: T::AccountId,
+			destination_id:
+				<T::LiquidityRouter as LiquidityRouter<T::AccountId, T::Balance>>::DestinationId,
+			collateral_deposited: T::Balance,
+			stables_minted: T::Balance,
+		},
+		WithdrawalInitiated {
+			connection_id: T::ConnectionId,
+			stables_amount: T::Balance,
+		},
+		WithdrawalCompleted {
+			connection_id: T::ConnectionId,
+			stables_repaid: T::Balance,
+		},
+		WithdrawalCancelled {
+			connection_id: T::ConnectionId,
+		},
+		CollateralWithdrawn {
+			connection_id: T::ConnectionId,
+			amount: T::Balance,
+		},
+		ConnectionClosed {
+			connection_id: T::ConnectionId,
+		},
+		StabilityFeeOverrideSet {
+			destination_id: DestinationIdOf<T>,
+			new_value: Option<Rate>,
+		},
+	}
 
-    #[pallet::error]
-    pub enum Error<T> {
-        ConnectionNotFound,
-        NotOwner,
-        InvalidStatus,
-        DestinationNotFound,
-        VaultCreationFailed,
-        InsufficientCollateral,
-        MintFailed,
-        DepositFailed,
-        WithdrawalFailed,
-        BadOrigin,
-        AmountMismatch,
-        RepayFailed,
-        WithdrawCollateralFailed,
-        VaultPosition,
-        IdOverflow,
-        TimeoutNotPassed,
-    }
+	#[pallet::error]
+	pub enum Error<T> {
+		ConnectionNotFound,
+		NotOwner,
+		InvalidStatus,
+		DestinationNotFound,
+		VaultCreationFailed,
+		InsufficientCollateral,
+		MintFailed,
+		DepositFailed,
+		WithdrawalFailed,
+		BadOrigin,
+		AmountMismatch,
+		RepayFailed,
+		WithdrawCollateralFailed,
+		VaultPosition,
+		IdOverflow,
+		TimeoutNotPassed,
+	}
 
-    #[pallet::storage]
-    #[pallet::getter(fn connections)]
-    pub type Connections<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::ConnectionId,
-        Connection<
-            T::AccountId,
-            <T::LiquidityRouter as LiquidityRouter<T::AccountId, T::Balance>>::DestinationId,
-            T::Balance,
-            T::BlockNumber,
-        >,
-    >;
+	#[pallet::storage]
+	#[pallet::getter(fn connections)]
+	pub type Connections<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		T::ConnectionId,
+		Connection<
+			T::AccountId,
+			<T::LiquidityRouter as LiquidityRouter<T::AccountId, T::Balance>>::DestinationId,
+			T::Balance,
+			T::BlockNumber,
+		>,
+	>;
 
-    #[pallet::storage]
-    #[pallet::getter(fn next_connection_id)]
-    pub type NextConnectionId<T: Config> = StorageValue<_, T::ConnectionId, ValueQuery>;
+	#[pallet::storage]
+	#[pallet::getter(fn next_connection_id)]
+	pub type NextConnectionId<T: Config> = StorageValue<_, T::ConnectionId, ValueQuery>;
 
-    #[pallet::storage]
-    #[pallet::getter(fn stability_fee_overrides)]
-    pub type StabilityFeeOverrides<T: Config> =
-        StorageMap<_, Blake2_128Concat, DestinationIdOf<T>, Rate, OptionQuery>;
+	#[pallet::storage]
+	#[pallet::getter(fn stability_fee_overrides)]
+	pub type StabilityFeeOverrides<T: Config> =
+		StorageMap<_, Blake2_128Concat, DestinationIdOf<T>, Rate, OptionQuery>;
 
-    #[pallet::call]
-    impl<T: Config> Pallet<T> {
-        #[pallet::call_index(0)]
-        #[pallet::weight(Weight::zero())]
-        pub fn open_connection(
-            origin: OriginFor<T>,
-            destination_id: <T::LiquidityRouter as LiquidityRouter<T::AccountId, T::Balance>>::DestinationId,
-            collateral_amount: T::Balance,
-            mint_amount: T::Balance,
-        ) -> DispatchResult {
-            let owner = ensure_signed(origin)?;
+	#[pallet::call]
+	impl<T: Config> Pallet<T> {
+		#[pallet::call_index(0)]
+		#[pallet::weight(Weight::zero())]
+		pub fn open_connection(
+			origin: OriginFor<T>,
+			destination_id: <T::LiquidityRouter as LiquidityRouter<T::AccountId, T::Balance>>::DestinationId,
+			collateral_amount: T::Balance,
+			mint_amount: T::Balance,
+		) -> DispatchResult {
+			let owner = ensure_signed(origin)?;
 
-            let connection_id = Self::next_connection_id();
-            let next_connection_id = connection_id.checked_add(&One::one()).ok_or(Error::<T>::IdOverflow)?;
+			let connection_id = Self::next_connection_id();
+			let next_connection_id =
+				connection_id.checked_add(&One::one()).ok_or(Error::<T>::IdOverflow)?;
 
-            if let Some(stability_fee) = Self::stability_fee_overrides(destination_id) {
-                T::VaultProvider::set_stability_fee(&connection_id, Some(stability_fee))?;
-            }
+			if let Some(stability_fee) = Self::stability_fee_overrides(destination_id) {
+				T::VaultProvider::set_stability_fee(&connection_id, Some(stability_fee))?;
+			}
 
-            T::VaultProvider::deposit_collateral(&connection_id, &owner, collateral_amount).map_err(|_| Error::<T>::InsufficientCollateral)?;
-            T::VaultProvider::mint(&connection_id, &Self::account_id(), mint_amount).map_err(|_| Error::<T>::MintFailed)?;
+			T::VaultProvider::deposit_collateral(&connection_id, &owner, collateral_amount)
+				.map_err(|_| Error::<T>::InsufficientCollateral)?;
+			T::VaultProvider::mint(&connection_id, &Self::account_id(), mint_amount)
+				.map_err(|_| Error::<T>::MintFailed)?;
 
-            let connection_account = T::PalletId::get().into_sub_account_truncating(connection_id);
-            T::LiquidityRouter::deposit(destination_id, &connection_account, mint_amount).map_err(|_| Error::<T>::DepositFailed)?;
+			let connection_account = T::PalletId::get().into_sub_account_truncating(connection_id);
+			T::LiquidityRouter::deposit(destination_id, &connection_account, mint_amount)
+				.map_err(|_| Error::<T>::DepositFailed)?;
 
-            let new_connection = Connection {
-                owner: owner.clone(),
-                destination_id,
-                status: ConnectionStatus::Active,
-            };
+			let new_connection = Connection {
+				owner: owner.clone(),
+				destination_id,
+				status: ConnectionStatus::Active,
+			};
 
-            Connections::<T>::insert(connection_id, new_connection);
-            NextConnectionId::<T>::put(next_connection_id);
+			Connections::<T>::insert(connection_id, new_connection);
+			NextConnectionId::<T>::put(next_connection_id);
 
-            Self::deposit_event(Event::ConnectionOpened {
-                connection_id,
-                owner,
-                destination_id,
-                collateral_deposited: collateral_amount,
-                stables_minted: mint_amount,
-            });
+			Self::deposit_event(Event::ConnectionOpened {
+				connection_id,
+				owner,
+				destination_id,
+				collateral_deposited: collateral_amount,
+				stables_minted: mint_amount,
+			});
 
-            Ok(())
-        }
+			Ok(())
+		}
 
-        #[pallet::call_index(1)]
-        #[pallet::weight(Weight::zero())]
-        pub fn initiate_withdrawal(
-            origin: OriginFor<T>,
-            connection_id: T::ConnectionId,
-            stables_amount: T::Balance,
-        ) -> DispatchResult {
-            let owner = ensure_signed(origin)?;
-            let mut connection = Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
-            ensure!(owner == connection.owner, Error::<T>::NotOwner);
-            ensure!(connection.status == ConnectionStatus::Active, Error::<T>::InvalidStatus);
+		#[pallet::call_index(1)]
+		#[pallet::weight(Weight::zero())]
+		pub fn initiate_withdrawal(
+			origin: OriginFor<T>,
+			connection_id: T::ConnectionId,
+			stables_amount: T::Balance,
+		) -> DispatchResult {
+			let owner = ensure_signed(origin)?;
+			let mut connection =
+				Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
+			ensure!(owner == connection.owner, Error::<T>::NotOwner);
+			ensure!(connection.status == ConnectionStatus::Active, Error::<T>::InvalidStatus);
 
-            connection.status = ConnectionStatus::WithdrawalInProgress {
-                amount: stables_amount,
-                initiated_at: T::BlockNumberProvider::current_block_number(),
-            };
+			connection.status = ConnectionStatus::WithdrawalInProgress {
+				amount: stables_amount,
+				initiated_at: T::BlockNumberProvider::current_block_number(),
+			};
 
-            let connection_account = T::PalletId::get().into_sub_account_truncating(connection_id);
-            T::LiquidityRouter::withdraw(connection.destination_id, &connection_account, stables_amount)
-                .map_err(|_| Error::<T>::WithdrawalFailed)?;
+			let connection_account = T::PalletId::get().into_sub_account_truncating(connection_id);
+			T::LiquidityRouter::withdraw(
+				connection.destination_id,
+				&connection_account,
+				stables_amount,
+			)
+			.map_err(|_| Error::<T>::WithdrawalFailed)?;
 
-            Connections::<T>::insert(connection_id, connection);
+			Connections::<T>::insert(connection_id, connection);
 
-            Self::deposit_event(Event::WithdrawalInitiated { connection_id, stables_amount });
+			Self::deposit_event(Event::WithdrawalInitiated { connection_id, stables_amount });
 
-            Ok(())
-        }
+			Ok(())
+		}
 
-        #[pallet::call_index(2)]
-        #[pallet::weight(Weight::zero())]
-        pub fn complete_withdrawal(
-            origin: OriginFor<T>,
-            connection_id: T::ConnectionId,
-            repaid_amount: T::Balance,
-        ) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            let mut connection = Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
+		#[pallet::call_index(2)]
+		#[pallet::weight(Weight::zero())]
+		pub fn complete_withdrawal(
+			origin: OriginFor<T>,
+			connection_id: T::ConnectionId,
+			repaid_amount: T::Balance,
+		) -> DispatchResult {
+			let who = ensure_signed(origin)?;
+			let mut connection =
+				Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
 
-            let destination_account = T::LiquidityRouter::get_destination_account(connection.destination_id)
-                .map_err(|_| Error::<T>::DestinationNotFound)?;
-            ensure!(who == destination_account, Error::<T>::BadOrigin);
+			let destination_account =
+				T::LiquidityRouter::get_destination_account(connection.destination_id)
+					.map_err(|_| Error::<T>::DestinationNotFound)?;
+			ensure!(who == destination_account, Error::<T>::BadOrigin);
 
-            if let ConnectionStatus::WithdrawalInProgress { amount, .. } = connection.status {
-                ensure!(amount == repaid_amount, Error::<T>::AmountMismatch);
-            } else {
-                return Err(Error::<T>::InvalidStatus.into());
-            }
+			if let ConnectionStatus::WithdrawalInProgress { amount, .. } = connection.status {
+				ensure!(amount == repaid_amount, Error::<T>::AmountMismatch);
+			} else {
+				return Err(Error::<T>::InvalidStatus.into());
+			}
 
-            T::VaultProvider::repay(&connection_id, &Self::account_id(), repaid_amount).map_err(|_| Error::<T>::RepayFailed)?;
+			T::VaultProvider::repay(&connection_id, &Self::account_id(), repaid_amount)
+				.map_err(|_| Error::<T>::RepayFailed)?;
 
-            connection.status = ConnectionStatus::Active;
-            Connections::<T>::insert(connection_id, connection);
+			connection.status = ConnectionStatus::Active;
+			Connections::<T>::insert(connection_id, connection);
 
-            Self::deposit_event(Event::WithdrawalCompleted { connection_id, stables_repaid: repaid_amount });
+			Self::deposit_event(Event::WithdrawalCompleted {
+				connection_id,
+				stables_repaid: repaid_amount,
+			});
 
-            Ok(())
-        }
+			Ok(())
+		}
 
-        #[pallet::call_index(3)]
-        #[pallet::weight(Weight::zero())]
-        pub fn withdraw_collateral(
-            origin: OriginFor<T>,
-            connection_id: T::ConnectionId,
-            amount_to_withdraw: T::Balance,
-        ) -> DispatchResult {
-            let owner = ensure_signed(origin)?;
-            let connection = Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
-            ensure!(owner == connection.owner, Error::<T>::NotOwner);
-            ensure!(connection.status == ConnectionStatus::Active, Error::<T>::InvalidStatus);
+		#[pallet::call_index(3)]
+		#[pallet::weight(Weight::zero())]
+		pub fn withdraw_collateral(
+			origin: OriginFor<T>,
+			connection_id: T::ConnectionId,
+			amount_to_withdraw: T::Balance,
+		) -> DispatchResult {
+			let owner = ensure_signed(origin)?;
+			let connection =
+				Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
+			ensure!(owner == connection.owner, Error::<T>::NotOwner);
+			ensure!(connection.status == ConnectionStatus::Active, Error::<T>::InvalidStatus);
 
-            T::VaultProvider::withdraw_collateral(&connection_id, &owner, amount_to_withdraw)
-                .map_err(|_| Error::<T>::WithdrawCollateralFailed)?;
+			T::VaultProvider::withdraw_collateral(&connection_id, &owner, amount_to_withdraw)
+				.map_err(|_| Error::<T>::WithdrawCollateralFailed)?;
 
-            Self::deposit_event(Event::CollateralWithdrawn { connection_id, amount: amount_to_withdraw });
+			Self::deposit_event(Event::CollateralWithdrawn {
+				connection_id,
+				amount: amount_to_withdraw,
+			});
 
-            Ok(())
-        }
+			Ok(())
+		}
 
-        #[pallet::call_index(4)]
-        #[pallet::weight(Weight::zero())]
-        pub fn close_connection(
-            origin: OriginFor<T>,
-            connection_id: T::ConnectionId,
-        ) -> DispatchResult {
-            let owner = ensure_signed(origin)?;
-            let connection =
-                Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
-            ensure!(owner == connection.owner, Error::<T>::NotOwner);
-            ensure!(connection.status == ConnectionStatus::Active, Error::<T>::InvalidStatus);
+		#[pallet::call_index(4)]
+		#[pallet::weight(Weight::zero())]
+		pub fn close_connection(
+			origin: OriginFor<T>,
+			connection_id: T::ConnectionId,
+		) -> DispatchResult {
+			let owner = ensure_signed(origin)?;
+			let connection =
+				Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
+			ensure!(owner == connection.owner, Error::<T>::NotOwner);
+			ensure!(connection.status == ConnectionStatus::Active, Error::<T>::InvalidStatus);
 
-            let connection_account = T::PalletId::get().into_sub_account_truncating(connection_id);
+			let connection_account = T::PalletId::get().into_sub_account_truncating(connection_id);
 
-            // Withdraw all stablecoins from the liquidity router to the connection account
-            T::LiquidityRouter::withdraw_all(connection.destination_id, &connection_account)?;
-            let withdrawn_amount =
-                T::Fungibles::balance(T::StableCurrencyId::get(), &connection_account);
+			// Withdraw all stablecoins from the liquidity router to the connection account
+			T::LiquidityRouter::withdraw_all(connection.destination_id, &connection_account)?;
+			let withdrawn_amount =
+				T::Fungibles::balance(T::StableCurrencyId::get(), &connection_account);
 
-            // Get vault position
-            let (collateral_amount, debt_value) = T::VaultProvider::get_position(&connection_id)
-                .map_err(|_| Error::<T>::VaultPosition)?;
+			// Get vault position
+			let (collateral_amount, debt_value) = T::VaultProvider::get_position(&connection_id)
+				.map_err(|_| Error::<T>::VaultPosition)?;
 
-            // Repay debt using withdrawn stablecoins
-            let amount_to_repay = debt_value.min(withdrawn_amount);
-            if !amount_to_repay.is_zero() {
-                T::VaultProvider::repay(&connection_id, &connection_account, amount_to_repay)?;
-            }
+			// Repay debt using withdrawn stablecoins
+			let amount_to_repay = debt_value.min(withdrawn_amount);
+			if !amount_to_repay.is_zero() {
+				T::VaultProvider::repay(&connection_id, &connection_account, amount_to_repay)?;
+			}
 
-            // Transfer leftover stablecoins to the owner
-            let leftover_stables = withdrawn_amount.saturating_sub(amount_to_repay);
-            if !leftover_stables.is_zero() {
-                T::Fungibles::transfer(
-                    T::StableCurrencyId::get(),
-                    &connection_account,
-                    &owner,
-                    leftover_stables,
-                    // We don't care about keeping the connection account alive
-                    frame_support::traits::tokens::Preservation::Expendable,
-                )?;
-            }
+			// Transfer leftover stablecoins to the owner
+			let leftover_stables = withdrawn_amount.saturating_sub(amount_to_repay);
+			if !leftover_stables.is_zero() {
+				T::Fungibles::transfer(
+					T::StableCurrencyId::get(),
+					&connection_account,
+					&owner,
+					leftover_stables,
+					// We don't care about keeping the connection account alive
+					frame_support::traits::tokens::Preservation::Expendable,
+				)?;
+			}
 
-            // Withdraw all collateral to the owner
-            if !collateral_amount.is_zero() {
-                T::VaultProvider::withdraw_all_collateral(&connection_id, &owner)?;
-            }
+			// Withdraw all collateral to the owner
+			if !collateral_amount.is_zero() {
+				T::VaultProvider::withdraw_all_collateral(&connection_id, &owner)?;
+			}
 
-            T::VaultProvider::close_vault(&connection_id)?;
-            Connections::<T>::remove(connection_id);
+			T::VaultProvider::close_vault(&connection_id)?;
+			Connections::<T>::remove(connection_id);
 
-            Self::deposit_event(Event::ConnectionClosed { connection_id });
+			Self::deposit_event(Event::ConnectionClosed { connection_id });
 
-            Ok(())
-        }
+			Ok(())
+		}
 
-        #[pallet::call_index(5)]
-        #[pallet::weight(Weight::zero())] // TODO: Proper benchmarking
-        pub fn set_stability_fee(
-            origin: OriginFor<T>,
-            destination_id: DestinationIdOf<T>,
-            override_value: Option<Rate>,
-        ) -> DispatchResult {
-            T::GovernanceOrigin::ensure_origin(origin)?;
+		#[pallet::call_index(5)]
+		#[pallet::weight(Weight::zero())] // TODO: Proper benchmarking
+		pub fn set_stability_fee(
+			origin: OriginFor<T>,
+			destination_id: DestinationIdOf<T>,
+			override_value: Option<Rate>,
+		) -> DispatchResult {
+			T::GovernanceOrigin::ensure_origin(origin)?;
 
-            if let Some(value) = override_value {
-                StabilityFeeOverrides::<T>::insert(destination_id, value);
-            } else {
-                StabilityFeeOverrides::<T>::remove(destination_id);
-            }
+			if let Some(value) = override_value {
+				StabilityFeeOverrides::<T>::insert(destination_id, value);
+			} else {
+				StabilityFeeOverrides::<T>::remove(destination_id);
+			}
 
-            Self::deposit_event(Event::StabilityFeeOverrideSet { destination_id, new_value: override_value });
+			Self::deposit_event(Event::StabilityFeeOverrideSet {
+				destination_id,
+				new_value: override_value,
+			});
 
-            Ok(())
-        }
+			Ok(())
+		}
 
-        #[pallet::call_index(6)]
-        #[pallet::weight(Weight::zero())]
-        pub fn cancel_withdrawal(
-            origin: OriginFor<T>,
-            connection_id: T::ConnectionId,
-        ) -> DispatchResult {
-            let owner = ensure_signed(origin)?;
-            let mut connection =
-                Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
-            ensure!(owner == connection.owner, Error::<T>::NotOwner);
+		#[pallet::call_index(6)]
+		#[pallet::weight(Weight::zero())]
+		pub fn cancel_withdrawal(
+			origin: OriginFor<T>,
+			connection_id: T::ConnectionId,
+		) -> DispatchResult {
+			let owner = ensure_signed(origin)?;
+			let mut connection =
+				Self::connections(&connection_id).ok_or(Error::<T>::ConnectionNotFound)?;
+			ensure!(owner == connection.owner, Error::<T>::NotOwner);
 
-            if let ConnectionStatus::WithdrawalInProgress { initiated_at, .. } = connection.status {
-                let timeout_block = initiated_at.saturating_add(T::WithdrawalTimeout::get());
-                ensure!(
-                    T::BlockNumberProvider::current_block_number() >= timeout_block,
-                    Error::<T>::TimeoutNotPassed
-                );
-            } else {
-                return Err(Error::<T>::InvalidStatus.into());
-            }
+			if let ConnectionStatus::WithdrawalInProgress { initiated_at, .. } = connection.status {
+				let timeout_block = initiated_at.saturating_add(T::WithdrawalTimeout::get());
+				ensure!(
+					T::BlockNumberProvider::current_block_number() >= timeout_block,
+					Error::<T>::TimeoutNotPassed
+				);
+			} else {
+				return Err(Error::<T>::InvalidStatus.into());
+			}
 
-            connection.status = ConnectionStatus::Active;
-            Connections::<T>::insert(connection_id, connection);
+			connection.status = ConnectionStatus::Active;
+			Connections::<T>::insert(connection_id, connection);
 
-            Self::deposit_event(Event::WithdrawalCancelled { connection_id });
+			Self::deposit_event(Event::WithdrawalCancelled { connection_id });
 
-            Ok(())
-        }
-    }
+			Ok(())
+		}
+	}
 
-    impl<T: Config> Pallet<T> {
-        pub fn account_id() -> T::AccountId {
-            T::PalletId::get().into_account_truncating()
-        }
-    }
+	impl<T: Config> Pallet<T> {
+		pub fn account_id() -> T::AccountId {
+			T::PalletId::get().into_account_truncating()
+		}
+	}
 }

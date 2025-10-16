@@ -2,6 +2,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmarking;
+#[cfg(feature = "runtime-benchmarks")]
+pub use benchmarking::BenchmarkHelper;
 pub use pallet::*;
 
 #[frame_support::pallet]
@@ -9,12 +13,18 @@ pub mod pallet {
 	use frame_support::{
 		pallet_prelude::*,
 		rewards::RewardsPool,
-		traits::{fungibles::{self, Mutate}, tokens::Preservation, EnsureOrigin, Get},
+		traits::{
+			fungibles::{self, Mutate},
+			tokens::Preservation,
+			EnsureOrigin, Get,
+		},
 		PalletId,
 	};
 	use frame_system::pallet_prelude::{BlockNumberFor, *};
 	use scale_info::TypeInfo;
-	use sp_runtime::traits::{AccountIdConversion, AtLeast32BitUnsigned, BlockNumberProvider, Saturating};
+	use sp_runtime::traits::{
+		AccountIdConversion, AtLeast32BitUnsigned, BlockNumberProvider, Saturating,
+	};
 
 	#[derive(Encode, Decode, MaxEncodedLen, TypeInfo, Clone, PartialEq, Eq, RuntimeDebug)]
 	pub struct PoolData<PoolId, AssetId, Balance> {
@@ -44,7 +54,11 @@ pub mod pallet {
 		type AssetId: Parameter + Member + Default + Copy + MaxEncodedLen;
 
 		/// Something that provides fungible access.
-		type Assets: fungibles::Mutate<Self::AccountId, AssetId = Self::AssetId, Balance = Self::Balance>;
+		type Assets: fungibles::Mutate<
+			Self::AccountId,
+			AssetId = Self::AssetId,
+			Balance = Self::Balance,
+		>;
 
 		/// The origin which can create new pools.
 		type UpdateOrigin: EnsureOrigin<Self::RuntimeOrigin>;
@@ -78,12 +92,19 @@ pub mod pallet {
 		/// The maximum number of reward pools that can be created.
 		#[pallet::constant]
 		type MaxRewardPools: Get<u32>;
+
+		/// Helper for preparing benchmarking state.
+		#[cfg(feature = "runtime-benchmarks")]
+		type BenchmarkHelper: crate::BenchmarkHelper<Self::AccountId, Self::AssetId, Self::Balance>;
 	}
 
 	#[pallet::storage]
 	#[pallet::getter(fn reward_pools)]
-	pub type RewardPools<T: Config> =
-		StorageValue<_, BoundedVec<PoolData<T::PoolId, T::AssetId, T::Balance>, T::MaxRewardPools>, ValueQuery>;
+	pub type RewardPools<T: Config> = StorageValue<
+		_,
+		BoundedVec<PoolData<T::PoolId, T::AssetId, T::Balance>, T::MaxRewardPools>,
+		ValueQuery,
+	>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn last_updated_block)]
@@ -130,11 +151,7 @@ pub mod pallet {
 				admin.as_ref().unwrap_or(&sovereign_account),
 			)?;
 
-			let pool_data = PoolData {
-				pool_id,
-				reward_asset_id,
-				reward_rate_per_block,
-			};
+			let pool_data = PoolData { pool_id, reward_asset_id, reward_rate_per_block };
 
 			RewardPools::<T>::try_append(pool_data).map_err(|_| Error::<T>::TooManyPools)?;
 

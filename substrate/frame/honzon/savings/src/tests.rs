@@ -42,8 +42,6 @@ fn create_pool_correct_params() {
 
 		System::set_block_number(10);
 
-
-
 		assert_ok!(Savings::create_pool(
 			RuntimeOrigin::signed(1),
 			staked_asset_id,

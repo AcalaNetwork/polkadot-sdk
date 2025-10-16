@@ -60,19 +60,24 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use codec::{Encode, MaxEncodedLen};
-use frame_support::{
-	pallet_prelude::*,
-	traits::{fungible::{self, Mutate}, fungibles::{self, Mutate as FungiblesMutate}, tokens::Preservation, Change, UnixTime},
-	transactional, PalletId,
-};
-use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
-use pallet_loans::BalanceOf;
-use pallet_asset_conversion::Swap;
 use frame_support::traits::honzon::{
 	CDPTreasury, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate, FractionalRate,
 	LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 	VaultProvider,
 };
+use frame_support::{
+	pallet_prelude::*,
+	traits::{
+		fungible::{self, Mutate},
+		fungibles::{self, Mutate as FungiblesMutate},
+		tokens::Preservation,
+		Change, UnixTime,
+	},
+	transactional, PalletId,
+};
+use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
+use pallet_asset_conversion::Swap;
+use pallet_loans::BalanceOf;
 use scale_info::TypeInfo;
 use sp_runtime::{
 	offchain::{
@@ -513,8 +518,9 @@ pub mod pallet {
 			let mut collateral_params = Self::collateral_params();
 			if let Change::NewValue(maybe_rate) = interest_rate_per_sec {
 				match (collateral_params.interest_rate_per_sec.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) =>
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
+					(Some(existing), Some(rate)) => {
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
+					},
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -534,8 +540,9 @@ pub mod pallet {
 			}
 			if let Change::NewValue(maybe_rate) = liquidation_penalty {
 				match (collateral_params.liquidation_penalty.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) =>
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
+					(Some(existing), Some(rate)) => {
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
+					},
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -688,12 +695,13 @@ impl<T: Config> Pallet<T> {
 				exchange_rate,
 			);
 			match Self::get_liquidation_ratio() {
-				Ok(liquidation_ratio) =>
+				Ok(liquidation_ratio) => {
 					if collateral_ratio < liquidation_ratio {
 						CDPStatus::Unsafe
 					} else {
 						CDPStatus::Safe
-					},
+					}
+				},
 				Err(e) => CDPStatus::ChecksFailed(e),
 			}
 		} else {
@@ -734,8 +742,6 @@ impl<T: Config> Pallet<T> {
 
 		Ok(effective_fee)
 	}
-
-
 
 	pub fn compound_interest_rate(rate_per_sec: Rate, secs: u64) -> Rate {
 		rate_per_sec
@@ -840,7 +846,8 @@ impl<T: Config> Pallet<T> {
 		let debit_value_adjustment_abs = debit_value_adjustment.amount();
 		let Position { debit, stability_fee, .. } = <LoansOf<T>>::positions(who);
 		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
-		let effective_stability_fee = Self::get_effective_stability_fee(position_stability_fee, who)?;
+		let effective_stability_fee =
+			Self::get_effective_stability_fee(position_stability_fee, who)?;
 
 		if debit_value_adjustment.is_decrease() {
 			let debit_adjustment_abs = Self::try_convert_to_debit_balance(
@@ -930,7 +937,8 @@ impl<T: Config> Pallet<T> {
 		let stable_currency_id = T::GetStableCurrencyId::get();
 		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(who);
 		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
-		let effective_stability_fee = Self::get_effective_stability_fee(position_stability_fee, who)?;
+		let effective_stability_fee =
+			Self::get_effective_stability_fee(position_stability_fee, who)?;
 
 		// ensure collateral of CDP is enough
 		ensure!(decrease_collateral <= collateral, Error::<T>::CollateralNotEnough);
@@ -948,8 +956,8 @@ impl<T: Config> Pallet<T> {
 		// update CDP state
 		let collateral_adjustment = pallet_loans::BalanceAdjustment::decrease(decrease_collateral);
 		let previous_debit_value = Self::convert_to_debit_value(debit, effective_stability_fee);
-		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount >=
-			previous_debit_value
+		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount
+			>= previous_debit_value
 		{
 			// refund extra stable coin to the CDP owner
 			<T as Config>::Tokens::transfer(
@@ -1016,7 +1024,10 @@ impl<T: Config> Pallet<T> {
 		let stability_fee = Rate::from_inner(stability_fee.into_inner());
 		ensure!(!debit.is_zero(), Error::<T>::NoDebitValue);
 		ensure!(
-			matches!(Self::check_cdp_status(collateral, debit, stability_fee, &who), CDPStatus::Safe),
+			matches!(
+				Self::check_cdp_status(collateral, debit, stability_fee, &who),
+				CDPStatus::Safe
+			),
 			Error::<T>::MustBeSafe
 		);
 		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who)?;
@@ -1055,7 +1066,10 @@ impl<T: Config> Pallet<T> {
 
 		// ensure the cdp is unsafe
 		ensure!(
-			matches!(Self::check_cdp_status(collateral, debit, stability_fee, &who), CDPStatus::Unsafe),
+			matches!(
+				Self::check_cdp_status(collateral, debit, stability_fee, &who),
+				CDPStatus::Unsafe
+			),
 			Error::<T>::MustBeUnsafe
 		);
 		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who)?;
@@ -1093,7 +1107,6 @@ impl<T: Config> Pallet<T> {
 		}
 		LiquidateByPriority::<T>::liquidate(who, currency_id, amount, target_stable_amount)
 	}
-
 }
 
 type LiquidateByPriority<T> = (LiquidateViaDex<T>, LiquidateViaAuction<T>);
@@ -1226,8 +1239,8 @@ impl<T: Config> Pallet<T> {
 					continue;
 				},
 			};
-			if !is_shutdown &&
-				matches!(
+			if !is_shutdown
+				&& matches!(
 					Self::check_cdp_status(collateral, debit, stability_fee, &who),
 					CDPStatus::Unsafe
 				) {
@@ -1288,7 +1301,9 @@ impl<T: Config> LiquidateCollateral<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T
 	}
 }
 
-impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T>, BalanceOf<T>> for Pallet<T> {
+impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T>, BalanceOf<T>>
+	for Pallet<T>
+{
 	fn get_debit_value(_currency_id: CurrencyIdOf<T>, debit_balance: BalanceOf<T>) -> BalanceOf<T> {
 		Self::average_debit_exchange_rate().saturating_mul_int(debit_balance)
 	}
@@ -1371,12 +1386,12 @@ fn vault_account_id<T: Config>(vault_id: T::VaultId) -> T::AccountId {
 	<T as pallet::Config>::PalletId::get().into_sub_account_truncating(vault_id)
 }
 
-impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::VaultId> for Pallet<T> {
+impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::VaultId>
+	for Pallet<T>
+{
 	type AssetId = CurrencyIdOf<T>;
 
-	fn get_position(
-		vault_id: &T::VaultId,
-	) -> Result<(BalanceOf<T>, BalanceOf<T>), DispatchError> {
+	fn get_position(vault_id: &T::VaultId) -> Result<(BalanceOf<T>, BalanceOf<T>), DispatchError> {
 		let vault_account = vault_account_id::<T>(*vault_id);
 		let position = <LoansOf<T>>::positions(&vault_account);
 		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
@@ -1392,10 +1407,7 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		Self::withdraw_collateral(vault_id, to, position.collateral)
 	}
 
-	fn set_stability_fee(
-		vault_id: &T::VaultId,
-		stability_fee: Option<Rate>,
-	) -> DispatchResult {
+	fn set_stability_fee(vault_id: &T::VaultId, stability_fee: Option<Rate>) -> DispatchResult {
 		if let Some(fee) = stability_fee {
 			StabilityFeeOverrides::<T>::insert(vault_id, fee);
 		} else {
@@ -1414,7 +1426,12 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		VaultIdByAccountId::<T>::insert(&vault_account, *vault_id);
 
 		// Transfer collateral from the user to the vault's account.
-		<T as pallet::Config>::Currency::transfer(from, &vault_account, amount, Preservation::Preserve)?;
+		<T as pallet::Config>::Currency::transfer(
+			from,
+			&vault_account,
+			amount,
+			Preservation::Preserve,
+		)?;
 
 		// Increase the collateral in the vault's position.
 		let collateral_adjustment = pallet_loans::BalanceAdjustment::increase(amount);
@@ -1448,7 +1465,12 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		)?;
 
 		// Transfer the released collateral from the vault's account back to the user.
-		<T as pallet::Config>::Currency::transfer(&vault_account, to, amount, Preservation::Preserve)?;
+		<T as pallet::Config>::Currency::transfer(
+			&vault_account,
+			to,
+			amount,
+			Preservation::Preserve,
+		)?;
 
 		Ok(())
 	}
@@ -1460,11 +1482,9 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		let stable_currency_id = T::GetStableCurrencyId::get();
 
 		// Convert the stablecoin amount to the equivalent debit amount.
-		let debit_amount = Self::try_convert_to_debit_balance(
-			amount,
-			Self::get_interest_rate_per_sec()?,
-		)
-		.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
+		let debit_amount =
+			Self::try_convert_to_debit_balance(amount, Self::get_interest_rate_per_sec()?)
+				.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
 
 		// Increase the debit in the vault's position. This will mint stablecoin to the vault's
 		// account.
@@ -1531,10 +1551,7 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 	fn close_vault(vault_id: &T::VaultId) -> DispatchResult {
 		let vault_account = vault_account_id::<T>(*vault_id);
 		let position = <LoansOf<T>>::positions(&vault_account);
-		ensure!(
-			position.collateral.is_zero() && position.debit.is_zero(),
-			"Vault is not empty"
-		);
+		ensure!(position.collateral.is_zero() && position.debit.is_zero(), "Vault is not empty");
 		VaultIdByAccountId::<T>::remove(&vault_account);
 		Ok(())
 	}

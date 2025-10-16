@@ -3,12 +3,20 @@
 use super::*;
 use crate as pallet_savings;
 
+#[cfg(feature = "runtime-benchmarks")]
+use crate::BenchmarkHelper;
 use codec::{Decode, Encode, MaxEncodedLen};
+#[cfg(feature = "runtime-benchmarks")]
+use frame_support::assert_ok;
+use frame_support::dispatch::DispatchResult;
+use frame_support::traits::tokens::fungibles::{
+	self, Inspect, InspectFreeze, Mutate, MutateFreeze,
+};
 use frame_support::{
 	construct_runtime, parameter_types,
 	traits::{
+		tokens::{DepositConsequence, Fortitude, Preservation, Provenance, WithdrawConsequence},
 		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, EnsureOrigin, Get, SortedMembers,
-		tokens::{DepositConsequence, WithdrawConsequence, Fortitude, Provenance, Preservation},
 	},
 	PalletId,
 };
@@ -16,14 +24,13 @@ use frame_system::{EnsureSigned, EnsureSignedBy};
 use pallet_asset_rewards::FreezeReason;
 use scale_info::TypeInfo;
 use sp_core::H256;
-use frame_support::traits::tokens::fungibles::{self, Mutate, MutateFreeze, Inspect, InspectFreeze};
-use frame_support::dispatch::DispatchResult;
+#[cfg(feature = "runtime-benchmarks")]
+use sp_runtime::traits::Saturating;
 use sp_runtime::{
 	testing::Header,
 	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup},
 	BuildStorage, RuntimeDebug,
 };
-
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -56,7 +63,7 @@ parameter_types! {
 
 impl frame_system::Config for Test {
 	type BaseCallFilter = frame_support::traits::Everything;
-		type BlockWeights = ();
+	type BlockWeights = ();
 	type BlockLength = ();
 	type DbWeight = ();
 	type RuntimeOrigin = RuntimeOrigin;
@@ -181,6 +188,24 @@ impl SortedMembers<AccountId> for AdminAccount {
 	}
 }
 
+#[cfg(feature = "runtime-benchmarks")]
+pub struct BenchHelper;
+
+#[cfg(feature = "runtime-benchmarks")]
+impl BenchmarkHelper<AccountId, AssetId, Balance> for BenchHelper {
+	fn prepare_pool(
+		_pool_index: u32,
+		savings_account: &AccountId,
+		reward_budget: Balance,
+	) -> (AssetId, AssetId, Option<AccountId>) {
+		let staked_asset_id = 1;
+		let reward_asset_id = 2;
+		let required = reward_budget.saturating_add(Assets::minimum_balance(reward_asset_id));
+		assert_ok!(Assets::mint_into(reward_asset_id, savings_account, required));
+		(staked_asset_id, reward_asset_id, Some(1))
+	}
+}
+
 impl Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
@@ -194,6 +219,8 @@ impl Config for Test {
 	type PoolId = u32;
 	type AssetRewardsPalletId = AssetRewardsPalletId;
 	type MaxRewardPools = MaxRewardPools;
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = BenchHelper;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
