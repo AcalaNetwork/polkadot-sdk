@@ -81,6 +81,15 @@ impl pallet_balances::Config for Runtime {
 	type DoneSlashHandler = ();
 }
 
+pallet_assets::runtime_benchmarks_enabled! {
+pub struct MockBenchmarkHelper;
+impl pallet_assets::BenchmarkHelper<CurrencyId> for MockBenchmarkHelper {
+	fn create_asset_id_parameter(id: u32) -> CurrencyId {
+		CurrencyId::Asset(id)
+	}
+}
+}
+
 impl pallet_assets::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
@@ -101,8 +110,9 @@ impl pallet_assets::Config for Runtime {
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
 	type Holder = ();
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
+	pallet_assets::runtime_benchmarks_enabled! {
+		type BenchmarkHelper = MockBenchmarkHelper;
+	}
 }
 
 #[derive(

@@ -1,44 +1,40 @@
-// This file is part of Acala.
+// This file is part of Substrate.
 
 // Copyright (C) 2020-2025 Acala Foundation.
-// SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
+// SPDX-License-Identifier: Apache-2.0
 
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
-
-// You should have received a copy of the GNU General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! Mocks for the cdp treasury module.
 
 #![cfg(test)]
 
 use super::*;
-use codec::{Decode, Encode, MaxEncodedLen};
+use crate as pallet_cdp_treasury;
 use frame_support::{
 	construct_runtime, derive_impl, parameter_types,
 	traits::{
-		honzon::{AuctionManager, SwapLimit},
-		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, EitherOfDiverse, Everything,
-		Incrementable, InstanceFilter, OnUnbalanced, SortedMembers,
+		honzon::AuctionManager, AsEnsureOriginWithArg, ConstU128, ConstU32, EitherOfDiverse,
+		SortedMembers,
 	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use scale_info::TypeInfo;
-use sp_core::H256;
-use sp_runtime::{traits::IdentityLookup, BuildStorage, DispatchError, DispatchResult, Permill};
+use pallet_asset_conversion::Swap;
+use sp_runtime::{traits::IdentityLookup, BuildStorage, DispatchError, DispatchResult};
 use std::cell::RefCell;
 
 pub type AccountId = u128;
-pub type BlockNumber = u64;
 pub type AuctionId = u32;
 pub type Balance = u128;
 
@@ -50,21 +46,11 @@ pub const CHARLIE: AccountId = 2;
 pub const NATIVE: CurrencyId = 0;
 pub const STABLE: CurrencyId = 1;
 
-mod cdp_treasury {
-	pub use super::super::*;
-}
-
-type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
-type Block = frame_system::mocking::MockBlock<Test>;
-
 construct_runtime!(
-	pub enum Test where
-		Block = Block,
-		NodeBlock = Block,
-		UncheckedExtrinsic = UncheckedExtrinsic
+	pub enum Test
 	{
 		System: frame_system,
-		CDPTreasuryModule: cdp_treasury,
+		CDPTreasuryModule: pallet_cdp_treasury,
 		PalletBalances: pallet_balances,
 		Assets: pallet_assets,
 	}
@@ -74,15 +60,8 @@ construct_runtime!(
 impl frame_system::Config for Test {
 	type AccountId = AccountId;
 	type Lookup = IdentityLookup<Self::AccountId>;
-	type Block = Block;
+	type Block = frame_system::mocking::MockBlock<Test>;
 	type AccountData = pallet_balances::AccountData<Balance>;
-	type OnNewAccount = ();
-	type OnKilledAccount = ();
-	type BaseCallFilter = Everything;
-	type SystemWeightInfo = ();
-	type PalletInfo = PalletInfo;
-	type OnSetCode = ();
-	type MaxConsumers = ConstU32<16>;
 }
 
 impl pallet_balances::Config for Test {
@@ -134,6 +113,9 @@ impl pallet_assets::Config for Test {
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
 	type Holder = ();
+	pallet_assets::runtime_benchmarks_enabled! {
+		type BenchmarkHelper = ();
+	}
 }
 
 thread_local! {
@@ -180,30 +162,34 @@ impl AuctionManager<AccountId> for MockAuctionManager {
 }
 
 pub struct MockSwap;
-impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
-	fn swap(
-		_who: &AccountId,
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
+impl Swap<AccountId> for MockSwap {
+	type Balance = Balance;
+	type AssetKind = CurrencyId;
+
+	fn max_path_len() -> u32 {
+		2
 	}
 
-	fn get_swap_amount(
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_limit: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)> {
-		None
+	fn swap_exact_tokens_for_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_in: Self::Balance,
+		_amount_out_min: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(0)
 	}
 
-	fn swap_by_path(
-		_who: &AccountId,
-		_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
+	fn swap_tokens_for_exact_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_out: Self::Balance,
+		_amount_in_max: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(0)
 	}
 }
 
@@ -218,8 +204,9 @@ parameter_types! {
 
 impl Config for Test {
 	type Fungibles = Assets;
-	type GetStableCurrencyId = GetStableCurrencyId;
-	type GetBaseCurrencyId = GetNativeCurrencyId;
+	type AssetKind = CurrencyId;
+	type StableCurrencyId = GetStableCurrencyId;
+	type CollateralCurrencyId = GetNativeCurrencyId;
 	type AuctionManagerHandler = MockAuctionManager;
 	type UpdateOrigin =
 		EitherOfDiverse<EnsureRoot<AccountId>, EnsureSignedBy<OneMember, AccountId>>;
