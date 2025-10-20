@@ -89,7 +89,7 @@ use frame_support::{
 		fungibles::{Inspect, Mutate},
 		schedule::DispatchTime,
 		tokens::Balance,
-		Consideration,
+		Consideration, RewardsPool,
 	},
 	PalletId,
 };
@@ -180,7 +180,6 @@ sp_api::decl_runtime_apis! {
 pub mod pallet {
 	use super::*;
 	use frame_support::{
-		rewards::RewardsPool,
 		pallet_prelude::*,
 		traits::{
 			fungibles::MutateFreeze,

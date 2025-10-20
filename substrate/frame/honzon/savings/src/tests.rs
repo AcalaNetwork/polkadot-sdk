@@ -60,7 +60,6 @@ fn on_initialize_distributes_rewards() {
 	new_test_ext().execute_with(|| {
 		let reward_asset_id = 2;
 		let reward_rate_per_block = 100;
-		let savings_account: AccountId = SavingsPalletId::get().into_account_truncating();
 
 		// Create asset and mint some to the savings account
 
@@ -97,7 +96,6 @@ fn on_initialize_handles_block_jumps() {
 		let staked_asset_id = 1;
 		let reward_asset_id = 2;
 		let reward_rate_per_block = 10; // for easier calculation
-		let savings_account: AccountId = SavingsPalletId::get().into_account_truncating();
 
 		// Setup assets and pool
 		assert_ok!(Savings::create_pool(

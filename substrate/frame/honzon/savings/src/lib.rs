@@ -12,11 +12,10 @@ pub use pallet::*;
 pub mod pallet {
 	use frame_support::{
 		pallet_prelude::*,
-		rewards::RewardsPool,
 		traits::{
 			fungibles::{self, Mutate},
 			tokens::Preservation,
-			EnsureOrigin, Get,
+			EnsureOrigin, Get, RewardsPool
 		},
 		PalletId,
 	};
@@ -38,9 +37,6 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
-		/// Because this pallet emits events, it depends on the runtime's definition of an event.
-		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
 		/// The type of balance.
 		type Balance: Parameter
 			+ Member
@@ -72,8 +68,8 @@ pub mod pallet {
 		/// The reward pool trait.
 		type RewardPool: RewardsPool<
 			Self::AccountId,
-			Self::PoolId,
-			Self::Balance,
+			PoolId = Self::PoolId,
+			Balance = Self::Balance,
 			AssetId = Self::AssetId,
 			BlockNumber = BlockNumberFor<Self>,
 		>;

@@ -5,42 +5,29 @@ use crate as pallet_savings;
 
 #[cfg(feature = "runtime-benchmarks")]
 use crate::BenchmarkHelper;
-use codec::{Decode, Encode, MaxEncodedLen};
 #[cfg(feature = "runtime-benchmarks")]
 use frame_support::assert_ok;
-use frame_support::dispatch::DispatchResult;
-use frame_support::traits::tokens::fungibles::{
-	self, Inspect, InspectFreeze, Mutate, MutateFreeze,
-};
 use frame_support::{
 	construct_runtime, parameter_types,
 	traits::{
-		tokens::{DepositConsequence, Fortitude, Preservation, Provenance, WithdrawConsequence},
-		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, EnsureOrigin, Get, SortedMembers,
+		AsEnsureOriginWithArg,  ConstU32, SortedMembers,
 	},
 	PalletId,
 };
 use frame_system::{EnsureSigned, EnsureSignedBy};
 use pallet_asset_rewards::FreezeReason;
-use scale_info::TypeInfo;
 use sp_core::H256;
 #[cfg(feature = "runtime-benchmarks")]
 use sp_runtime::traits::Saturating;
 use sp_runtime::{
-	testing::Header,
 	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup},
-	BuildStorage, RuntimeDebug,
+	BuildStorage,
 };
 
-type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
 
 construct_runtime!(
-	pub enum Test where
-		Block = Block,
-		NodeBlock = Block,
-		UncheckedExtrinsic = UncheckedExtrinsic,
-	{
+	pub enum Test{
 		System: frame_system,
 		Balances: pallet_balances,
 		Assets: pallet_assets,
@@ -207,7 +194,6 @@ impl BenchmarkHelper<AccountId, AssetId, Balance> for BenchHelper {
 }
 
 impl Config for Test {
-	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
 	type AssetId = AssetId;
 	type Assets = Assets;
