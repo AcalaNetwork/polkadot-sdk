@@ -39,14 +39,14 @@ fn debits_key() {
 		assert_eq!(Collateral::balance(&ALICE), 10000);
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 0);
-		assert_eq!(Loans::positions(&ALICE).debit, 0);
+		assert_eq!(Loans::positions(ALICE).debit, 0);
 		assert_ok!(Loans::adjust_position(
 			&ALICE,
 			BalanceAdjustment::Increase(200),
 			BalanceAdjustment::Increase(100),
 			Some(Rate::one())
 		));
-		assert_eq!(Loans::positions(&ALICE).debit, 100);
+		assert_eq!(Loans::positions(ALICE).debit, 100);
 		assert_eq!(Collateral::balance(&ALICE), 9800);
 		assert_eq!(Collateral::balance(&Loans::account_id()), 0);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 200);
@@ -56,7 +56,7 @@ fn debits_key() {
 			BalanceAdjustment::Decrease(50),
 			None
 		));
-		assert_eq!(Loans::positions(&ALICE).debit, 50);
+		assert_eq!(Loans::positions(ALICE).debit, 50);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 100);
 	});
 }
@@ -133,8 +133,8 @@ fn adjust_position_should_work() {
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 0);
 		assert_eq!(Loans::total_positions().debit, 0);
 		assert_eq!(Loans::total_positions().collateral, 0);
-		assert_eq!(Loans::positions(&ALICE).debit, 0);
-		assert_eq!(Loans::positions(&ALICE).collateral, 0);
+		assert_eq!(Loans::positions(ALICE).debit, 0);
+		assert_eq!(Loans::positions(ALICE).collateral, 0);
 
 		// success
 		assert_ok!(Loans::adjust_position(
@@ -148,9 +148,9 @@ fn adjust_position_should_work() {
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 500);
 		assert_eq!(Loans::total_positions().debit, 200);
 		assert_eq!(Loans::total_positions().collateral, 500);
-		assert_eq!(Loans::positions(&ALICE).debit, 200);
-		assert_eq!(Loans::positions(&ALICE).collateral, 500);
-		assert_eq!(Loans::positions(&ALICE).stability_fee, Rate::one());
+		assert_eq!(Loans::positions(ALICE).debit, 200);
+		assert_eq!(Loans::positions(ALICE).collateral, 500);
+		assert_eq!(Loans::positions(ALICE).stability_fee, Rate::one());
 		System::assert_has_event(RuntimeEvent::Loans(Event::PositionUpdated {
 			owner: ALICE,
 			collateral_adjustment: BalanceAdjustment::Increase(500),
@@ -177,9 +177,9 @@ fn update_loan_should_work() {
 		assert_eq!(Collateral::balance(&ALICE), 10000);
 		assert_eq!(Loans::total_positions().debit, 0);
 		assert_eq!(Loans::total_positions().collateral, 0);
-		assert_eq!(Loans::positions(&ALICE).debit, 0);
-		assert_eq!(Loans::positions(&ALICE).collateral, 0);
-		assert!(!<Positions<Runtime>>::contains_key(&ALICE));
+		assert_eq!(Loans::positions(ALICE).debit, 0);
+		assert_eq!(Loans::positions(ALICE).collateral, 0);
+		assert!(!<Positions<Runtime>>::contains_key(ALICE));
 
 		let alice_ref_count_0 = System::consumers(&ALICE);
 
@@ -193,9 +193,9 @@ fn update_loan_should_work() {
 		// just update records
 		assert_eq!(Loans::total_positions().debit, 2000);
 		assert_eq!(Loans::total_positions().collateral, 3000);
-		assert_eq!(Loans::positions(&ALICE).debit, 2000);
-		assert_eq!(Loans::positions(&ALICE).collateral, 3000);
-		assert_eq!(Loans::positions(&ALICE).stability_fee, Rate::one());
+		assert_eq!(Loans::positions(ALICE).debit, 2000);
+		assert_eq!(Loans::positions(ALICE).collateral, 3000);
+		assert_eq!(Loans::positions(ALICE).stability_fee, Rate::one());
 		assert_eq!(Loans::total_debit_by_stability_fee(Rate::one()), 2000);
 
 		// increase ref count when open new position
@@ -207,17 +207,17 @@ fn update_loan_should_work() {
 		assert_eq!(Collateral::balance(&ALICE), 10000);
 
 		// should remove position storage if zero
-		assert!(<Positions<Runtime>>::contains_key(&ALICE));
+		assert!(<Positions<Runtime>>::contains_key(ALICE));
 		assert_ok!(Loans::update_loan(
 			&ALICE,
 			BalanceAdjustment::Decrease(3000),
 			BalanceAdjustment::Decrease(2000),
 			None
 		));
-		assert_eq!(Loans::positions(&ALICE).debit, 0);
-		assert_eq!(Loans::positions(&ALICE).collateral, 0);
+		assert_eq!(Loans::positions(ALICE).debit, 0);
+		assert_eq!(Loans::positions(ALICE).collateral, 0);
 		assert_eq!(Loans::total_debit_by_stability_fee(Rate::one()), 0);
-		assert!(!<Positions<Runtime>>::contains_key(&ALICE));
+		assert!(!<Positions<Runtime>>::contains_key(ALICE));
 
 		// decrease ref count after remove position
 		let alice_ref_count_2 = System::consumers(&ALICE);
@@ -240,20 +240,20 @@ fn transfer_loan_should_work() {
 			BalanceAdjustment::Increase(600),
 			Some(Rate::one())
 		));
-		assert_eq!(Loans::positions(&ALICE).debit, 500);
-		assert_eq!(Loans::positions(&ALICE).collateral, 1000);
-		assert_eq!(Loans::positions(&ALICE).stability_fee, Rate::one());
-		assert_eq!(Loans::positions(&BOB).debit, 600);
-		assert_eq!(Loans::positions(&BOB).collateral, 1200);
-		assert_eq!(Loans::positions(&BOB).stability_fee, Rate::one());
+		assert_eq!(Loans::positions(ALICE).debit, 500);
+		assert_eq!(Loans::positions(ALICE).collateral, 1000);
+		assert_eq!(Loans::positions(ALICE).stability_fee, Rate::one());
+		assert_eq!(Loans::positions(BOB).debit, 600);
+		assert_eq!(Loans::positions(BOB).collateral, 1200);
+		assert_eq!(Loans::positions(BOB).stability_fee, Rate::one());
 
 		assert_ok!(Loans::transfer_loan(&ALICE, &BOB));
-		assert_eq!(Loans::positions(&ALICE).debit, 0);
-		assert_eq!(Loans::positions(&ALICE).collateral, 0);
-		assert_eq!(Loans::positions(&ALICE).stability_fee, Ratio::zero());
-		assert_eq!(Loans::positions(&BOB).debit, 1100);
-		assert_eq!(Loans::positions(&BOB).collateral, 2200);
-		assert_eq!(Loans::positions(&BOB).stability_fee, Rate::one());
+		assert_eq!(Loans::positions(ALICE).debit, 0);
+		assert_eq!(Loans::positions(ALICE).collateral, 0);
+		assert_eq!(Loans::positions(ALICE).stability_fee, Ratio::zero());
+		assert_eq!(Loans::positions(BOB).debit, 1100);
+		assert_eq!(Loans::positions(BOB).collateral, 2200);
+		assert_eq!(Loans::positions(BOB).stability_fee, Rate::one());
 		assert_eq!(Loans::total_debit_by_stability_fee(Rate::one()), 1100);
 		System::assert_last_event(RuntimeEvent::Loans(Event::TransferLoan {
 			from: ALICE,
@@ -294,16 +294,16 @@ fn confiscate_collateral_and_debit_work_success() {
 		));
 		assert_eq!(CDPTreasuryModule::total_collaterals(), 0);
 		assert_eq!(CDPTreasuryModule::debit_pool(), 0);
-		assert_eq!(Loans::positions(&ALICE).debit, 200);
-		assert_eq!(Loans::positions(&ALICE).collateral, 500);
+		assert_eq!(Loans::positions(ALICE).debit, 200);
+		assert_eq!(Loans::positions(ALICE).collateral, 500);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 500);
 
 		assert_ok!(Loans::confiscate_collateral_and_debit(&ALICE, 300, 200));
 		assert_eq!(CDPTreasuryModule::total_collaterals(), 300);
 		let debit_pool = CDPTreasuryModule::debit_pool();
 		assert_eq!(debit_pool, 100);
-		assert_eq!(Loans::positions(&ALICE).debit, 0);
-		assert_eq!(Loans::positions(&ALICE).collateral, 200);
+		assert_eq!(Loans::positions(ALICE).debit, 0);
+		assert_eq!(Loans::positions(ALICE).collateral, 200);
 		assert_eq!(Collateral::balance_on_hold(&hold_reason, &ALICE), 200);
 		System::assert_last_event(RuntimeEvent::Loans(Event::ConfiscateCollateralAndDebit {
 			owner: ALICE,

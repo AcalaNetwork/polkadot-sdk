@@ -236,13 +236,12 @@ impl RiskManager<AccountId, CurrencyId, Balance, Balance> for MockRiskManager {
 		debit_balance: Balance,
 		check_required_ratio: bool,
 	) -> DispatchResult {
-		if debit_balance > 0 && check_required_ratio {
-			if collateral_balance < debit_balance * 2 {
+		if debit_balance > 0 && check_required_ratio
+			&& collateral_balance < debit_balance * 2 {
 				return Err(sp_runtime::DispatchError::Other(
 					"mock below required collateral ratio error",
 				));
 			}
-		}
 		if collateral_balance < debit_balance {
 			return Err(sp_runtime::DispatchError::Other("mock below liquidation ratio error"));
 		}
