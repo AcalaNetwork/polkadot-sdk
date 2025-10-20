@@ -109,6 +109,7 @@ std = [
 	"pallet-migrations?/std",
 	"pallet-mixnet?/std",
 	"pallet-mmr?/std",
+	"pallet-multi-asset-bounties?/std",
 	"pallet-multisig?/std",
 	"pallet-nft-fractionalization?/std",
 	"pallet-nfts-runtime-api?/std",
@@ -169,6 +170,7 @@ std = [
 	"pallet-xcm-benchmarks?/std",
 	"pallet-xcm-bridge-hub-router?/std",
 	"pallet-xcm-bridge-hub?/std",
+	"pallet-xcm-precompiles?/std",
 	"pallet-xcm?/std",
 	"parachains-common?/std",
 	"parachains-runtimes-test-utils?/std",
@@ -301,6 +303,7 @@ runtime-benchmarks = [
 	"pallet-meta-tx?/runtime-benchmarks",
 	"pallet-migrations?/runtime-benchmarks",
 	"pallet-mmr?/runtime-benchmarks",
+	"pallet-multi-asset-bounties?/runtime-benchmarks",
 	"pallet-multisig?/runtime-benchmarks",
 	"pallet-nft-fractionalization?/runtime-benchmarks",
 	"pallet-nfts?/runtime-benchmarks",
@@ -349,6 +352,7 @@ runtime-benchmarks = [
 	"pallet-xcm-benchmarks?/runtime-benchmarks",
 	"pallet-xcm-bridge-hub-router?/runtime-benchmarks",
 	"pallet-xcm-bridge-hub?/runtime-benchmarks",
+	"pallet-xcm-precompiles?/runtime-benchmarks",
 	"pallet-xcm?/runtime-benchmarks",
 	"parachains-common?/runtime-benchmarks",
 	"polkadot-cli?/runtime-benchmarks",
@@ -442,6 +446,7 @@ try-runtime = [
 	"pallet-migrations?/try-runtime",
 	"pallet-mixnet?/try-runtime",
 	"pallet-mmr?/try-runtime",
+	"pallet-multi-asset-bounties?/try-runtime",
 	"pallet-multisig?/try-runtime",
 	"pallet-nft-fractionalization?/try-runtime",
 	"pallet-nfts?/try-runtime",
@@ -490,6 +495,7 @@ try-runtime = [
 	"pallet-whitelist?/try-runtime",
 	"pallet-xcm-bridge-hub-router?/try-runtime",
 	"pallet-xcm-bridge-hub?/try-runtime",
+	"pallet-xcm-precompiles?/try-runtime",
 	"pallet-xcm?/try-runtime",
 	"parachains-common?/try-runtime",
 	"polkadot-cli?/try-runtime",
@@ -655,6 +661,7 @@ runtime-full = [
 	"pallet-migrations",
 	"pallet-mixnet",
 	"pallet-mmr",
+	"pallet-multi-asset-bounties",
 	"pallet-multisig",
 	"pallet-nft-fractionalization",
 	"pallet-nfts",
@@ -719,6 +726,7 @@ runtime-full = [
 	"pallet-xcm-benchmarks",
 	"pallet-xcm-bridge-hub",
 	"pallet-xcm-bridge-hub-router",
+	"pallet-xcm-precompiles",
 	"parachains-common",
 	"polkadot-core-primitives",
 	"polkadot-parachain-primitives",
@@ -1531,6 +1539,11 @@ default-features = false
 optional = true
 path = "../substrate/frame/merkle-mountain-range"
 
+[dependencies.pallet-multi-asset-bounties]
+default-features = false
+optional = true
+path = "../substrate/frame/multi-asset-bounties"
+
 [dependencies.pallet-multisig]
 default-features = false
 optional = true
@@ -1850,6 +1863,11 @@ path = "../bridges/modules/xcm-bridge-hub"
 default-features = false
 optional = true
 path = "../bridges/modules/xcm-bridge-hub-router"
+
+[dependencies.pallet-xcm-precompiles]
+default-features = false
+optional = true
+path = "../polkadot/xcm/pallet-xcm/precompiles"
 
 [dependencies.parachains-common]
 default-features = false

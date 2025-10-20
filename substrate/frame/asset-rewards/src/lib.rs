@@ -85,7 +85,6 @@ pub use pallet::*;
 use codec::{Codec, Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	ensure,
-	rewards::RewardsPool,
 	traits::{
 		fungibles::{Inspect, Mutate},
 		schedule::DispatchTime,
@@ -186,7 +185,7 @@ pub mod pallet {
 		traits::{
 			fungibles::MutateFreeze,
 			tokens::{AssetId, Fortitude, Preservation},
-			Consideration, Footprint,
+			Consideration, Footprint, RewardsPool,
 		},
 	};
 	use frame_system::pallet_prelude::{
@@ -457,7 +456,7 @@ pub mod pallet {
 			admin: Option<T::AccountId>,
 		) -> DispatchResult {
 			let creator = T::CreatePoolOrigin::ensure_origin(origin)?;
-			<Self as RewardsPool<_, _, _>>::create_pool(
+			<Self as RewardsPool<_>>::create_pool(
 				&creator,
 				*staked_asset_id,
 				*reward_asset_id,
@@ -629,7 +628,7 @@ pub mod pallet {
 		) -> DispatchResult {
 			let caller = T::CreatePoolOrigin::ensure_origin(origin.clone())
 				.or_else(|_| ensure_signed(origin))?;
-			<Self as RewardsPool<_, _, _>>::set_pool_reward_rate_per_block(
+			<Self as RewardsPool<_>>::set_pool_reward_rate_per_block(
 				&caller,
 				pool_id,
 				new_reward_rate_per_block,
@@ -647,7 +646,7 @@ pub mod pallet {
 		) -> DispatchResult {
 			let caller = T::CreatePoolOrigin::ensure_origin(origin.clone())
 				.or_else(|_| ensure_signed(origin))?;
-			<Self as RewardsPool<_, _, _>>::set_pool_admin(&caller, pool_id, new_admin)
+			<Self as RewardsPool<_>>::set_pool_admin(&caller, pool_id, new_admin)
 		}
 
 		/// Set when the pool should expire.
@@ -663,7 +662,7 @@ pub mod pallet {
 		) -> DispatchResult {
 			let caller = T::CreatePoolOrigin::ensure_origin(origin.clone())
 				.or_else(|_| ensure_signed(origin))?;
-			<Self as RewardsPool<_, _, _>>::set_pool_expiry_block(&caller, pool_id, new_expiry)
+			<Self as RewardsPool<_>>::set_pool_expiry_block(&caller, pool_id, new_expiry)
 		}
 
 		/// Convenience method to deposit reward tokens into a pool.
@@ -836,9 +835,11 @@ pub mod pallet {
 	}
 }
 
-impl<T: Config> RewardsPool<T::AccountId, PoolId, T::Balance> for Pallet<T> {
+impl<T: Config> RewardsPool<T::AccountId> for Pallet<T> {
 	type AssetId = T::AssetId;
 	type BlockNumber = BlockNumberFor<T>;
+	type PoolId = PoolId;
+	type Balance = T::Balance;
 
 	fn create_pool(
 		creator: &T::AccountId,
