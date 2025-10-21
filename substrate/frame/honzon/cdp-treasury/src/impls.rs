@@ -35,17 +35,14 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 	type Balance = T::Balance;
 	type CurrencyId = T::CurrencyId;
 
-	/// The account ID of the cdp-treasury pallet.
 	fn account_id() -> T::AccountId {
 		Self::account_id()
 	}
 
-	/// Pays a surplus.
 	fn pay_surplus(amount: Self::Balance) -> DispatchResult {
 		T::Fungibles::mint_into(T::StableCurrencyId::get(), &Self::account_id(), amount).map(|_| ())
 	}
 
-	/// Refunds a surplus.
 	fn refund_surplus(amount: Self::Balance) -> DispatchResult {
 		T::Fungibles::burn_from(
 			T::StableCurrencyId::get(),
@@ -58,22 +55,18 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 		.map(|_| ())
 	}
 
-	/// Gets the surplus pool.
 	fn get_surplus_pool() -> Self::Balance {
 		Self::surplus_pool()
 	}
 
-	/// Gets the debit pool.
 	fn get_debit_pool() -> Self::Balance {
 		Self::debit_pool()
 	}
 
-	/// Gets the total collaterals.
 	fn get_total_collaterals() -> Self::Balance {
 		Self::total_collaterals()
 	}
 
-	/// Deposits collateral.
 	fn deposit_collateral(_from: &T::AccountId, _amount: Self::Balance) -> DispatchResult {
 		T::Fungibles::transfer(
 			T::CollateralCurrencyId::get(),
@@ -85,7 +78,6 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 		.map(|_| ())
 	}
 
-	/// Withdraws collateral.
 	fn withdraw_collateral(_to: &T::AccountId, _amount: Self::Balance) -> DispatchResult {
 		T::Fungibles::transfer(
 			T::CollateralCurrencyId::get(),
@@ -97,13 +89,11 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 		.map(|_| ())
 	}
 
-	/// Gets the debit proportion.
 	fn get_debit_proportion(amount: Self::Balance) -> Ratio {
 		let stable_total_supply = T::Fungibles::total_issuance(T::StableCurrencyId::get());
 		Ratio::checked_from_rational(amount, stable_total_supply).unwrap_or_default()
 	}
 
-	/// Handles a system debit.
 	fn on_system_debit(amount: Self::Balance) -> DispatchResult {
 		DebitPool::<T>::try_mutate(|debit_pool| -> DispatchResult {
 			*debit_pool = debit_pool.checked_add(&amount).ok_or(ArithmeticError::Overflow)?;
@@ -111,12 +101,10 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 		})
 	}
 
-	/// Handles a system surplus.
 	fn on_system_surplus(amount: Self::Balance) -> DispatchResult {
 		Self::issue_debit(&Self::account_id(), amount, true)
 	}
 
-	/// Issues a debit. This should be the only function in the system that issues stable coin.
 	fn issue_debit(who: &T::AccountId, debit: Self::Balance, backed: bool) -> DispatchResult {
 		// increase system debit if the debit is unbacked
 		if !backed {
@@ -127,7 +115,6 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 		Ok(())
 	}
 
-	/// Burns a debit. This should be the only function in the system that burns stable coin.
 	fn burn_debit(who: &T::AccountId, debit: Self::Balance) -> DispatchResult {
 		T::Fungibles::burn_from(
 			T::StableCurrencyId::get(),
@@ -140,7 +127,6 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 		.map(|_| ())
 	}
 
-	/// Deposits a surplus.
 	fn deposit_surplus(from: &T::AccountId, surplus: Self::Balance) -> DispatchResult {
 		T::Fungibles::transfer(
 			T::StableCurrencyId::get(),
@@ -152,7 +138,6 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 		.map(|_| ())
 	}
 
-	/// Withdraws a surplus.
 	fn withdraw_surplus(to: &T::AccountId, surplus: Self::Balance) -> DispatchResult {
 		T::Fungibles::transfer(
 			T::StableCurrencyId::get(),
@@ -166,7 +151,6 @@ impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 }
 
 impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
-	/// Swaps collateral to stable currency.
 	#[transactional]
 	fn swap_collateral_to_stable(
 		limit: SwapLimit<T::Balance>,
@@ -219,7 +203,6 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 		}
 	}
 
-	/// Creates collateral auctions.
 	fn create_collateral_auctions(
 		amount: T::Balance,
 		target: T::Balance,
@@ -296,7 +279,6 @@ impl<T: Config> CDPTreasuryExtended<T::AccountId> for Pallet<T> {
 		Ok(created_auctions)
 	}
 
-	/// The maximum number of auctions.
 	fn max_auction() -> u32 {
 		T::MaxAuctionsCount::get()
 	}
