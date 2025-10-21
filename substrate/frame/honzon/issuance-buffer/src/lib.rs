@@ -24,6 +24,17 @@
 #![allow(clippy::unused_unit)]
 #![allow(clippy::collapsible_if)]
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+
+pub mod weights;
+
 pub use pallet::*;
 
 #[frame_support::pallet]
@@ -44,12 +55,16 @@ pub mod pallet {
 		traits::{AccountIdConversion, Saturating, Zero},
 		Permill,
 	};
+	use crate::weights::WeightInfo;
 	use sp_std::result;
 
-	type BalanceOf<T> = <T as pallet_cdp_treasury::Config>::Balance;
+	pub type BalanceOf<T> = <T as pallet_cdp_treasury::Config>::Balance;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_cdp_treasury::Config {
+		/// Weight information for extrinsics in this pallet.
+		type WeightInfo: WeightInfo;
+
 		/// The origin which can update parameters of the module.
 		type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
@@ -121,7 +136,7 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		/// Fund the buffer by locking DOT as collateral into the buffer CDP.
 		#[pallet::call_index(0)]
-		#[pallet::weight(T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::fund())]
 		pub fn fund(
 			origin: OriginFor<T>,
 			#[pallet::compact] amount: BalanceOf<T>,
@@ -137,7 +152,7 @@ pub mod pallet {
 		/// Withdraw unlocked DOT from the buffer CDP (only collateral not required
 		/// by LR/CR and not reserved for in-flight liquidations can be withdrawn).
 		#[pallet::call_index(1)]
-		#[pallet::weight(T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::defund())]
 		pub fn defund(
 			origin: OriginFor<T>,
 			#[pallet::compact] amount: BalanceOf<T>,
@@ -180,7 +195,7 @@ pub mod pallet {
 
 			let price = T::PriceProvider::get_relative_price(
 				collateral_currency,
-				T::StableCurrencyId::get(),
+				<T as Config>::StableCurrencyId::get(),
 			)
 			.ok_or(Error::<T>::OraclePriceError)?;
 			let discount = Self::discount();
@@ -236,9 +251,3 @@ pub mod pallet {
 		}
 	}
 }
-
-#[cfg(test)]
-mod mock;
-
-#[cfg(test)]
-mod tests;
