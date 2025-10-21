@@ -30,8 +30,8 @@ pallet-assets = { workspace = true, optional = true }
 
 [dev-dependencies]
 sp-core = { workspace = true }
-pallet-balances = { workspace = true }
-pallet-assets = { workspace = true }
+pallet-balances = { workspace = true, default-features = true}
+pallet-assets = { workspace = true, default-features = true}
 
 [features]
 default = ["std"]

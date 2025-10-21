@@ -5,16 +5,17 @@ use crate as pallet_connections;
 #[cfg(feature = "runtime-benchmarks")]
 use crate::BenchmarkHelper;
 use frame_support::{
-    construct_runtime, parameter_types, PalletId,
-    traits::{AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, GenesisBuild, FindAuthor, ConstU8, BlockNumberProvider},
+	construct_runtime, parameter_types,
+	traits::{AsEnsureOriginWithArg, ConstU128, ConstU32, fungibles::Mutate},
+	PalletId,
 };
 use sp_core::H256;
 use sp_runtime::{
-    testing::Header,
-    traits::{BlakeTwo256, IdentityLookup, AccountIdConversion},
+	traits::{BlakeTwo256, IdentityLookup},
+	BuildStorage, DispatchError, DispatchResult,
 };
+
 use crate::{LiquidityRouter, VaultProvider};
-use frame_support::dispatch::{DispatchError, DispatchResult};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 #[cfg(feature = "runtime-benchmarks")]
@@ -22,20 +23,16 @@ use frame_system::RawOrigin;
 #[cfg(feature = "runtime-benchmarks")]
 use frame_support::traits::tokens::fungibles::Inspect;
 
-type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
 
 construct_runtime!(
-    pub enum Test where
-        Block = Block,
-        NodeBlock = Block,
-        UncheckedExtrinsic = UncheckedExtrinsic,
-    {
-        System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
-        Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
-        Assets: pallet_assets::{Pallet, Call, Storage, Event<T>},
-        Connections: pallet_connections::{Pallet, Call, Storage, Event<T>},
-    }
+	pub enum Test
+	{
+		System: frame_system,
+		Balances: pallet_balances,
+		Assets: pallet_assets,
+		Connections: pallet_connections,
+	}
 );
 
 parameter_types! {
@@ -44,67 +41,76 @@ parameter_types! {
 }
 
 impl frame_system::Config for Test {
-    type BaseCallFilter = frame_support::traits::Everything;
-    type BlockWeights = ();
-    type BlockLength = ();
-    type DbWeight = ();
-    type RuntimeOrigin = RuntimeOrigin;
-    type RuntimeCall = RuntimeCall;
-    type Index = u64;
-    type BlockNumber = u64;
-    type Hash = H256;
-    type Hashing = BlakeTwo256;
-    type AccountId = u64;
-    type Lookup = IdentityLookup<Self::AccountId>;
-    type Header = Header;
-    type RuntimeEvent = RuntimeEvent;
-    type BlockHashCount = BlockHashCount;
-    type Version = ();
-    type PalletInfo = PalletInfo;
-    type AccountData = pallet_balances::AccountData<u128>;
-    type OnNewAccount = ();
-    type OnKilledAccount = ();
-    type SystemWeightInfo = ();
-    type SS58Prefix = SS58Prefix;
-    type OnSetCode = ();
-    type MaxConsumers = ConstU32<16>;
+	type BaseCallFilter = frame_support::traits::Everything;
+	type BlockWeights = ();
+	type BlockLength = ();
+	type DbWeight = ();
+	type RuntimeOrigin = RuntimeOrigin;
+	type RuntimeCall = RuntimeCall;
+	type Nonce = u64;
+	type Hash = H256;
+	type Hashing = BlakeTwo256;
+	type AccountId = u64;
+	type Lookup = IdentityLookup<Self::AccountId>;
+	type Block = Block;
+	type RuntimeEvent = RuntimeEvent;
+	type BlockHashCount = BlockHashCount;
+	type Version = ();
+	type PalletInfo = PalletInfo;
+	type AccountData = pallet_balances::AccountData<u128>;
+	type OnNewAccount = ();
+	type OnKilledAccount = ();
+	type SystemWeightInfo = ();
+	type SS58Prefix = SS58Prefix;
+	type OnSetCode = ();
+	type MaxConsumers = ConstU32<16>;
+	type RuntimeTask = ();
+	type ExtensionsWeightInfo = ();
+	type SingleBlockMigrations = ();
+	type MultiBlockMigrator = ();
+	type PreInherents = ();
+	type PostInherents = ();
+	type PostTransactions = ();
 }
 
 impl pallet_balances::Config for Test {
-    type MaxLocks = ();
-    type MaxReserves = ();
-    type ReserveIdentifier = [u8; 8];
-    type Balance = u128;
-    type RuntimeEvent = RuntimeEvent;
-    type DustRemoval = ();
-    type ExistentialDeposit = ConstU128<1>;
-    type AccountStore = System;
-    type WeightInfo = ();
-    type FreezeIdentifier = ();
-    type MaxFreezes = ();
-    type RuntimeHoldReason = ();
-    type MaxHolds = ();
+	type MaxLocks = ();
+	type MaxReserves = ();
+	type ReserveIdentifier = [u8; 8];
+	type Balance = u128;
+	type RuntimeEvent = RuntimeEvent;
+	type DustRemoval = ();
+	type ExistentialDeposit = ConstU128<1>;
+	type AccountStore = System;
+	type WeightInfo = ();
+	type FreezeIdentifier = ();
+	type MaxFreezes = ();
+	type RuntimeHoldReason = ();
+	type RuntimeFreezeReason = ();
+	type DoneSlashHandler = ();
 }
 
+use sp_runtime::FixedU128;
 impl pallet_assets::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type Balance = u128;
-    type AssetId = u32;
-    type AssetIdParameter = u32;
-    type Currency = Balances;
-    type CreateOrigin = AsEnsureOriginWithArg<frame_system::EnsureSigned<u64>>;
-    type ForceOrigin = frame_system::EnsureRoot<u64>;
-    type AssetDeposit = ConstU128<1>;
-    type AssetAccountDeposit = ConstU128<10>;
-    type MetadataDepositBase = ConstU128<1>;
-    type MetadataDepositPerByte = ConstU128<1>;
-    type ApprovalDeposit = ConstU128<1>;
-    type StringLimit = ConstU32<50>;
-    type Freezer = ();
-    type Extra = ();
-    type WeightInfo = ();
-    type RemoveItemsLimit = ConstU32<1000>;
-    type CallbackHandle = ();
+	type RuntimeEvent = RuntimeEvent;
+	type Balance = u128;
+	type AssetId = u32;
+	type AssetIdParameter = u32;
+	type Currency = Balances;
+	type CreateOrigin = AsEnsureOriginWithArg<frame_system::EnsureSigned<u64>>;
+	type ForceOrigin = frame_system::EnsureRoot<u64>;
+	type AssetDeposit = ConstU128<1>;
+	type AssetAccountDeposit = ConstU128<10>;
+	type MetadataDepositBase = ConstU128<1>;
+	type MetadataDepositPerByte = ConstU128<1>;
+	type ApprovalDeposit = ConstU128<1>;
+	type StringLimit = ConstU32<50>;
+	type Freezer = ();
+	type Extra = ();
+	type WeightInfo = ();
+	type RemoveItemsLimit = ConstU32<1000>;
+	type CallbackHandle = ();
+	type Holder = ();
 }
 
 #[derive(Default, Clone)]
@@ -119,7 +125,9 @@ thread_local! {
 
 pub struct MockVaultProvider;
 impl VaultProvider<u64, u128, u32, u32> for MockVaultProvider {
-    fn get_position(vault_id: &u32) -> Result<(u128, u128), DispatchError> {
+	type AssetId = u32;
+
+	fn get_position(vault_id: &u32) -> Result<(u128, u128), DispatchError> {
         let vault = VAULTS.with(|v| v.borrow().get(vault_id).cloned().unwrap_or_default());
         Ok((vault.collateral, vault.debt))
     }
@@ -142,7 +150,7 @@ impl VaultProvider<u64, u128, u32, u32> for MockVaultProvider {
     }
     fn mint(vault_id: &u32, to: &u64, amount: u128) -> DispatchResult {
         let stable_asset_id = 1;
-        Assets::mint_into(stable_asset_id.into(), to, amount).unwrap();
+        Assets::mint_into(stable_asset_id as u32, to, amount).unwrap();
         VAULTS.with(|v| {
             let mut vaults = v.borrow_mut();
             let vault = vaults.entry(*vault_id).or_default();
@@ -152,7 +160,16 @@ impl VaultProvider<u64, u128, u32, u32> for MockVaultProvider {
     }
     fn repay(vault_id: &u32, from: &u64, amount: u128) -> DispatchResult {
         let stable_asset_id = 1;
-        Assets::burn_from(stable_asset_id.into(), from, amount).unwrap();
+        use frame_support::traits::tokens::{Fortitude, Precision, Preservation};
+        Assets::burn_from(
+			stable_asset_id as u32,
+			from,
+			amount,
+			Preservation::Expendable,
+			Precision::Exact,
+			Fortitude::Polite,
+		)
+		.unwrap();
         VAULTS.with(|v| {
             let mut vaults = v.borrow_mut();
             let vault = vaults.entry(*vault_id).or_default();
@@ -160,21 +177,35 @@ impl VaultProvider<u64, u128, u32, u32> for MockVaultProvider {
             Ok(())
         })
     }
-    fn close_vault(vault_id: &u32) -> DispatchResult {
-        VAULTS.with(|v| {
-            let mut vaults = v.borrow_mut();
-            let vault = vaults.get(vault_id).ok_or("Vault not found")?;
-            if vault.collateral != 0 || vault.debt != 0 {
-                return Err("Vault not empty".into());
-            }
-            vaults.remove(vault_id);
-            Ok(())
-        })
-    }
-    fn has_debt(vault_id: &u32) -> Result<bool, DispatchError> {
-        let vault = VAULTS.with(|v| v.borrow().get(vault_id).cloned().unwrap_or_default());
-        Ok(vault.debt > 0)
-    }
+    	fn close_vault(vault_id: &u32) -> DispatchResult {
+		VAULTS.with(|v| {
+			let mut vaults = v.borrow_mut();
+			let vault = vaults.get(vault_id).ok_or("Vault not found")?;
+			if vault.debt != 0 {
+				return Err("Vault not empty".into());
+			}
+			vaults.remove(vault_id);
+			Ok(())
+		})
+	}
+
+	fn has_debt(vault_id: &u32) -> Result<bool, DispatchError> {
+		let vault = VAULTS.with(|v| v.borrow().get(vault_id).cloned().unwrap_or_default());
+		Ok(vault.debt > 0)
+	}
+
+	fn withdraw_all_collateral(vault_id: &u32, _: &u64) -> Result<(), DispatchError> {
+		VAULTS.with(|v| {
+			let mut vaults = v.borrow_mut();
+			let vault = vaults.entry(*vault_id).or_default();
+			vault.collateral = 0;
+		});
+		Ok(())
+	}
+
+	fn set_stability_fee(_: &u32, _: Option<FixedU128>) -> Result<(), DispatchError> {
+		Ok(())
+	}
 }
 
 thread_local! {
@@ -205,11 +236,11 @@ impl LiquidityRouter<u64, u128> for MockLiquidityRouter {
     fn withdraw_all(
         destination_id: Self::DestinationId,
         who: &u64,
-    ) -> Result<u128, DispatchError> {
+    ) -> Result<(), DispatchError> {
         LIQUIDITY.with(|l| {
             let mut liquidity = l.borrow_mut();
-            let amount = liquidity.remove(&(destination_id, *who)).unwrap_or_default();
-            Ok(amount)
+            liquidity.remove(&(destination_id, *who)).unwrap_or_default();
+            Ok(())
         })
     }
 
@@ -225,27 +256,35 @@ parameter_types! {
 }
 
 impl crate::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type Balance = u128;
-    type CurrencyId = u32;
-    type VaultProvider = MockVaultProvider;
-    type LiquidityRouter = MockLiquidityRouter;
-    type GovernanceOrigin = frame_system::EnsureRoot<u64>;
-    type ConnectionId = u32;
-    type PalletId = ConnectionsPalletId;
-    type BlockNumberProvider = System;
-    type WithdrawalTimeout = ConstU64<10>;
-    type StableCurrencyId = ConstU32<1>;
-    type Fungibles = Assets;
-    #[cfg(feature = "runtime-benchmarks")]
-    type BenchmarkHelper = BenchHelper;
+	type Currency = Balances;
+	type Balance = u128;
+	type CurrencyId = u32;
+	type VaultProvider = MockVaultProvider;
+	type LiquidityRouter = MockLiquidityRouter;
+	type GovernanceOrigin = frame_system::EnsureRoot<u64>;
+	type ConnectionId = u32;
+	type PalletId = ConnectionsPalletId;
+	type BlockNumberProvider = System;
+	type BlockNumber = u64;
+	type StableCurrencyId = ConstU32<1>;
+	type Fungibles = Assets;
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = BenchHelper;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
-    let mut t = frame_system::GenesisConfig::default().build_storage::<Test>().unwrap();
-    let mut ext = sp_io::TestExternalities::new(t);
-    ext.execute_with(|| System::set_block_number(1));
-    ext
+	let mut t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
+
+	pallet_balances::GenesisConfig::<Test> {
+		balances: vec![(1, 1_000_000_000), (2, 1_000_000_000)],
+		dev_accounts: None,
+	}
+	.assimilate_storage(&mut t)
+	.unwrap();
+
+	let mut ext = sp_io::TestExternalities::new(t);
+	ext.execute_with(|| System::set_block_number(1));
+	ext
 }
 
 #[cfg(feature = "runtime-benchmarks")]
