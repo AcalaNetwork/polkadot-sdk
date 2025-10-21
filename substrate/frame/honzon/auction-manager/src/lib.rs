@@ -32,9 +32,11 @@
 use frame_support::{
 	pallet_prelude::*,
 	traits::{
-		auction::{Auction, AuctionHandler, Change, OnNewBidResult},
 		fungibles::{self, Mutate, MutateHold},
-		honzon::{AuctionManager, CDPTreasury, EmergencyShutdown, PriceProvider, Rate},
+		honzon::{
+			Auction, AuctionHandler, AuctionManager, CDPTreasury, Change, EmergencyShutdown,
+			OnNewBidResult, PriceProvider, Rate,
+		},
 		tokens::{Precision, Preservation},
 	},
 	transactional,
