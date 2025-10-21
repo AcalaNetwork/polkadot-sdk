@@ -17,6 +17,8 @@
 pub mod benchmarking;
 #[cfg(feature = "runtime-benchmarks")]
 pub use benchmarking::BenchmarkHelper;
+pub mod weights;
+pub use weights::WeightInfo;
 pub use pallet::*;
 
 use frame_support::traits::{
@@ -81,6 +83,9 @@ pub mod pallet {
 			+ MaxEncodedLen;
 		/// The provider for the current block number.
 		type BlockNumberProvider: BlockNumberProvider<BlockNumber = Self::BlockNumber>;
+
+		/// Weight information for extrinsics in this pallet.
+		type WeightInfo: WeightInfo;
 
 		/// The currency ID for the stablecoin. This is the currency that is minted against the
 		/// collateral in the vaults.
@@ -241,7 +246,7 @@ pub mod pallet {
 		/// - `collateral_amount`: The amount of collateral to deposit.
 		/// - `mint_amount`: The amount of stablecoins to mint.
 		#[pallet::call_index(0)]
-		#[pallet::weight(Weight::zero())]
+		#[pallet::weight(T::WeightInfo::open_connection())]
 		pub fn open_connection(
 			origin: OriginFor<T>,
 			destination_id: <T::LiquidityRouter as LiquidityRouter<T::AccountId, T::Balance>>::DestinationId,
@@ -304,7 +309,7 @@ pub mod pallet {
 		/// - `connection_id`: The ID of the connection to withdraw from.
 		/// - `stables_amount`: The amount of stablecoins to withdraw.
 		#[pallet::call_index(1)]
-		#[pallet::weight(Weight::zero())]
+		#[pallet::weight(T::WeightInfo::initiate_withdrawal())]
 		pub fn initiate_withdrawal(
 			origin: OriginFor<T>,
 			connection_id: T::ConnectionId,
@@ -347,7 +352,7 @@ pub mod pallet {
 		/// - `connection_id`: The ID of the connection.
 		/// - `repaid_amount`: The amount of stablecoins that were released.
 		#[pallet::call_index(2)]
-		#[pallet::weight(Weight::zero())]
+		#[pallet::weight(T::WeightInfo::complete_withdrawal())]
 		pub fn complete_withdrawal(
 			origin: OriginFor<T>,
 			connection_id: T::ConnectionId,
@@ -392,7 +397,7 @@ pub mod pallet {
 		/// - `connection_id`: The ID of the connection.
 		/// - `amount_to_withdraw`: The amount of collateral to withdraw.
 		#[pallet::call_index(3)]
-		#[pallet::weight(Weight::zero())]
+		#[pallet::weight(T::WeightInfo::withdraw_collateral())]
 		pub fn withdraw_collateral(
 			origin: OriginFor<T>,
 			connection_id: T::ConnectionId,
@@ -432,7 +437,7 @@ pub mod pallet {
 		/// - `origin`: The owner of the connection.
 		/// - `connection_id`: The ID of the connection to close.
 		#[pallet::call_index(4)]
-		#[pallet::weight(Weight::zero())]
+		#[pallet::weight(T::WeightInfo::close_connection())]
 		pub fn close_connection(
 			origin: OriginFor<T>,
 			connection_id: T::ConnectionId,
@@ -502,7 +507,7 @@ pub mod pallet {
 		/// - `destination_id`: The ID of the destination to set the override for.
 		/// - `override_value`: The new stability fee, or `None` to remove the override.
 		#[pallet::call_index(5)]
-		#[pallet::weight(Weight::zero())] // TODO: Proper benchmarking
+		#[pallet::weight(T::WeightInfo::set_stability_fee())]
 		pub fn set_stability_fee(
 			origin: OriginFor<T>,
 			destination_id: DestinationIdOf<T>,
@@ -525,7 +530,7 @@ pub mod pallet {
 		}
 
 		#[pallet::call_index(6)]
-		#[pallet::weight(Weight::zero())]
+		#[pallet::weight(T::WeightInfo::inject_liquidity())]
 		pub fn inject_liquidity(
 			origin: OriginFor<T>,
 			dest: T::AccountId,

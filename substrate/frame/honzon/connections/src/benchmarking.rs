@@ -177,24 +177,12 @@ mod benchmarks {
 	}
 
 	#[benchmark]
-	fn cancel_withdrawal() -> Result<(), BenchmarkError> {
-		let owner: T::AccountId = whitelisted_caller();
-		let (connection_id, _destination_id, _, mint, _) =
-			setup_connection::<T>(&owner, 6)?;
-
-		assert_ok!(Connections::<T>::initiate_withdrawal(
-			RawOrigin::Signed(owner.clone()).into(),
-			connection_id,
-			mint,
-		));
-
-		let timeout = T::WithdrawalTimeout::get();
-		let current_block = T::BlockNumberProvider::current_block_number();
-        let target_block = current_block.saturating_add(timeout);
-        T::BenchmarkHelper::set_block_number(target_block);
+	fn inject_liquidity() -> Result<(), BenchmarkError> {
+		let dest: T::AccountId = whitelisted_caller();
+		let amount = T::BenchmarkHelper::mint_amount();
 
 		#[extrinsic_call]
-		_(RawOrigin::Signed(owner.clone()), connection_id);
+		_(RawOrigin::Root, dest, amount);
 
 		Ok(())
 	}
