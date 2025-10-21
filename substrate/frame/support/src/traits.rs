@@ -142,7 +142,6 @@ mod rewards;
 pub use rewards::RewardsPool;
 
 pub mod honzon;
-pub use honzon::*;
 
 #[cfg(feature = "try-runtime")]
 mod try_runtime;

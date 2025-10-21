@@ -16,22 +16,22 @@
 // limitations under the License.
 
 //! Traits related to honzon protocol
-pub mod auction;
-pub mod auction_manager;
-pub mod bounded;
-pub mod cdp_treasury;
-pub mod honzon_manager;
-pub mod liquidation;
-pub mod risk_manager;
-pub mod types;
-pub mod connections;
+mod auction;
+mod auction_manager;
+mod bounded;
+mod cdp_treasury;
+mod connections;
+mod honzon_manager;
+mod liquidation;
+mod risk_manager;
+mod types;
 
 pub use auction::*;
 pub use auction_manager::*;
 pub use bounded::*;
 pub use cdp_treasury::*;
+pub use connections::*;
 pub use honzon_manager::*;
 pub use liquidation::*;
 pub use risk_manager::*;
 pub use types::*;
-pub use connections::*;
