@@ -1,20 +1,19 @@
-// This file is part of Acala.
+// This file is part of Substrate.
 
 // Copyright (C) 2020-2025 Acala Foundation.
-// SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
+// SPDX-License-Identifier: Apache-2.0
 
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
-
-// You should have received a copy of the GNU General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! Unit tests for the auction manager module.
 
@@ -131,8 +130,8 @@ fn new_collateral_auction_work() {
 			<AuctionManagerModule as AuctionManager<AccountId>>::new_collateral_auction(
 				&ALICE,
 				NATIVE,
-				Balance::max_value(),
-				Balance::max_value(),
+				Balance::MAX,
+				Balance::MAX,
 			),
 			Error::<Runtime>::InvalidAmount
 		);
@@ -152,7 +151,7 @@ fn collateral_auction_bid_handler_work() {
 			&ALICE, NATIVE, 10, 100,
 		));
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 0);
-		assert_eq!(Assets::balance(STABLE, &BOB), 1000);
+		assert_eq!(Assets::balance(STABLE, BOB), 1000);
 
 		assert_noop!(
 			AuctionModule::bid(RuntimeOrigin::signed(BOB), 0, 40),
@@ -160,18 +159,18 @@ fn collateral_auction_bid_handler_work() {
 		);
 		assert_ok!(AuctionModule::bid(RuntimeOrigin::signed(BOB), 0, 50));
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 50);
-		assert_eq!(Assets::balance(STABLE, &BOB), 950);
+		assert_eq!(Assets::balance(STABLE, BOB), 950);
 
 		assert_ok!(AuctionModule::bid(RuntimeOrigin::signed(CAROL), 0, 100));
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 100);
-		assert_eq!(Assets::balance(STABLE, &BOB), 1000);
-		assert_eq!(Assets::balance(STABLE, &CAROL), 900);
+		assert_eq!(Assets::balance(STABLE, BOB), 1000);
+		assert_eq!(Assets::balance(STABLE, CAROL), 900);
 		assert_eq!(CollateralAuctions::<Runtime>::get(0).unwrap().amount, 10);
 
 		assert_ok!(AuctionModule::bid(RuntimeOrigin::signed(BOB), 0, 200));
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 100);
-		assert_eq!(Assets::balance(STABLE, &BOB), 900);
-		assert_eq!(Assets::balance(STABLE, &CAROL), 1000);
+		assert_eq!(Assets::balance(STABLE, BOB), 900);
+		assert_eq!(Assets::balance(STABLE, CAROL), 1000);
 		assert_eq!(CollateralAuctions::<Runtime>::get(0).unwrap().amount, 5);
 	});
 }
@@ -243,7 +242,7 @@ fn always_forward_collateral_auction_dealt() {
 		assert_ok!(AuctionModule::bid(RuntimeOrigin::signed(BOB), 0, 2));
 		assert_eq!(TotalCollateralInAuction::<Runtime>::get(), 100);
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 200);
-		assert_eq!(Assets::balance(STABLE, &BOB), 800);
+		assert_eq!(Assets::balance(STABLE, BOB), 800);
 		let ref_count_0 = frame_system::Pallet::<Runtime>::consumers(&CDPTreasuryModule::account_id());
 		let bob_ref_count_0 = frame_system::Pallet::<Runtime>::consumers(&BOB);
 
@@ -259,7 +258,7 @@ fn always_forward_collateral_auction_dealt() {
 		));
 		assert_eq!(TotalCollateralInAuction::<Runtime>::get(), 0);
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 200);
-		assert_eq!(Assets::balance(NATIVE, &BOB), 1100);
+		assert_eq!(Assets::balance(NATIVE, BOB), 1100);
 		let ref_count_1 = frame_system::Pallet::<Runtime>::consumers(&CDPTreasuryModule::account_id());
 		let bob_ref_count_1 = frame_system::Pallet::<Runtime>::consumers(&BOB);
 		assert_eq!(ref_count_1, ref_count_0);
@@ -304,7 +303,7 @@ fn cancel_collateral_auction_work() {
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 0);
 		assert_eq!(CDPTreasuryModule::debit_pool(), 0);
 		assert_ok!(AuctionModule::bid(RuntimeOrigin::signed(BOB), 0, 80));
-		assert_eq!(Assets::balance(STABLE, &BOB), 920);
+		assert_eq!(Assets::balance(STABLE, BOB), 920);
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 80);
 		assert_eq!(CDPTreasuryModule::debit_pool(), 0);
 
@@ -314,12 +313,12 @@ fn cancel_collateral_auction_work() {
 			auction_id: 0,
 		}));
 
-		assert_eq!(Assets::balance(STABLE, &BOB), 1000);
+		assert_eq!(Assets::balance(STABLE, BOB), 1000);
 		assert_eq!(TotalCollateralInAuction::<Runtime>::get(), 0);
 		assert_eq!(TotalTargetInAuction::<Runtime>::get(), 0);
 		assert_eq!(CDPTreasuryModule::debit_pool(), 0);
 		assert_eq!(CDPTreasuryModule::surplus_pool(), 0);
-		assert!(!CollateralAuctions::<Runtime>::get(0).is_some());
-		assert!(!AuctionModule::auctions(0).is_some());
+		assert!(CollateralAuctions::<Runtime>::get(0).is_none());
+		assert!(AuctionModule::auctions(0).is_none());
 	});
 }

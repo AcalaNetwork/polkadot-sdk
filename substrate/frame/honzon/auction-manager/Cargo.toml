@@ -5,26 +5,26 @@ authors = ["Acala Developers"]
 edition = { workspace = true }
 
 [dependencies]
-codec = { workspace = true, default-features = false, features = ["derive"] }
-frame-support = { workspace = true, default-features = false }
-frame-system = { workspace = true, default-features = false }
-log = { workspace = true, default-features = false }
-pallet-auction = { workspace = true, default-features = false }
-pallet-balances = { workspace = true, default-features = false }
-scale-info = { workspace = true, default-features = false }
-sp-io = { workspace = true, default-features = false }
-sp-runtime = { workspace = true, default-features = false }
-sp-std = { workspace = true, default-features = false }
+codec = { workspace = true, features = ["derive"] }
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+log = { workspace = true }
+pallet-auction = { workspace = true }
+pallet-balances = { workspace = true }
+scale-info = { workspace = true }
+sp-io = { workspace = true }
+sp-runtime = { workspace = true }
+sp-std = { workspace = true }
 
 [dev-dependencies]
-pallet-asset-conversion = { workspace = true, features = ["std"] }
-pallet-assets = { workspace = true, features = ["std"] }
-pallet-assets-freezer = { workspace = true, features = ["std"] }
-pallet-assets-holder = { workspace = true, features = ["std"] }
-pallet-balances = { workspace = true, features = ["std"] }
-pallet-cdp-treasury = { workspace = true, features = ["std"] }
-serde = { workspace = true, features = ["derive"] }
-sp-core = { workspace = true, features = ["std"] }
+pallet-asset-conversion = { workspace = true }
+pallet-assets = { workspace = true }
+pallet-assets-freezer = { workspace = true }
+pallet-assets-holder = { workspace = true }
+pallet-balances = { workspace = true }
+pallet-cdp-treasury = { workspace = true }
+serde = { workspace = true }
+sp-core = { workspace = true }
 
 
 [features]
@@ -33,13 +33,17 @@ std = [
 	"codec/std",
 	"frame-support/std",
 	"frame-system/std",
+	"log/std",
 	"pallet-asset-conversion/std",
 	"pallet-assets-freezer/std",
 	"pallet-assets-holder/std",
 	"pallet-assets/std",
+	"pallet-auction/std",
 	"pallet-balances/std",
 	"pallet-cdp-treasury/std",
 	"scale-info/std",
+	"serde/std",
+	"sp-core/std",
 	"sp-io/std",
 	"sp-runtime/std",
 	"sp-std/std",
@@ -47,4 +51,12 @@ std = [
 try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
+	"pallet-asset-conversion/try-runtime",
+	"pallet-assets/try-runtime",
+	"pallet-assets-freezer/try-runtime",
+	"pallet-assets-holder/try-runtime",
+	"pallet-auction/try-runtime",
+	"pallet-balances/try-runtime",
+	"pallet-cdp-treasury/try-runtime",
+	"sp-runtime/try-runtime"
 ]

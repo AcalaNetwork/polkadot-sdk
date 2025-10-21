@@ -1,35 +1,36 @@
-// This file is part of Acala.
+// This file is part of Substrate.
 
 // Copyright (C) 2020-2025 Acala Foundation.
-// SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
+// SPDX-License-Identifier: Apache-2.0
 
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
-
-// You should have received a copy of the GNU General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! Mocks for the auction manager module.
 
 #![cfg(test)]
 
-use super::{pallet, *};
+use crate as pallet_auction_manager;
 use frame_support::{
-	construct_runtime, defensive, derive_impl, ord_parameter_types, parameter_types,
+	construct_runtime, derive_impl, ord_parameter_types,
+	pallet_prelude::*,
+	parameter_types,
 	traits::{
 		honzon::{CDPTreasury, EmergencyShutdown, PriceProvider, Rate},
 		tokens::{
 			fungibles, DepositConsequence, Fortitude, Precision, Preservation, Provenance,
 			WithdrawConsequence,
 		},
-		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, Everything,
+		AsEnsureOriginWithArg, ConstU128, ConstU64,
 	},
 	PalletId,
 };
@@ -37,7 +38,7 @@ use frame_system::EnsureSignedBy;
 use sp_core::H256;
 use sp_runtime::{
 	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup, One as OneT},
-	BuildStorage, DispatchError,
+	BuildStorage, FixedPointNumber,
 };
 
 pub type AccountId = u128;
@@ -107,7 +108,7 @@ type Block = frame_system::mocking::MockBlock<Runtime>;
 construct_runtime!(
 	pub enum Runtime {
 		System: frame_system,
-		AuctionManagerModule: pallet,
+		AuctionManagerModule: pallet_auction_manager,
 		Assets: pallet_assets,
 		AuctionModule: pallet_auction,
 		CDPTreasuryModule: pallet_cdp_treasury,
@@ -122,24 +123,13 @@ impl frame_system::Config for Runtime {
 	type AccountId = AccountId;
 	type Lookup = IdentityLookup<Self::AccountId>;
 	type AccountData = pallet_balances::AccountData<Balance>;
-	type Nonce = u64;
 	type Block = Block;
-	type BaseCallFilter = Everything;
-	type BlockWeights = ();
-	type BlockLength = ();
-	type DbWeight = ();
+	type Nonce = u64;
 	type RuntimeOrigin = RuntimeOrigin;
 	type RuntimeCall = RuntimeCall;
 	type Hash = H256;
 	type Hashing = BlakeTwo256;
-	type BlockHashCount = ConstU64<250>;
-	type Version = ();
 	type PalletInfo = PalletInfo;
-	type OnNewAccount = ();
-	type OnKilledAccount = ();
-	type SystemWeightInfo = ();
-	type SS58Prefix = ();
-	type OnSetCode = ();
 	type MaxConsumers = ConstU32<16>;
 	type RuntimeEvent = RuntimeEvent;
 }
@@ -171,6 +161,20 @@ impl pallet_assets_holder::Config for Runtime {
 	type RuntimeHoldReason = MockHoldReason;
 }
 
+pallet_assets::runtime_benchmarks_enabled! {
+pub struct MockBenchmarkHelper;
+// TODO: Check if this makes sense
+impl pallet_assets::BenchmarkHelper<CurrencyId> for MockBenchmarkHelper {
+	fn create_asset_id_parameter(id: u32) -> CurrencyId {
+		if id == 0 {
+			CurrencyId::Native
+		} else {
+			CurrencyId::Stable
+		}
+	}
+}
+}
+
 impl pallet_assets::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
@@ -191,8 +195,9 @@ impl pallet_assets::Config for Runtime {
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
 	type Holder = AssetsHolder;
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
+	pallet_assets::runtime_benchmarks_enabled! {
+		type BenchmarkHelper = MockBenchmarkHelper;
+	}
 }
 
 impl pallet_auction::Config for Runtime {
@@ -222,8 +227,9 @@ impl pallet_cdp_treasury::Config for Runtime {
 	type MaxAuctionsCount = MaxAuctionsCount;
 	type PalletId = CDPTreasuryPalletId;
 	type WeightInfo = ();
-	type GetStableCurrencyId = GetStableCurrencyId;
-	type GetBaseCurrencyId = GetNativeCurrencyId;
+	type StableCurrencyId = GetStableCurrencyId;
+	type CollateralCurrencyId = GetNativeCurrencyId;
+	type AssetKind = CurrencyId;
 	type Swap = MockSwap;
 	type TreasuryAccount = TreasuryAccount;
 }
@@ -362,7 +368,7 @@ parameter_types! {
 
 pub struct MockCurrency;
 
-impl pallet::Config for Runtime {
+impl pallet_auction_manager::Config for Runtime {
 	type RuntimeHoldReason = MockHoldReason;
 	type Currency = MockCurrency;
 	type MinimumIncrementSize = MinimumIncrementSize;
