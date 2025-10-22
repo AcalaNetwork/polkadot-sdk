@@ -43,6 +43,9 @@ use sp_runtime::{
 };
 use sp_std::prelude::*;
 
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+
 mod impls;
 mod mock;
 mod tests;
@@ -254,7 +257,7 @@ pub mod pallet {
 		///
 		/// - `amount`: The new buffer amount for the debit pool.
 		#[pallet::call_index(3)]
-		#[pallet::weight((T::WeightInfo::set_expected_collateral_auction_size(), DispatchClass::Operational))]
+		#[pallet::weight(T::WeightInfo::set_debit_offset_buffer())]
 		pub fn set_debit_offset_buffer(
 			origin: OriginFor<T>,
 			#[pallet::compact] amount: T::Balance,

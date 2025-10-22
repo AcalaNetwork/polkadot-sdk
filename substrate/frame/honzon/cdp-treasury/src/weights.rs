@@ -48,35 +48,8 @@ use sp_std::marker::PhantomData;
 pub trait WeightInfo {
 	fn extract_surplus_to_treasury() -> Weight;
 	fn auction_collateral(b: u32) -> Weight;
-	fn exchange_collateral_to_stable() -> Weight;
 	fn set_expected_collateral_auction_size() -> Weight;
-}
-
-/// Weights for module_cdp_treasury using the Acala node and recommended hardware.
-pub struct AcalaWeight<T>(PhantomData<T>);
-impl<T: frame_system::Config> WeightInfo for AcalaWeight<T> {
-	fn auction_collateral(b: u32, ) -> Weight {
-		Weight::from_parts(2_672_000, 0)
-			// Standard Error: 326_000
-			.saturating_add(Weight::from_parts(32_334_000, 0).saturating_mul(b as u64))
-			.saturating_add(T::DbWeight::get().reads(6 as u64))
-			.saturating_add(T::DbWeight::get().writes(6 as u64))
-			.saturating_add(T::DbWeight::get().writes((3 as u64).saturating_mul(b as u64)))
-	}
-	fn exchange_collateral_to_stable() -> Weight {
-		Weight::from_parts(176_000_000, 0)
-			.saturating_add(T::DbWeight::get().reads(9 as u64))
-			.saturating_add(T::DbWeight::get().writes(6 as u64))
-	}
-	fn set_expected_collateral_auction_size() -> Weight {
-		Weight::from_parts(25_000_000, 0)
-			.saturating_add(T::DbWeight::get().writes(1 as u64))
-	}
-	fn extract_surplus_to_treasury() -> Weight {
-		Weight::from_parts(75_000_000, 0)
-			.saturating_add(T::DbWeight::get().reads(4 as u64))
-			.saturating_add(T::DbWeight::get().writes(3 as u64))
-	}
+	fn set_debit_offset_buffer() -> Weight;
 }
 
 // For backwards compatibility and tests
@@ -88,11 +61,6 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().writes(6 as u64))
 			.saturating_add(RocksDbWeight::get().writes((3 as u64).saturating_mul(b as u64)))
 	}
-	fn exchange_collateral_to_stable() -> Weight {
-		Weight::from_parts(176_000_000, 0)
-			.saturating_add(RocksDbWeight::get().reads(9 as u64))
-			.saturating_add(RocksDbWeight::get().writes(6 as u64))
-	}
 	fn set_expected_collateral_auction_size() -> Weight {
 		Weight::from_parts(25_000_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1 as u64))
@@ -101,5 +69,8 @@ impl WeightInfo for () {
 		Weight::from_parts(75_000_000, 0)
 			.saturating_add(RocksDbWeight::get().reads(4 as u64))
 			.saturating_add(RocksDbWeight::get().writes(3 as u64))
+	}
+	fn set_debit_offset_buffer() -> Weight {
+		Weight::zero()
 	}
 }
