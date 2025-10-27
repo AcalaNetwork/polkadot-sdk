@@ -52,7 +52,7 @@ impl<T: Config> AuctionManager<T::AccountId> for Pallet<T> {
 		let new_total_collateral = Self::total_collateral_in_auction()
 			.checked_add(&amount)
 			.ok_or(Error::<T>::InvalidAmount)?;
-		let new_total_target = TotalTargetInAuction::<T>::get()
+		let new_total_target = Self::total_target_in_auction()
 			.checked_add(&target)
 			.ok_or(Error::<T>::InvalidAmount)?;
 
@@ -153,8 +153,8 @@ impl<T: Config> AuctionManager<T::AccountId> for Pallet<T> {
 		Ok(())
 	}
 
-	fn get_total_collateral_in_auction(id: Self::CurrencyId) -> Self::Balance {
-		if id == T::GetNativeCurrencyId::get() {
+	fn get_total_collateral_in_auction(currency_id: Self::CurrencyId) -> Self::Balance {
+		if currency_id == T::GetNativeCurrencyId::get() {
 			TotalCollateralInAuction::<T>::get()
 		} else {
 			Zero::zero()

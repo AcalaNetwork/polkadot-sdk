@@ -61,8 +61,9 @@ where
 		let new_bid_price = if collateral_auction.always_forward() {
 			Rate::from_rational(new_bid_amount.into(), 1)
 		} else {
+			// SAFETY: initial_amount should never be zero in a valid auction
 			Rate::checked_from_rational(new_bid_amount, collateral_auction.initial_amount)
-				.unwrap_or_default()
+				.expect("CollateralAuctionItem's initial_amount checked in creation; qed")
 		};
 
 		// For reverse (not always_forward) auctions, enforce the minimum bid logic.
@@ -72,20 +73,21 @@ where
 				collateral_auction.target,
 				collateral_auction.initial_amount,
 			)
-			.unwrap_or_default();
+			.expect("CollateralAuctionItem's initial_amount checked in creation; qed");
 
 			// Determine the minimum price required for this bid, depending on the last bid.
 			let min_price = if let Some((_, last_bid_amount)) = last_bid {
 				// Price per unit of last bid.
-				let last_price_per_unit =
+				// SAFETY: initial_amount should never be zero in a valid auction
+				let last_bid_price =
 					Rate::checked_from_rational(last_bid_amount, collateral_auction.initial_amount)
-						.unwrap_or_default();
+						.expect("CollateralAuctionItem's initial_amount checked in creation; qed");
 				// If we're in the "reverse stage", keep the price flat;
 				// otherwise, require at least the minimum increment.
-				if collateral_auction.in_reverse_stage(last_price_per_unit) {
-					last_price_per_unit
+				if collateral_auction.in_reverse_stage(last_bid_price) {
+					last_bid_price
 				} else {
-					last_price_per_unit.saturating_add(T::MinimumIncrementSize::get())
+					last_bid_price.saturating_add(T::MinimumIncrementSize::get())
 				}
 			} else {
 				// No previous bids: min price is half of target price to stimulate bidding.
@@ -104,9 +106,11 @@ where
 		// If the bid price is greater than the target price, only a portion of the collateral
 		// will be sold.
 		if collateral_auction.in_reverse_stage(new_bid_price) {
+			// TODO: new_bid_amount not been checked
+			// SAFETY: new_bid_amount should never be zero for a valid bid
 			collateral_auction.amount =
 				Rate::checked_from_rational(collateral_auction.target, new_bid_amount)
-					.unwrap_or_default()
+					.expect("new_bid_amount should never be zero")
 					.saturating_mul_int(collateral_auction.initial_amount);
 			// Persist updated auction state.
 			CollateralAuctions::<T>::insert(id, &collateral_auction);
@@ -125,17 +129,19 @@ where
 			return OnNewBidResult { accept_bid: false, auction_end_change: Change::NoChange };
 		}
 
-		// Forward the held payment to the surplus account.
-		T::CDPTreasury::pay_surplus(payment_amount).unwrap_or_default();
+		// TODO: The result is not handled.
+		let _ = T::CDPTreasury::pay_surplus(payment_amount);
 
 		// If there was a previous bid, refund the previous bidder their payment.
 		if let Some((last_bidder, last_bid_amount)) = last_bid {
+			// SAFETY: initial_amount should never be zero in a valid auction
 			let last_bid_price =
 				Rate::checked_from_rational(last_bid_amount, collateral_auction.initial_amount)
-					.unwrap_or_default();
+					.expect("CollateralAuctionItem's initial_amount checked in creation; qed");
 			let last_payment_amount = collateral_auction.payment_amount(last_bid_price);
 			let reason: T::RuntimeHoldReason = HoldReason::CollateralAuction.into();
 			// Release the previous payment hold.
+			// TODO: The result is not handled
 			let _ = T::Fungibles::release(
 				T::GetStableCurrencyId::get(),
 				&reason,
@@ -145,7 +151,8 @@ where
 			)
 			.ok();
 			// Refund surplus account for previous payment.
-			T::CDPTreasury::refund_surplus(last_payment_amount).unwrap_or_default();
+			// Note: We silently ignore errors to maintain consistency with treasury failures.
+			let _ = T::CDPTreasury::refund_surplus(last_payment_amount);
 		}
 
 		// Extend/restart the auction timer based on latest bid time.
@@ -173,8 +180,9 @@ where
 				let price = if collateral_auction.always_forward() {
 					Rate::from_rational(amount.into(), 1)
 				} else {
+					// SAFETY: initial_amount should never be zero in a valid auction
 					Rate::checked_from_rational(amount, collateral_auction.initial_amount)
-						.unwrap_or_default()
+						.expect("CollateralAuctionItem's initial_amount checked in creation; qed")
 				};
 				let payment_amount = collateral_auction.payment_amount(price);
 

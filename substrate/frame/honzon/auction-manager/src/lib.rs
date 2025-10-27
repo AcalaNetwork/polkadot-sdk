@@ -64,12 +64,12 @@ pub mod pallet {
 	{
 		/// The currency type for interacting with this pallet.
 		type CurrencyId: frame_support::pallet_prelude::Parameter
-			+ sp_std::cmp::PartialEq
-			+ sp_std::cmp::Eq
-			+ sp_std::marker::Copy
-			+ sp_std::cmp::Ord
-			+ sp_std::marker::Send
-			+ sp_std::marker::Sync
+			+ PartialEq
+			+ Eq
+			+ Copy
+			+ Ord
+			+ Send
+			+ Sync
 			+ MaxEncodedLen
 			+ 'static;
 		/// The native currency ID.
@@ -122,6 +122,7 @@ pub mod pallet {
 		/// Funds are held for a collateral auction.
 		CollateralAuction,
 	}
+
 	#[pallet::error]
 	pub enum Error<T> {
 		/// The specified auction does not exist.
@@ -212,16 +213,28 @@ pub mod pallet {
 	pub type TotalTargetInAuction<T: Config> =
 		StorageValue<_, <T as pallet_auction::Config>::Balance, ValueQuery>;
 
-	#[pallet::call]
-	impl<T: Config> Pallet<T> {}
-
 	impl<T: Config> Pallet<T> {
+		/// Determines the remaining time of closing for a given auction
+		///
+		/// If the auction is still within the soft cap period, it uses the full closing time.
+		/// After the soft cap has elapsed, the closing period is reduced by half to encourage a
+		/// quicker auction end.
+		///
+		/// # Parameters
+		/// - `auction_start_time`: The block number when the auction started.
+		/// - `now`: The current block number.
+		///
+		/// # Returns
+		/// - `BlockNumberFor<T>`: The time to close (in blocks) for the auction.
 		pub fn get_auction_time_to_close(
 			auction_start_time: BlockNumberFor<T>,
 			now: BlockNumberFor<T>,
 		) -> BlockNumberFor<T> {
 			let auction_duration_soft_cap = T::AuctionDurationSoftCap::get();
 			let time_to_close = T::AuctionTimeToClose::get();
+
+			// If we are past the soft cap, reduce the time to close by half;
+			// otherwise, use the full auction time to close.
 			if now >= auction_start_time + auction_duration_soft_cap {
 				time_to_close / 2u32.into()
 			} else {
