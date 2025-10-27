@@ -60,18 +60,18 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use codec::{Encode, MaxEncodedLen};
-use frame_support::traits::honzon::{
-	CDPTreasury, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate, FractionalRate,
-	LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
-	VaultProvider,
-};
 use frame_support::{
 	pallet_prelude::*,
 	traits::{
 		fungible::{self, Mutate},
 		fungibles::{self, Mutate as FungiblesMutate},
+		honzon::{
+			CDPTreasury, CDPTreasuryExtended, Change, EmergencyShutdown, ExchangeRate,
+			FractionalRate, LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio,
+			RiskManager, SwapLimit, VaultProvider,
+		},
 		tokens::Preservation,
-		Change, UnixTime,
+		UnixTime,
 	},
 	transactional, PalletId,
 };
@@ -518,9 +518,8 @@ pub mod pallet {
 			let mut collateral_params = Self::collateral_params();
 			if let Change::NewValue(maybe_rate) = interest_rate_per_sec {
 				match (collateral_params.interest_rate_per_sec.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) => {
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
-					},
+					(Some(existing), Some(rate)) =>
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -540,9 +539,8 @@ pub mod pallet {
 			}
 			if let Change::NewValue(maybe_rate) = liquidation_penalty {
 				match (collateral_params.liquidation_penalty.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) => {
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?
-					},
+					(Some(existing), Some(rate)) =>
+						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
 					(None, Some(rate)) => {
 						let fractional_rate =
 							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
@@ -695,13 +693,12 @@ impl<T: Config> Pallet<T> {
 				exchange_rate,
 			);
 			match Self::get_liquidation_ratio() {
-				Ok(liquidation_ratio) => {
+				Ok(liquidation_ratio) =>
 					if collateral_ratio < liquidation_ratio {
 						CDPStatus::Unsafe
 					} else {
 						CDPStatus::Safe
-					}
-				},
+					},
 				Err(e) => CDPStatus::ChecksFailed(e),
 			}
 		} else {
@@ -956,8 +953,8 @@ impl<T: Config> Pallet<T> {
 		// update CDP state
 		let collateral_adjustment = pallet_loans::BalanceAdjustment::decrease(decrease_collateral);
 		let previous_debit_value = Self::convert_to_debit_value(debit, effective_stability_fee);
-		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount
-			>= previous_debit_value
+		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount >=
+			previous_debit_value
 		{
 			// refund extra stable coin to the CDP owner
 			<T as Config>::Tokens::transfer(
@@ -1239,8 +1236,8 @@ impl<T: Config> Pallet<T> {
 					continue;
 				},
 			};
-			if !is_shutdown
-				&& matches!(
+			if !is_shutdown &&
+				matches!(
 					Self::check_cdp_status(collateral, debit, stability_fee, &who),
 					CDPStatus::Unsafe
 				) {

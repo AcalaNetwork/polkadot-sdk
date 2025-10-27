@@ -370,7 +370,7 @@ pub struct MockCurrency;
 
 impl pallet_auction_manager::Config for Runtime {
 	type RuntimeHoldReason = MockHoldReason;
-	type Currency = MockCurrency;
+	type Fungibles = MockCurrency;
 	type MinimumIncrementSize = MinimumIncrementSize;
 	type AuctionTimeToClose = ConstU64<100>;
 	type AuctionDurationSoftCap = ConstU64<2000>;

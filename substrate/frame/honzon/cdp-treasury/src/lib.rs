@@ -180,7 +180,7 @@ pub mod pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// Extracts surplus to the treasury.
+		/// Extracts surplus to the treasury account.
 		///
 		/// The dispatch origin of this call must be `UpdateOrigin`.
 		///

@@ -22,13 +22,16 @@ use super::*;
 
 use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{ConstU128, ConstU32, ConstU64, Get, UnixTime},
+	traits::{
+		honzon::{
+			CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate,
+			Handler, LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager,
+			SwapLimit,
+		},
+		ConstU128, ConstU32, ConstU64, Get, UnixTime,
+	},
 };
 use pallet_asset_conversion::Swap;
-use frame_support::traits::honzon::{
-	CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate,
-	Handler, LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
-};
 use sp_runtime::{
 	traits::{BlakeTwo256, IdentityLookup, Zero},
 	BuildStorage, DispatchError, DispatchResult,
@@ -64,7 +67,9 @@ pub fn set_shutdown(value: bool) {
 
 pub struct DummyOnUpdateLoan;
 impl Handler<(AccountId, pallet_loans::BalanceAdjustment<Balance>, Balance)> for DummyOnUpdateLoan {
-	fn handle(_: &(AccountId, pallet_loans::BalanceAdjustment<Balance>, Balance)) -> DispatchResult {
+	fn handle(
+		_: &(AccountId, pallet_loans::BalanceAdjustment<Balance>, Balance),
+	) -> DispatchResult {
 		Ok(())
 	}
 }
@@ -180,6 +185,9 @@ impl pallet_assets::Config for Test {
 	type RemoveItemsLimit = ConstU32<1000>;
 	type CallbackHandle = ();
 	type Holder = ();
+	pallet_assets::runtime_benchmarks_enabled! {
+		type BenchmarkHelper = ();
+	}
 }
 
 parameter_types! {
