@@ -17,15 +17,38 @@
 
 //! # Auction Manager Pallet
 //!
+//! A pallet for managing collateral auctions in the Honzon CDP system, enabling the sale of
+//! collateral assets to maintain system stability and cover bad debt.
+//!
+//! ## Pallet API
+//!
+//! See the [`pallet`] module for more information about the interfaces this pallet exposes,
+//! including its configuration trait, dispatchables, storage items, events and errors.
+//!
 //! ## Overview
 //!
-//! The Auction Manager pallet is responsible for managing auctions of system assets to ensure the
-//! normal operation of the business. It handles collateral auctions, which involve selling
-//! collateral assets to acquire stable currency and cover the system's bad debt.
+//! The Auction Manager pallet orchestrates the collateral auction mechanism, a critical component
+//! of the Honzon CDP (Collateralized Debt Position) system. When CDP positions become
+//! undercollateralized, this pallet creates and manages auctions to liquidate collateral assets in
+//! exchange for stable currency, thereby maintaining system solvency.
 //!
-//! This pallet implements the `AuctionManager` and `AuctionHandler` traits, providing a structured
-//! way to create, manage, and settle auctions. It interacts with other pallets like
-//! `pallet-auction` for the core auction mechanics and `pallet-cdp-treasury` for handling funds.
+//! The pallet implements both the [`AuctionManager`](frame_support::traits::honzon::AuctionManager)
+//! and [`AuctionHandler`](frame_support::traits::honzon::AuctionHandler) traits, providing a
+//! structured interface for creating, managing, and settling collateral auctions. It works in
+//! conjunction with [`pallet-auction`] for core auction mechanics and [`pallet-cdp-treasury`] for
+//! fund management.
+//!
+//! Collateral auctions operate in two stages:
+//!
+//! - **Forward stage**: Bidders compete to acquire collateral at progressively lower prices, with
+//!   the total payment continuously increasing until it reaches the target bid price.
+//!
+//! - **Reverse stage**: Once the target bid price is reached, bidders compete for additional
+//!   collateral at the same stable price (payment per collateral unit), effectively expanding the
+//!   total collateral being sold while maintaining the target price per unit.
+//!
+//! This two-stage design incentivizes competitive bidding while ensuring the system receives the
+//! required stable currency to cover bad debt.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 

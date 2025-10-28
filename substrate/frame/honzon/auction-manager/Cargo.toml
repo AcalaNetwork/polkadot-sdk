@@ -1,8 +1,13 @@
 [package]
 name = "pallet-auction-manager"
 version = "1.0.0"
-authors = ["Acala Developers"]
+authors = ["Acala Developers", "Parity Technologies <admin@parity.io>"]
 edition = { workspace = true }
+license = "Apache-2.0"
+homepage.workspace = true
+repository.workspace = true
+description = "FRAME auction manager pallet for managing collateral auctions in the Honzon CDP system."
+readme = "README.md"
 
 [dependencies]
 codec = { workspace = true, features = ["derive"] }
@@ -52,11 +57,11 @@ try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
 	"pallet-asset-conversion/try-runtime",
-	"pallet-assets/try-runtime",
 	"pallet-assets-freezer/try-runtime",
 	"pallet-assets-holder/try-runtime",
+	"pallet-assets/try-runtime",
 	"pallet-auction/try-runtime",
 	"pallet-balances/try-runtime",
 	"pallet-cdp-treasury/try-runtime",
-	"sp-runtime/try-runtime"
+	"sp-runtime/try-runtime",
 ]
