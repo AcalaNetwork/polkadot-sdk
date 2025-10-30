@@ -386,16 +386,18 @@ pub mod pallet {
 				}
 
 				// increase account ref if new position
-				if p.collateral.is_zero() && p.debit.is_zero()
-					&& frame_system::Pallet::<T>::inc_consumers(who).is_err() {
-						// No providers for the locks. This is impossible under normal circumstances
-						// since the funds that are under the lock will themselves be stored in the
-						// account and therefore will need a reference.
-						log::warn!(
-							"Warning: Attempt to introduce lock consumer reference, yet no providers. \
+				if p.collateral.is_zero() &&
+					p.debit.is_zero() &&
+					frame_system::Pallet::<T>::inc_consumers(who).is_err()
+				{
+					// No providers for the locks. This is impossible under normal circumstances
+					// since the funds that are under the lock will themselves be stored in the
+					// account and therefore will need a reference.
+					log::warn!(
+						"Warning: Attempt to introduce lock consumer reference, yet no providers. \
 							This is unexpected but should be safe."
-						);
-					}
+					);
+				}
 
 				// use the collateral amount as the shares for Loans incentives
 				T::OnUpdateLoan::handle(&(who.clone(), collateral_adjustment, p.collateral))?;

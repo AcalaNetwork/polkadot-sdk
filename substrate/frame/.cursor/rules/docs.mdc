@@ -1,12 +1,12 @@
 ---
-description: Rust doc comments
+description: add comments
 alwaysApply: false
 ---
-
-- Follow the documentation guidelines in [DOCUMENTATION_GUIDELINES.md](../../../../../docs/contributor/DOCUMENTATION_GUIDELINES.md)
-- Always add Substrate copyright notice in the docs
-- If items already have docs, don't expand it too much, just add more details if needed
+- Follow the documentation guidelines in [DOCUMENTATION_GUIDELINES.md](../../../../docs/contributor/DOCUMENTATION_GUIDELINES.md)
+- File headers include Substrate copyright.
 - Don't document conventions in pallet development, like hash function selection, etc.
-- Don't add sophisticated explanations for non-public items.
+- If items already have docs, don't expand it too much, just add more details if needed
 - Don't repeat comments that already exist in the trait definition, just focus on the implementation details
 - Don't document why use some trait bounds if not specified explicitly in prompt.
+- For method/function level comments: use doc comments for public item; If arguments and return types are simple, don't list them; Don't trivially repeat what the codes do, focus more on explaining complex algorithms or design intents.
+- For inline/line level comments, describing concisely.

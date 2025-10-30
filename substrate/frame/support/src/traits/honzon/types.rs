@@ -153,7 +153,8 @@ pub struct Position<Balance> {
 pub enum ConnectionStatus<Balance, BlockNumber> {
 	/// The connection is active and collateral can be withdrawn.
 	Active,
-	/// A withdrawal has been initiated and the pallet is waiting for the destination to complete it.
+	/// A withdrawal has been initiated and the pallet is waiting for the destination to complete
+	/// it.
 	WithdrawalInProgress {
 		/// The amount of stables being withdrawn.
 		amount: Balance,
