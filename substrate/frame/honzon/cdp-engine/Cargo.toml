@@ -34,7 +34,6 @@ default = ["std"]
 std = [
 	"codec/std",
 	"frame-support/std",
-	"frame-support/std",
 	"frame-system/std",
 	"num-traits/std",
 	"pallet-asset-conversion/std",
