@@ -126,8 +126,7 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 
 		// Convert the stablecoin amount to the equivalent debit amount.
 		let debit_amount =
-			Self::try_convert_to_debit_balance(amount, Self::get_interest_rate_per_sec()?)
-				.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
+			Self::convert_to_debit_balance(amount, Self::get_interest_rate_per_sec()?);
 
 		// Increase the debit in the vault's position. This will mint stablecoin to the vault's
 		// account.
@@ -170,11 +169,10 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		)?;
 
 		// Convert the stablecoin amount to the equivalent debit amount.
-		let debit_amount = Self::try_convert_to_debit_balance(
+		let debit_amount = Self::convert_to_debit_balance(
 			amount,
 			Self::get_effective_stability_fee(stability_fee, &vault_account)?,
-		)
-		.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
+		);
 
 		// Decrease the debit in the vault's position. This will burn the stablecoin from the
 		// vault's account.

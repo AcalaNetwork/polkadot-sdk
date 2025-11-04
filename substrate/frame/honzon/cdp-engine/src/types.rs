@@ -1,4 +1,5 @@
 use crate::{AccountIdOf, BalanceOf, Config, CurrencyIdOf};
+use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	pallet_prelude::*,
 	traits::honzon::{
@@ -6,10 +7,115 @@ use frame_support::{
 		Ratio, SwapLimit,
 	},
 };
+use scale_info::TypeInfo;
 use sp_runtime::{
-	traits::{Bounded, Saturating},
-	FixedPointNumber,
+	traits::{Bounded, One, Saturating},
+	FixedPointNumber, FixedPointOperand, FixedU128, RuntimeDebug,
 };
+/// Compounding factor between debit value (FV) and debit balance (PV).
+///
+/// This represents the accumulated interest rate, where FV = PV * factor.
+/// The value must be >= 1, meaning the factor can only increase over time.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+pub struct CompoundingFactor(FixedU128);
+pub enum CompoundingFactorError {
+	LessThanOne,
+}
+
+impl CompoundingFactor {
+	/// Create a new `CompoundingFactor` from a `FixedU128` inner value.
+	pub fn try_from_inner(inner: FixedU128) -> Result<Self, CompoundingFactorError> {
+		if inner < FixedU128::one() {
+			return Err(CompoundingFactorError::LessThanOne);
+		}
+		Ok(Self(inner))
+	}
+
+	/// Create a new `CompoundingFactor` with value 1.
+	///
+	/// In most cases, it should be the default value for the compounding factor.
+	pub fn one() -> Self {
+		Self(FixedU128::one())
+	}
+
+	/// Create a new `CompoundingFactor` from a `FixedU128` inner value.
+	///
+	/// # Safety
+	/// The inner value must be >= 1.
+	pub const unsafe fn from_inner_unchecked(inner: FixedU128) -> Self {
+		Self(inner)
+	}
+
+	/// Saturating addition of this factor and another `FixedU128`.
+	pub fn saturating_add(self, other: FixedU128) -> Self {
+		// Safety: since `other` is always >=0, the result is always >=1, it can be unchecked
+		unsafe { Self::from_inner_unchecked(self.0.saturating_add(other)) }
+	}
+
+	/// Get the inner `FixedU128` value.
+	pub fn into_inner(self) -> FixedU128 {
+		self.0
+	}
+
+	/// Get the reciprocal of this factor.
+	///
+	/// Since the factor is always >= 1, the reciprocal always exists.
+	pub fn reciprocal(self) -> FixedU128 {
+		FixedPointNumber::reciprocal(self.0)
+			.expect("compounding factor is always >= 1, so reciprocal is always available; qed")
+	}
+
+	/// Multiply this factor by an integer value, saturating on overflow.
+	pub fn saturating_mul_int<N: FixedPointOperand>(self, n: N) -> N {
+		self.0.saturating_mul_int(n)
+	}
+
+	/// Saturating multiplication of this factor and another `FixedU128`.
+	pub fn saturating_mul(self, rate: FixedU128) -> FixedU128 {
+		self.0.saturating_mul(rate)
+	}
+
+	/// Create from a rational number, returning `None` if the result would be < 1.
+	pub fn checked_from_rational<N: FixedPointOperand, D: FixedPointOperand>(
+		n: N,
+		d: D,
+	) -> Option<Self> {
+		FixedPointNumber::checked_from_rational(n, d).and_then(|inner| {
+			if inner >= FixedU128::one() {
+				Some(Self(inner))
+			} else {
+				None
+			}
+		})
+	}
+}
+
+// Required for storage
+impl Encode for CompoundingFactor {
+	fn encode(&self) -> sp_std::prelude::Vec<u8> {
+		self.0.encode()
+	}
+
+	fn size_hint(&self) -> usize {
+		self.0.size_hint()
+	}
+}
+
+impl Decode for CompoundingFactor {
+	fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
+		let inner = FixedU128::decode(input)?;
+		if inner >= FixedU128::one() {
+			Ok(Self(inner))
+		} else {
+			Err(codec::Error::from("CompoundingFactor must be >= 1"))
+		}
+	}
+}
+
+impl codec::EncodeLike for CompoundingFactor {}
+impl codec::EncodeLike<FixedU128> for CompoundingFactor {}
+impl codec::EncodeLike<CompoundingFactor> for FixedU128 {}
+
 /// Risk management param
 #[derive(Encode, Decode, Clone, RuntimeDebug, PartialEq, Eq, Default, TypeInfo, MaxEncodedLen)]
 pub struct RiskManagementParams<Balance> {

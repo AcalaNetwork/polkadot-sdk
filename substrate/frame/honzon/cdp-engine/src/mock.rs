@@ -24,9 +24,8 @@ use frame_support::{
 	construct_runtime, parameter_types,
 	traits::{
 		honzon::{
-			CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, EmergencyShutdown, ExchangeRate,
-			Handler, LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager,
-			SwapLimit,
+			CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, EmergencyShutdown, Handler,
+			LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 		},
 		ConstU128, ConstU32, ConstU64, Get, UnixTime,
 	},
@@ -34,7 +33,7 @@ use frame_support::{
 use pallet_asset_conversion::Swap;
 use sp_runtime::{
 	traits::{BlakeTwo256, IdentityLookup, Zero},
-	BuildStorage, DispatchError, DispatchResult,
+	BuildStorage, DispatchError, DispatchResult, FixedU128,
 };
 use sp_std::marker::PhantomData;
 
@@ -192,7 +191,7 @@ impl pallet_assets::Config for Test {
 
 parameter_types! {
 	pub const LoansPalletId: PalletId = PalletId(*b"aca/loan");
-	pub const DefaultDebitExchangeRate: ExchangeRate = ExchangeRate::from_inner(1_000_000_000_000_000_000);
+	pub const DefaultDebitExchangeRate: CompoundingFactor = unsafe { CompoundingFactor::from_inner_unchecked(FixedU128::from_inner(1_000_000_000_000_000_000)) };
 	pub const MinimumCollateralAmount: u128 = 100;
 	pub const GetNativeCurrencyId: CurrencyId = 1;
 	pub const GetStableCurrencyId: CurrencyId = 2;

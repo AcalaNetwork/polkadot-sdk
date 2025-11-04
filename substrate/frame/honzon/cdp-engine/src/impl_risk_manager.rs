@@ -20,7 +20,7 @@
 use crate::{pallet::*, AccountIdOf};
 use frame_support::traits::honzon::RiskManager;
 use pallet_loans::BalanceOf;
-use sp_runtime::{DispatchResult, FixedPointNumber};
+use sp_runtime::DispatchResult;
 
 impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T>, BalanceOf<T>>
 	for Pallet<T>

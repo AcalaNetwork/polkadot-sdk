@@ -64,9 +64,8 @@ use frame_support::{
 		fungible::{self},
 		fungibles::{self, Mutate as FungiblesMutate},
 		honzon::{
-			CDPTreasury, CDPTreasuryExtended, Change, EmergencyShutdown, ExchangeRate,
-			FractionalRate, LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio,
-			SwapLimit,
+			CDPTreasury, CDPTreasuryExtended, Change, EmergencyShutdown, FractionalRate,
+			LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, SwapLimit,
 		},
 		tokens::Preservation,
 		UnixTime,
@@ -103,7 +102,7 @@ pub mod weights;
 pub use weights::WeightInfo;
 
 mod types;
-pub use types::{LiquidateByPriority, RiskManagementParams};
+pub use types::{CompoundingFactor, LiquidateByPriority, RiskManagementParams};
 mod impl_risk_manager;
 mod impl_vault_provider;
 
@@ -158,9 +157,9 @@ pub mod pallet {
 		#[pallet::constant]
 		type DefaultLiquidationRatio: Get<Ratio>;
 
-		/// The default debit exchange rate for all collateral types
+		/// The default compounding factor for all collateral types
 		#[pallet::constant]
-		type DefaultDebitExchangeRate: Get<ExchangeRate>;
+		type DefaultDebitExchangeRate: Get<CompoundingFactor>;
 
 		/// The default liquidation penalty rate when liquidate unsafe CDP
 		#[pallet::constant]
@@ -282,8 +281,6 @@ pub mod pallet {
 		CollateralNotEnough,
 		/// debit value decrement is not enough
 		NotEnoughDebitDecrement,
-		/// convert debit value to debit balance failed
-		ConvertDebitBalanceFailed,
 		/// Collateral liquidation failed.
 		LiquidationFailed,
 		/// Invalid rate
@@ -321,11 +318,11 @@ pub mod pallet {
 		MaximumTotalDebitValueUpdated { new_total_debit_value: pallet_loans::BalanceOf<T> },
 	}
 
-	/// Exchange rate of debit units and debit value for a specific stability fee.
+	/// Compounding factor of debit balance (PV) to debit value (FV) for a specific stability fee.
 	#[pallet::storage]
 	#[pallet::getter(fn debit_exchange_rate)]
 	pub type DebitExchangeRate<T: Config> =
-		StorageMap<_, Twox64Concat, Rate, ExchangeRate, OptionQuery>;
+		StorageMap<_, Twox64Concat, Rate, CompoundingFactor, OptionQuery>;
 
 	/// Risk management params.
 	#[pallet::storage]
@@ -614,7 +611,7 @@ impl<T: Config> Pallet<T> {
 					continue;
 				}
 
-				// Retrieve current debit exchange rate for this fee class.
+				// Retrieve current compounding factor for this fee class.
 				let debit_exchange_rate = Self::get_debit_exchange_rate(stability_fee);
 				let debit_exchange_rate_increment =
 					debit_exchange_rate.saturating_mul(rate_to_accumulate);
@@ -627,7 +624,8 @@ impl<T: Config> Pallet<T> {
 					<T as Config>::CDPTreasury::on_system_surplus(stable_coin_balance_to_issue);
 				match res {
 					Ok(_) => {
-						// Update exchange rate in storage to reflect the new accumulated interest.
+						// Update compounding factor in storage to reflect the new accumulated
+						// interest.
 						let new_debit_exchange_rate =
 							debit_exchange_rate.saturating_add(debit_exchange_rate_increment);
 						DebitExchangeRate::<T>::insert(stability_fee, new_debit_exchange_rate);
@@ -734,7 +732,7 @@ impl<T: Config> Pallet<T> {
 		let mut effective_fee = sp_std::cmp::min(stability_fee, current_stability_fee);
 
 		if let Some(vault_id) = VaultIdByAccountId::<T>::get(who) {
-			if let Some(override_fee) = Self::stability_fee_overrides(&vault_id) {
+			if let Some(override_fee) = Self::stability_fee_overrides(vault_id) {
 				effective_fee = sp_std::cmp::min(effective_fee, override_fee);
 			}
 		}
@@ -769,11 +767,11 @@ impl<T: Config> Pallet<T> {
 			.unwrap_or_else(|| T::DefaultLiquidationPenalty::get().into_inner()))
 	}
 
-	/// Retrieve the debit exchange rate associated with the given stability fee.
+	/// Retrieve the compounding factor associated with the given stability fee.
 	///
-	/// This function ensures the correct exchange rate is available in storage,
+	/// This function ensures the correct factor is available in storage,
 	/// initializing it with the default if not yet set.
-	pub fn get_debit_exchange_rate(stability_fee: Rate) -> ExchangeRate {
+	pub fn get_debit_exchange_rate(stability_fee: Rate) -> CompoundingFactor {
 		if let Some(exchange_rate) = DebitExchangeRate::<T>::get(stability_fee) {
 			exchange_rate
 		} else {
@@ -791,18 +789,18 @@ impl<T: Config> Pallet<T> {
 		Self::get_debit_exchange_rate(stability_fee).saturating_mul_int(debit_balance)
 	}
 
-	/// Attempts to convert a debit value amount into a debit balance using the given stability
-	/// fee's exchange rate.
-	pub fn try_convert_to_debit_balance(
+	/// Converts a debit value amount into a debit balance using the given stability fee's exchange
+	/// rate.
+	pub fn convert_to_debit_balance(
 		debit_value: BalanceOf<T>,
 		stability_fee: Rate,
-	) -> Option<BalanceOf<T>> {
+	) -> BalanceOf<T> {
 		Self::get_debit_exchange_rate(stability_fee)
 			.reciprocal()
-			.map(|n| n.saturating_mul_int(debit_value))
+			.saturating_mul_int(debit_value)
 	}
 
-	fn average_debit_exchange_rate() -> ExchangeRate {
+	fn average_debit_exchange_rate() -> CompoundingFactor {
 		let mut total_debit = BalanceOf::<T>::zero();
 		let mut total_value = BalanceOf::<T>::zero();
 
@@ -818,17 +816,17 @@ impl<T: Config> Pallet<T> {
 		if total_debit.is_zero() {
 			T::DefaultDebitExchangeRate::get()
 		} else {
-			ExchangeRate::checked_from_rational(total_value, total_debit)
+			CompoundingFactor::checked_from_rational(total_value, total_debit)
 				.unwrap_or_else(T::DefaultDebitExchangeRate::get)
 		}
 	}
 
-	/// Calculates the collateral ratio given collateral, debit, price, and exchange rate.
+	/// Calculates the collateral ratio given collateral, debit, price, and compounding factor.
 	pub fn calculate_collateral_ratio(
 		collateral_balance: BalanceOf<T>,
 		debit_balance: BalanceOf<T>,
 		price: Price,
-		exchange_rate: ExchangeRate,
+		exchange_rate: CompoundingFactor,
 	) -> Ratio {
 		let locked_collateral_value = price.saturating_mul_int(collateral_balance);
 		let debit_value = exchange_rate.saturating_mul_int(debit_balance);
@@ -866,8 +864,7 @@ impl<T: Config> Pallet<T> {
 		match &debit_value_adjustment {
 			pallet_loans::BalanceAdjustment::Decrease(amount) => {
 				let debit_adjustment_abs =
-					Self::try_convert_to_debit_balance(*amount, effective_stability_fee)
-						.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
+					Self::convert_to_debit_balance(*amount, effective_stability_fee);
 				let actual_adjustment_abs = debit.min(debit_adjustment_abs);
 				let debit_adjustment =
 					pallet_loans::BalanceAdjustment::decrease(actual_adjustment_abs);
@@ -877,8 +874,7 @@ impl<T: Config> Pallet<T> {
 			pallet_loans::BalanceAdjustment::Increase(amount) => {
 				let new_stability_fee = Self::get_interest_rate_per_sec()?;
 				let debit_adjustment_abs =
-					Self::try_convert_to_debit_balance(*amount, new_stability_fee)
-						.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
+					Self::convert_to_debit_balance(*amount, new_stability_fee);
 				let debit_adjustment =
 					pallet_loans::BalanceAdjustment::increase(debit_adjustment_abs);
 
@@ -993,8 +989,7 @@ impl<T: Config> Pallet<T> {
 		let collateral_adjustment = pallet_loans::BalanceAdjustment::increase(increase_collateral);
 		let new_stability_fee = Self::get_interest_rate_per_sec()?;
 		let increase_debit_balance =
-			Self::try_convert_to_debit_balance(increase_debit_value, new_stability_fee)
-				.ok_or(Error::<T>::ConvertDebitBalanceFailed)?;
+			Self::convert_to_debit_balance(increase_debit_value, new_stability_fee);
 		let debit_adjustment = pallet_loans::BalanceAdjustment::increase(increase_debit_balance);
 		Self::adjust_position(
 			who,
@@ -1044,26 +1039,24 @@ impl<T: Config> Pallet<T> {
 		// update CDP state
 		let collateral_adjustment = pallet_loans::BalanceAdjustment::decrease(decrease_collateral);
 		let previous_debit_value = Self::convert_to_debit_value(debit, effective_stability_fee);
-		let (decrease_debit_value, decrease_debit_balance) = if actual_stable_amount >=
-			previous_debit_value
-		{
-			// refund extra stable coin to the CDP owner
-			<T as Config>::Tokens::transfer(
-				stable_currency_id,
-				&loans_module_account,
-				who,
-				actual_stable_amount.saturating_sub(previous_debit_value),
-				Preservation::Protect,
-			)?;
+		let (decrease_debit_value, decrease_debit_balance) =
+			if actual_stable_amount >= previous_debit_value {
+				// refund extra stable coin to the CDP owner
+				<T as Config>::Tokens::transfer(
+					stable_currency_id,
+					&loans_module_account,
+					who,
+					actual_stable_amount.saturating_sub(previous_debit_value),
+					Preservation::Protect,
+				)?;
 
-			(previous_debit_value, debit)
-		} else {
-			(
-				actual_stable_amount,
-				Self::try_convert_to_debit_balance(actual_stable_amount, effective_stability_fee)
-					.ok_or(Error::<T>::ConvertDebitBalanceFailed)?,
-			)
-		};
+				(previous_debit_value, debit)
+			} else {
+				(
+					actual_stable_amount,
+					Self::convert_to_debit_balance(actual_stable_amount, effective_stability_fee),
+				)
+			};
 
 		let debit_adjustment = pallet_loans::BalanceAdjustment::decrease(decrease_debit_balance);
 		Self::adjust_position(who, collateral_adjustment, debit_adjustment, None)?;
@@ -1191,8 +1184,6 @@ impl<T: Config> Pallet<T> {
 	///
 	/// 1. If target stable amount is zero, refund collateral to CDP owner
 	/// 2. If target stable amount is not zero, liquidate collateral by priority
-	/// 2.1. Liquidate via DEX
-	/// 2.2. Liquidate via Auction
 	pub fn handle_liquidated_collateral(
 		who: &AccountIdOf<T>,
 		amount: BalanceOf<T>,
