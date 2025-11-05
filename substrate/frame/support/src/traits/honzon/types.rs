@@ -145,7 +145,7 @@ pub struct Position<Balance> {
 	/// The amount of debit.
 	pub debit: Balance,
 	/// The stability fee used for this position.
-	pub stability_fee: Ratio,
+	pub stability_fee: Rate,
 }
 
 /// The current status of a connection.

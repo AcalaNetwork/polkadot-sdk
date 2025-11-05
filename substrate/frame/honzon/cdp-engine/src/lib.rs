@@ -45,8 +45,8 @@
 //! * `liquidate` - Liquidates an unsafe CDP. This is an unsigned extrinsic that can be called by
 //!   anyone, and is typically triggered by an offchain worker.
 //! * `settle` - Settles a CDP after a global shutdown. This is also an unsigned extrinsic.
-//! * `set_collateral_params` - Updates the risk management parameters for a collateral type. This
-//!   is a privileged extrinsic that can only be called by a specified origin.
+//! * `set_risk_management_params` - Updates the risk management parameters for a collateral type.
+//!   This is a privileged extrinsic that can only be called by a specified origin.
 //!
 //! ### Offchain Worker
 //!
@@ -64,8 +64,8 @@ use frame_support::{
 		fungible::{self},
 		fungibles::{self, Mutate as FungiblesMutate},
 		honzon::{
-			CDPTreasury, CDPTreasuryExtended, Change, EmergencyShutdown, FractionalRate,
-			LiquidateCollateral, Position, Price, PriceProvider, Rate, Ratio, SwapLimit,
+			CDPTreasury, CDPTreasuryExtended, EmergencyShutdown, LiquidateCollateral, Position,
+			Price, PriceProvider, Rate, Ratio, SwapLimit,
 		},
 		tokens::Preservation,
 		UnixTime,
@@ -91,7 +91,7 @@ use sp_runtime::{
 	},
 	DispatchError, DispatchResult, FixedPointNumber, RuntimeDebug,
 };
-use sp_std::{marker::PhantomData, prelude::*};
+use sp_std::prelude::*;
 
 #[cfg(test)]
 mod mock;
@@ -102,7 +102,7 @@ pub mod weights;
 pub use weights::WeightInfo;
 
 mod types;
-pub use types::{CompoundingFactor, LiquidateByPriority, RiskManagementParams};
+pub use types::{CompoundFactor, LiquidateByPriority, RiskManagementParams};
 mod impl_risk_manager;
 mod impl_vault_provider;
 
@@ -124,11 +124,6 @@ pub const DEFAULT_MAX_ITERATIONS: u32 = 1000;
 pub type LoansOf<T> = pallet_loans::Pallet<T>;
 pub type CurrencyOf<T> = <T as Config>::Currency;
 
-// typedef to help polkadot.js disambiguate Change with different generic
-// parameters
-type ChangeOptionRate = Change<Option<Rate>>;
-type ChangeOptionRatio = Change<Option<Ratio>>;
-
 /// Status of CDP
 #[derive(Encode, Decode, Clone, RuntimeDebug, PartialEq, Eq, TypeInfo)]
 pub enum CDPStatus {
@@ -149,21 +144,15 @@ pub mod pallet {
 		+ frame_system::offchain::CreateTransactionBase<Call<Self>>
 		+ frame_system::offchain::CreateBare<Call<Self>>
 	{
-		/// The origin which may update risk management parameters. Root can
-		/// always do this.
-		type UpdateOrigin: EnsureOrigin<Self::RuntimeOrigin>;
-
-		/// The default liquidation ratio for all collateral types of CDP
+		/// The risk management params
+		///
+		/// can be set via pallet-parameters
 		#[pallet::constant]
-		type DefaultLiquidationRatio: Get<Ratio>;
+		type RiskManagementParams: Get<RiskManagementParams<pallet_loans::BalanceOf<Self>>>;
 
-		/// The default compounding factor for all collateral types
+		/// The default compound factor for all collateral types
 		#[pallet::constant]
-		type DefaultDebitExchangeRate: Get<CompoundingFactor>;
-
-		/// The default liquidation penalty rate when liquidate unsafe CDP
-		#[pallet::constant]
-		type DefaultLiquidationPenalty: Get<FractionalRate>;
+		type DefaultCompoundFactor: Get<CompoundFactor>;
 
 		/// The minimum debit value to avoid debit dust
 		#[pallet::constant]
@@ -318,17 +307,11 @@ pub mod pallet {
 		MaximumTotalDebitValueUpdated { new_total_debit_value: pallet_loans::BalanceOf<T> },
 	}
 
-	/// Compounding factor of debit balance (PV) to debit value (FV) for a specific stability fee.
+	/// Compound factor of debit balance (PV) to debit value (FV) for a specific stability fee.
 	#[pallet::storage]
-	#[pallet::getter(fn debit_exchange_rate)]
-	pub type DebitExchangeRate<T: Config> =
-		StorageMap<_, Twox64Concat, Rate, CompoundingFactor, OptionQuery>;
-
-	/// Risk management params.
-	#[pallet::storage]
-	#[pallet::getter(fn collateral_params)]
-	pub type CollateralParams<T: Config> =
-		StorageValue<_, RiskManagementParams<pallet_loans::BalanceOf<T>>, ValueQuery>;
+	#[pallet::getter(fn compound_factor)]
+	pub type CompoundFactorStorage<T: Config> =
+		StorageMap<_, Twox64Concat, Rate, CompoundFactor, OptionQuery>;
 
 	/// Timestamp in seconds of the last interest accumulation
 	///
@@ -348,45 +331,13 @@ pub mod pallet {
 	pub type StabilityFeeOverrides<T: Config> =
 		StorageMap<_, Twox64Concat, T::VaultId, Rate, OptionQuery>;
 
-	#[pallet::genesis_config]
-	#[derive(frame_support::DefaultNoBound)]
-	pub struct GenesisConfig<T: Config> {
-		pub collateral_params:
-			(Option<Rate>, Option<Ratio>, Option<Rate>, Option<Ratio>, pallet_loans::BalanceOf<T>),
-		pub _phantom: PhantomData<T>,
-	}
-
-	#[pallet::genesis_build]
-	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
-		fn build(&self) {
-			let (
-				interest_rate_per_sec,
-				liquidation_ratio,
-				liquidation_penalty,
-				required_collateral_ratio,
-				maximum_total_debit_value,
-			) = self.collateral_params;
-			CollateralParams::<T>::put(RiskManagementParams {
-				maximum_total_debit_value,
-				interest_rate_per_sec: interest_rate_per_sec.map(|v| {
-					FractionalRate::try_from(v).expect("interest_rate_per_sec out of bound")
-				}),
-				liquidation_ratio,
-				liquidation_penalty: liquidation_penalty.map(|v| {
-					FractionalRate::try_from(v).expect("liquidation_penalty out of bound")
-				}),
-				required_collateral_ratio,
-			});
-		}
-	}
-
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		/// Issue interest in stable currency for all types of collateral has
-		/// debit when block end, and update their debit exchange rate
+		/// debit when block end, and update their debit compound factor
 		fn on_initialize(now: BlockNumberFor<T>) -> Weight {
 			// only after the block #1, `T::UnixTime::now()` will not report error.
 			// https://github.com/paritytech/substrate/blob/4ff92f10058cfe1b379362673dd369e33a919e66/frame/timestamp/src/lib.rs#L276
@@ -461,86 +412,7 @@ pub mod pallet {
 			Self::settle_cdp_has_debit(who)?;
 			Ok(())
 		}
-
-		/// Update parameters related to risk management of CDP under specific
-		/// collateral type
-		///
-		/// The dispatch origin of this call must be `UpdateOrigin`.
-		///
-		/// - `interest_rate_per_sec`: Interest rate per sec, `None` means do not update,
-		/// - `liquidation_ratio`: liquidation ratio, `None` means do not update, `Some(None)` means
-		///   update it to `None`.
-		/// - `liquidation_penalty`: liquidation penalty, `None` means do not update, `Some(None)`
-		///   means update it to `None`.
-		/// - `required_collateral_ratio`: required collateral ratio, `None` means do not update,
-		///   `Some(None)` means update it to `None`.
-		/// - `maximum_total_debit_value`: maximum total debit value.
-		#[pallet::call_index(2)]
-		#[pallet::weight((<T as Config>::WeightInfo::set_collateral_params(), DispatchClass::Operational))]
-		pub fn set_collateral_params(
-			origin: OriginFor<T>,
-			interest_rate_per_sec: ChangeOptionRate,
-			liquidation_ratio: ChangeOptionRatio,
-			liquidation_penalty: ChangeOptionRate,
-			required_collateral_ratio: ChangeOptionRatio,
-			maximum_total_debit_value: Change<pallet_loans::BalanceOf<T>>,
-		) -> DispatchResult {
-			T::UpdateOrigin::ensure_origin(origin)?;
-
-			let mut collateral_params = Self::collateral_params();
-			if let Change::NewValue(maybe_rate) = interest_rate_per_sec {
-				match (collateral_params.interest_rate_per_sec.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) =>
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
-					(None, Some(rate)) => {
-						let fractional_rate =
-							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
-						collateral_params.interest_rate_per_sec = Some(fractional_rate);
-					},
-					_ => collateral_params.interest_rate_per_sec = None,
-				}
-				Self::deposit_event(Event::InterestRatePerSecUpdated {
-					new_interest_rate_per_sec: maybe_rate,
-				});
-			}
-			if let Change::NewValue(update) = liquidation_ratio {
-				collateral_params.liquidation_ratio = update;
-				Self::deposit_event(Event::LiquidationRatioUpdated {
-					new_liquidation_ratio: update,
-				});
-			}
-			if let Change::NewValue(maybe_rate) = liquidation_penalty {
-				match (collateral_params.liquidation_penalty.as_mut(), maybe_rate) {
-					(Some(existing), Some(rate)) =>
-						existing.try_set(rate).map_err(|_| Error::<T>::InvalidRate)?,
-					(None, Some(rate)) => {
-						let fractional_rate =
-							FractionalRate::try_from(rate).map_err(|_| Error::<T>::InvalidRate)?;
-						collateral_params.liquidation_penalty = Some(fractional_rate);
-					},
-					_ => collateral_params.liquidation_penalty = None,
-				}
-				Self::deposit_event(Event::LiquidationPenaltyUpdated {
-					new_liquidation_penalty: maybe_rate,
-				});
-			}
-			if let Change::NewValue(update) = required_collateral_ratio {
-				collateral_params.required_collateral_ratio = update;
-				Self::deposit_event(Event::RequiredCollateralRatioUpdated {
-					new_required_collateral_ratio: update,
-				});
-			}
-			if let Change::NewValue(val) = maximum_total_debit_value {
-				collateral_params.maximum_total_debit_value = val;
-				Self::deposit_event(Event::MaximumTotalDebitValueUpdated {
-					new_total_debit_value: val,
-				});
-			}
-			CollateralParams::<T>::put(collateral_params);
-			Ok(())
-		}
 	}
-
 	#[pallet::validate_unsigned]
 	impl<T: Config> ValidateUnsigned for Pallet<T> {
 		type Call = Call<T>;
@@ -611,24 +483,23 @@ impl<T: Config> Pallet<T> {
 					continue;
 				}
 
-				// Retrieve current compounding factor for this fee class.
-				let debit_exchange_rate = Self::get_debit_exchange_rate(stability_fee);
-				let debit_exchange_rate_increment =
-					debit_exchange_rate.saturating_mul(rate_to_accumulate);
+				// Retrieve current compound factor for this fee class.
+				let compound_factor = Self::get_compound_factor(stability_fee);
+				let compound_factor_increment = compound_factor.saturating_mul(rate_to_accumulate);
 				// Calculate the interest to issue
 				let stable_coin_balance_to_issue =
-					debit_exchange_rate_increment.saturating_mul_int(total_debits);
+					compound_factor_increment.saturating_mul_int(total_debits);
 
 				// Mint and issue the accumulated interest to the system surplus pool.
 				let res =
 					<T as Config>::CDPTreasury::on_system_surplus(stable_coin_balance_to_issue);
 				match res {
 					Ok(_) => {
-						// Update compounding factor in storage to reflect the new accumulated
+						// Update compound factor in storage to reflect the new accumulated
 						// interest.
-						let new_debit_exchange_rate =
-							debit_exchange_rate.saturating_add(debit_exchange_rate_increment);
-						DebitExchangeRate::<T>::insert(stability_fee, new_debit_exchange_rate);
+						let new_compound_factor =
+							compound_factor.saturating_add(compound_factor_increment);
+						CompoundFactorStorage::<T>::insert(stability_fee, new_compound_factor);
 						touched_entries = touched_entries.saturating_add(1);
 					},
 					Err(e) => {
@@ -675,48 +546,20 @@ impl<T: Config> Pallet<T> {
 			Some(price) => price,
 			None => return CDPStatus::ChecksFailed(Error::<T>::InvalidFeedPrice.into()),
 		};
-		// Calculate exchange rate
-		let stability_fee = match Self::get_effective_stability_fee(stability_fee, who) {
-			Ok(fee) => fee,
-			Err(e) => return CDPStatus::ChecksFailed(e),
-		};
-		let exchange_rate = Self::get_debit_exchange_rate(stability_fee);
+		// Calculate compound factor
+		let stability_fee = Self::get_effective_stability_fee(stability_fee, who);
+		let compound_factor = Self::get_compound_factor(stability_fee);
 		let collateral_ratio = Self::calculate_collateral_ratio(
 			collateral_amount,
 			debit_amount,
 			feed_price,
-			exchange_rate,
+			compound_factor,
 		);
-		match Self::get_liquidation_ratio() {
-			Ok(liquidation_ratio) =>
-				if collateral_ratio < liquidation_ratio {
-					CDPStatus::Unsafe
-				} else {
-					CDPStatus::Safe
-				},
-			Err(e) => CDPStatus::ChecksFailed(e.into()),
+		if collateral_ratio < Self::get_liquidation_ratio() {
+			CDPStatus::Unsafe
+		} else {
+			CDPStatus::Safe
 		}
-	}
-
-	/// Returns the maximum total debit value that can be issued for the current collateral type.
-	pub fn maximum_total_debit_value() -> Result<BalanceOf<T>, Error<T>> {
-		let params = Self::collateral_params();
-		Ok(params.maximum_total_debit_value)
-	}
-
-	/// Returns the required collateral ratio, if set, for the current collateral type.
-	pub fn required_collateral_ratio() -> Result<Option<Ratio>, Error<T>> {
-		let params = Self::collateral_params();
-		Ok(params.required_collateral_ratio)
-	}
-
-	/// Returns the interest rate per second for the current collateral type.
-	pub fn get_interest_rate_per_sec() -> Result<Rate, Error<T>> {
-		let params = Self::collateral_params();
-		params
-			.interest_rate_per_sec
-			.map(|v| v.into_inner())
-			.ok_or_else(|| Error::<T>::InvalidRate.into())
 	}
 
 	/// Get the effective stability fee for a given account.
@@ -724,11 +567,8 @@ impl<T: Config> Pallet<T> {
 	/// The effective stability fee for an account is the lowest value
 	/// among the position's stored stability fee, the current global stability fee, and any
 	/// applicable per-vault override.
-	pub fn get_effective_stability_fee(
-		stability_fee: Rate,
-		who: &AccountIdOf<T>,
-	) -> Result<Rate, DispatchError> {
-		let current_stability_fee = Self::get_interest_rate_per_sec()?;
+	fn get_effective_stability_fee(stability_fee: Rate, who: &AccountIdOf<T>) -> Rate {
+		let current_stability_fee = Self::interest_rate_per_sec();
 		let mut effective_fee = sp_std::cmp::min(stability_fee, current_stability_fee);
 
 		if let Some(vault_id) = VaultIdByAccountId::<T>::get(who) {
@@ -737,7 +577,7 @@ impl<T: Config> Pallet<T> {
 			}
 		}
 
-		Ok(effective_fee)
+		effective_fee
 	}
 
 	/// Calculates the compounded interest rate for a given rate per second over a specified number
@@ -752,55 +592,40 @@ impl<T: Config> Pallet<T> {
 			.saturating_sub(Rate::one())
 	}
 
-	pub fn get_liquidation_ratio() -> Result<Ratio, Error<T>> {
-		let params = Self::collateral_params();
-		Ok(params.liquidation_ratio.unwrap_or_else(T::DefaultLiquidationRatio::get))
-	}
-
-	/// Returns the current liquidation penalty rate for the collateral type, or the default if not
-	/// set.
-	pub fn get_liquidation_penalty() -> Result<Rate, Error<T>> {
-		let params = Self::collateral_params();
-		Ok(params
-			.liquidation_penalty
-			.map(|v| v.into_inner())
-			.unwrap_or_else(|| T::DefaultLiquidationPenalty::get().into_inner()))
-	}
-
-	/// Retrieve the compounding factor associated with the given stability fee.
+	/// Retrieve the compound factor associated with the given stability fee.
 	///
 	/// This function ensures the correct factor is available in storage,
 	/// initializing it with the default if not yet set.
-	pub fn get_debit_exchange_rate(stability_fee: Rate) -> CompoundingFactor {
-		if let Some(exchange_rate) = DebitExchangeRate::<T>::get(stability_fee) {
-			exchange_rate
+	pub fn get_compound_factor(stability_fee: Rate) -> CompoundFactor {
+		if let Some(compound_factor) = CompoundFactorStorage::<T>::get(stability_fee) {
+			compound_factor
 		} else {
-			let default_rate = T::DefaultDebitExchangeRate::get();
-			DebitExchangeRate::<T>::insert(stability_fee, default_rate);
+			let default_rate = T::DefaultCompoundFactor::get();
+			CompoundFactorStorage::<T>::insert(stability_fee, default_rate);
 			default_rate
 		}
 	}
 
-	/// Converts a given debit balance to its value based on the stability fee's exchange rate.
+	/// Converts a given debit balance to its value based on the stability fee's compound factor.
 	pub fn convert_to_debit_value(
 		debit_balance: BalanceOf<T>,
 		stability_fee: Rate,
 	) -> BalanceOf<T> {
-		Self::get_debit_exchange_rate(stability_fee).saturating_mul_int(debit_balance)
+		Self::get_compound_factor(stability_fee).saturating_mul_int(debit_balance)
 	}
 
-	/// Converts a debit value amount into a debit balance using the given stability fee's exchange
-	/// rate.
+	/// Converts a debit value amount into a debit balance using the given stability fee's compound
+	/// factor
 	pub fn convert_to_debit_balance(
 		debit_value: BalanceOf<T>,
 		stability_fee: Rate,
 	) -> BalanceOf<T> {
-		Self::get_debit_exchange_rate(stability_fee)
+		Self::get_compound_factor(stability_fee)
 			.reciprocal()
 			.saturating_mul_int(debit_value)
 	}
 
-	fn average_debit_exchange_rate() -> CompoundingFactor {
+	pub(crate) fn average_compound_factor() -> CompoundFactor {
 		let mut total_debit = BalanceOf::<T>::zero();
 		let mut total_value = BalanceOf::<T>::zero();
 
@@ -808,28 +633,28 @@ impl<T: Config> Pallet<T> {
 			if debit_balance.is_zero() {
 				continue;
 			}
-			let rate = Self::get_debit_exchange_rate(stability_fee);
+			let rate = Self::get_compound_factor(stability_fee);
 			total_debit = total_debit.saturating_add(debit_balance);
 			total_value = total_value.saturating_add(rate.saturating_mul_int(debit_balance));
 		}
 
 		if total_debit.is_zero() {
-			T::DefaultDebitExchangeRate::get()
+			T::DefaultCompoundFactor::get()
 		} else {
-			CompoundingFactor::checked_from_rational(total_value, total_debit)
-				.unwrap_or_else(T::DefaultDebitExchangeRate::get)
+			CompoundFactor::checked_from_rational(total_value, total_debit)
+				.unwrap_or_else(T::DefaultCompoundFactor::get)
 		}
 	}
 
-	/// Calculates the collateral ratio given collateral, debit, price, and compounding factor.
+	/// Calculates the collateral ratio given collateral, debit, price, and compound factor.
 	pub fn calculate_collateral_ratio(
 		collateral_balance: BalanceOf<T>,
 		debit_balance: BalanceOf<T>,
 		price: Price,
-		exchange_rate: CompoundingFactor,
+		compound_factor: CompoundFactor,
 	) -> Ratio {
 		let locked_collateral_value = price.saturating_mul_int(collateral_balance);
-		let debit_value = exchange_rate.saturating_mul_int(debit_balance);
+		let debit_value = compound_factor.saturating_mul_int(debit_balance);
 
 		// if debit_value is zero, collateral ratio is max value
 		Ratio::checked_from_rational(locked_collateral_value, debit_value)
@@ -859,7 +684,7 @@ impl<T: Config> Pallet<T> {
 		let Position { debit, stability_fee, .. } = <LoansOf<T>>::positions(who);
 		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
 		let effective_stability_fee =
-			Self::get_effective_stability_fee(position_stability_fee, who)?;
+			Self::get_effective_stability_fee(position_stability_fee, who);
 
 		match &debit_value_adjustment {
 			pallet_loans::BalanceAdjustment::Decrease(amount) => {
@@ -872,7 +697,7 @@ impl<T: Config> Pallet<T> {
 				Self::adjust_position(who, collateral_adjustment, debit_adjustment, None)?;
 			},
 			pallet_loans::BalanceAdjustment::Increase(amount) => {
-				let new_stability_fee = Self::get_interest_rate_per_sec()?;
+				let new_stability_fee = Self::interest_rate_per_sec();
 				let debit_adjustment_abs =
 					Self::convert_to_debit_balance(*amount, new_stability_fee);
 				let debit_adjustment =
@@ -899,8 +724,8 @@ impl<T: Config> Pallet<T> {
 	) -> Result<(), Error<T>> {
 		// If there is debit, check the collateral ratio
 		if !debit_balance.is_zero() {
-			let exchange_rate = Self::average_debit_exchange_rate();
-			let debit_value = exchange_rate.saturating_mul_int(debit_balance);
+			let compound_factor = Self::average_compound_factor();
+			let debit_value = compound_factor.saturating_mul_int(debit_balance);
 			let feed_price = <T as Config>::PriceSource::get_relative_price(
 				T::GetNativeCurrencyId::get(),
 				T::GetStableCurrencyId::get(),
@@ -910,12 +735,12 @@ impl<T: Config> Pallet<T> {
 				collateral_balance,
 				debit_balance,
 				feed_price,
-				exchange_rate,
+				compound_factor,
 			);
 
 			// Check collateral ratio >= required collateral ratio
 			if check_required_ratio {
-				if let Some(required_collateral_ratio) = Self::required_collateral_ratio()? {
+				if let Some(required_collateral_ratio) = Self::required_collateral_ratio() {
 					ensure!(
 						collateral_ratio >= required_collateral_ratio,
 						Error::<T>::BelowRequiredCollateralRatio
@@ -924,7 +749,7 @@ impl<T: Config> Pallet<T> {
 			}
 
 			// Check collateral ratio >= liquidation ratio
-			let liquidation_ratio = Self::get_liquidation_ratio()?;
+			let liquidation_ratio = Self::get_liquidation_ratio();
 			ensure!(collateral_ratio >= liquidation_ratio, Error::<T>::BelowLiquidationRatio);
 
 			ensure!(
@@ -943,19 +768,19 @@ impl<T: Config> Pallet<T> {
 
 	/// Shared checker for cap on aggregate debits.
 	fn do_check_debit_cap(total_debit_balance: BalanceOf<T>) -> Result<(), Error<T>> {
-		let hard_cap = Self::maximum_total_debit_value()?;
+		let hard_cap = Self::maximum_total_debit_value();
 		let mut total_debit_value = BalanceOf::<T>::zero();
 		for (stability_fee, debit_balance) in pallet_loans::TotalDebitByStabilityFee::<T>::iter() {
 			if debit_balance.is_zero() {
 				continue;
 			}
-			let exchange_rate = Self::get_debit_exchange_rate(stability_fee);
+			let compound_factor = Self::get_compound_factor(stability_fee);
 			total_debit_value =
-				total_debit_value.saturating_add(exchange_rate.saturating_mul_int(debit_balance));
+				total_debit_value.saturating_add(compound_factor.saturating_mul_int(debit_balance));
 		}
 		if total_debit_value.is_zero() && !total_debit_balance.is_zero() {
-			let exchange_rate = Self::average_debit_exchange_rate();
-			total_debit_value = exchange_rate.saturating_mul_int(total_debit_balance);
+			let compound_factor = Self::average_compound_factor();
+			total_debit_value = compound_factor.saturating_mul_int(total_debit_balance);
 		}
 		ensure!(total_debit_value <= hard_cap, Error::<T>::ExceedDebitValueHardCap);
 		Ok(())
@@ -987,7 +812,7 @@ impl<T: Config> Pallet<T> {
 
 		// update CDP state
 		let collateral_adjustment = pallet_loans::BalanceAdjustment::increase(increase_collateral);
-		let new_stability_fee = Self::get_interest_rate_per_sec()?;
+		let new_stability_fee = Self::interest_rate_per_sec();
 		let increase_debit_balance =
 			Self::convert_to_debit_balance(increase_debit_value, new_stability_fee);
 		let debit_adjustment = pallet_loans::BalanceAdjustment::increase(increase_debit_balance);
@@ -1021,7 +846,7 @@ impl<T: Config> Pallet<T> {
 		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(who);
 		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
 		let effective_stability_fee =
-			Self::get_effective_stability_fee(position_stability_fee, who)?;
+			Self::get_effective_stability_fee(position_stability_fee, who);
 
 		// ensure collateral of CDP is enough
 		ensure!(decrease_collateral <= collateral, Error::<T>::CollateralNotEnough);
@@ -1076,7 +901,7 @@ impl<T: Config> Pallet<T> {
 		let currency_id = T::GetNativeCurrencyId::get();
 		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
 		let stability_fee = Rate::from_inner(stability_fee.into_inner());
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who)?;
+		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
 		ensure!(!debit.is_zero(), Error::<T>::NoDebitValue);
 
 		// confiscate collateral in cdp to cdp treasury
@@ -1111,7 +936,7 @@ impl<T: Config> Pallet<T> {
 			),
 			Error::<T>::MustBeSafe
 		);
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who)?;
+		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
 
 		// confiscate all collateral and debit of unsafe cdp to cdp treasury
 		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit)?;
@@ -1160,13 +985,13 @@ impl<T: Config> Pallet<T> {
 			),
 			Error::<T>::MustBeUnsafe
 		);
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who)?;
+		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
 
 		// confiscate all collateral and debit of unsafe cdp to cdp treasury
 		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit)?;
 
 		let bad_debt_value = Self::convert_to_debit_value(debit, stability_fee);
-		let liquidation_penalty = Self::get_liquidation_penalty()?;
+		let liquidation_penalty = Self::get_liquidation_penalty();
 		let target_stable_amount = liquidation_penalty.saturating_mul_acc_int(bad_debt_value);
 
 		Self::handle_liquidated_collateral(&who, collateral, target_stable_amount)?;
@@ -1201,6 +1026,46 @@ impl<T: Config> Pallet<T> {
 	}
 }
 
+// Helper functions for risk management parameters
+impl<T: Config> Pallet<T> {
+	fn risk_management_params() -> RiskManagementParams<pallet_loans::BalanceOf<T>> {
+		T::RiskManagementParams::get()
+	}
+
+	/// Returns the maximum total debit value that can be issued for the current collateral type.
+	fn maximum_total_debit_value() -> BalanceOf<T> {
+		let params = Self::risk_management_params();
+		params.maximum_total_debit_value
+	}
+
+	/// Returns the required collateral ratio, if set, for the current collateral type.
+	fn required_collateral_ratio() -> Option<Ratio> {
+		let params = Self::risk_management_params();
+		params.required_collateral_ratio
+	}
+
+	/// Returns the interest rate per second for the current collateral type.
+	fn interest_rate_per_sec() -> Rate {
+		let params = Self::risk_management_params();
+		// default value is 0
+		params.interest_rate_per_sec
+	}
+
+	/// Returns the liquidation ratio for the current collateral type.
+	fn get_liquidation_ratio() -> Ratio {
+		let params = Self::risk_management_params();
+		params.liquidation_ratio
+	}
+
+	/// Returns the current liquidation penalty rate for the collateral type, or the default if not
+	/// set.
+	fn get_liquidation_penalty() -> Rate {
+		let params = Self::risk_management_params();
+		params.liquidation_penalty
+	}
+}
+
+// Unsigned implementations
 impl<T: Config> Pallet<T> {
 	fn submit_unsigned_liquidation_tx(who: AccountIdOf<T>) {
 		let who = T::Lookup::unlookup(who);
@@ -1263,24 +1128,11 @@ impl<T: Config> Pallet<T> {
 		let mut iteration_count = 0;
 		let iteration_start_time = sp_io::offchain::timestamp();
 
-		#[allow(clippy::while_let_on_iterator)]
 		while let Some((who, Position { collateral, debit, stability_fee })) = map_iterator.next() {
-			let stability_fee = Rate::from_inner(stability_fee.into_inner());
-			let stability_fee = match Self::get_effective_stability_fee(stability_fee, &who) {
-				Ok(fee) => fee,
-				Err(e) => {
-					log::debug!(
-						target: "cdp-engine offchain worker",
-						"skip position {:?} due to stability fee error: {:?}",
-						who,
-						e
-					);
-					continue;
-				},
-			};
+			let effective_stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
 			if !is_shutdown &&
 				matches!(
-					Self::check_cdp_status(collateral, debit, stability_fee, &who),
+					Self::check_cdp_status(collateral, debit, effective_stability_fee, &who),
 					CDPStatus::Unsafe
 				) {
 				Self::submit_unsigned_liquidation_tx(who);

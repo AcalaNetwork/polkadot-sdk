@@ -26,7 +26,7 @@ impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T>, Balan
 	for Pallet<T>
 {
 	fn get_debit_value(_currency_id: CurrencyIdOf<T>, debit_balance: BalanceOf<T>) -> BalanceOf<T> {
-		Self::average_debit_exchange_rate().saturating_mul_int(debit_balance)
+		Self::average_compound_factor().saturating_mul_int(debit_balance)
 	}
 
 	fn check_position_valid(

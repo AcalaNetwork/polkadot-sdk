@@ -19,23 +19,21 @@
 //! Mock runtime for CDP Engine pallet
 
 use super::*;
-
+use crate as pallet_cdp_engine;
 use frame_support::{
-	construct_runtime, parameter_types,
+	construct_runtime, derive_impl,
+	dynamic_params::{dynamic_pallet_params, dynamic_params},
+	parameter_types,
 	traits::{
 		honzon::{
 			CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, EmergencyShutdown, Handler,
-			LiquidationTarget, Position, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
+			LiquidationTarget, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 		},
-		ConstU128, ConstU32, ConstU64, Get, UnixTime,
+		ConstU128, ConstU32, ConstU64, EnsureOriginWithArg, UnixTime,
 	},
 };
 use pallet_asset_conversion::Swap;
-use sp_runtime::{
-	traits::{BlakeTwo256, IdentityLookup, Zero},
-	BuildStorage, DispatchError, DispatchResult, FixedU128,
-};
-use sp_std::marker::PhantomData;
+use sp_runtime::{BuildStorage, DispatchResult, FixedU128};
 
 pub type CurrencyId = u32;
 type AccountId = u64;
@@ -81,44 +79,19 @@ construct_runtime!(
 		Assets: pallet_assets,
 		Balances: pallet_balances,
 		Loans: pallet_loans,
-		CDPEngine: crate,
+		CDPEngine: pallet_cdp_engine,
+		Parameters: pallet_parameters,
 		ShutdownMock: shutdown_mock,
 	}
 );
 
 impl shutdown_mock::Config for Test {}
 
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl frame_system::Config for Test {
-	type BaseCallFilter = frame_support::traits::Everything;
-	type BlockWeights = ();
-	type BlockLength = ();
-	type DbWeight = ();
-	type RuntimeOrigin = RuntimeOrigin;
-	type RuntimeCall = RuntimeCall;
-	type Nonce = u64;
-	type Hash = sp_core::H256;
-	type Hashing = BlakeTwo256;
-	type AccountId = u64;
-	type Lookup = IdentityLookup<Self::AccountId>;
+	// Use defaults from TestDefaultConfig and override only what's different for this mock runtime.
 	type Block = Block;
-	type RuntimeEvent = RuntimeEvent;
-	type BlockHashCount = ConstU64<250>;
-	type Version = ();
-	type PalletInfo = PalletInfo;
 	type AccountData = pallet_balances::AccountData<u128>;
-	type OnNewAccount = ();
-	type OnKilledAccount = ();
-	type SystemWeightInfo = ();
-	type SS58Prefix = ();
-	type OnSetCode = ();
-	type MaxConsumers = ConstU32<16>;
-	type RuntimeTask = ();
-	type ExtensionsWeightInfo = ();
-	type SingleBlockMigrations = ();
-	type MultiBlockMigrator = ();
-	type PreInherents = ();
-	type PostInherents = ();
-	type PostTransactions = ();
 }
 
 impl<C> frame_system::offchain::CreateTransactionBase<C> for Test
@@ -189,20 +162,18 @@ impl pallet_assets::Config for Test {
 	}
 }
 
+#[derive_impl(pallet_parameters::config_preludes::TestDefaultConfig)]
+impl pallet_parameters::Config for Test {
+	type AdminOrigin = custom_origin::ParamsManager;
+}
+
 parameter_types! {
 	pub const LoansPalletId: PalletId = PalletId(*b"aca/loan");
-	pub const DefaultDebitExchangeRate: CompoundingFactor = unsafe { CompoundingFactor::from_inner_unchecked(FixedU128::from_inner(1_000_000_000_000_000_000)) };
+	pub const DefaultCompoundFactor: CompoundFactor = unsafe { CompoundFactor::from_inner_unchecked(FixedU128::from_inner(1_000_000_000_000_000_000)) };
 	pub const MinimumCollateralAmount: u128 = 100;
 	pub const GetNativeCurrencyId: CurrencyId = 1;
 	pub const GetStableCurrencyId: CurrencyId = 2;
 	pub const MaxSwapSlippageCompareToOracle: Ratio = Ratio::from_rational(10, 100);
-}
-
-pub struct DefaultPenalty;
-impl Get<FractionalRate> for DefaultPenalty {
-	fn get() -> FractionalRate {
-		FractionalRate::default()
-	}
 }
 
 pub struct MockRiskManager;
@@ -313,17 +284,63 @@ where
 	}
 }
 
-impl Config for Test {
-	type UpdateOrigin = frame_system::EnsureRoot<Self::AccountId>;
+// Define dynamic runtime parameters for tests and expose them via pallet-parameters.
+#[dynamic_params(RuntimeParameters, pallet_parameters::Parameters::<Test>)]
+pub mod dynamic_params {
+	use super::*;
+
+	// Parameters for the CDP Engine pallet used in tests.
+	#[dynamic_pallet_params]
+	#[codec(index = 0)]
+	pub mod cdp_engine {
+		/// Risk management parameters used by CDP Engine in tests.
+		#[codec(index = 0)]
+		pub static RiskManagementParams: pallet_cdp_engine::RiskManagementParams<Balance> =
+			pallet_cdp_engine::RiskManagementParams {
+				// 1e18 as a simple hard cap for tests
+				maximum_total_debit_value: 1_000_000_000_000_000_000u128,
+				// default extra interest rate per sec (0)
+				interest_rate_per_sec: Rate::from_rational(1, 10000),
+				// liquidation ratio 1.5
+				liquidation_ratio: Ratio::from_rational(15, 10),
+				// default liquidation penalty factor 0
+				liquidation_penalty: Rate::zero(),
+				// required collateral ratio is not set
+				required_collateral_ratio: None,
+			};
+	}
+}
+
+mod custom_origin {
+	use super::*;
+	pub struct ParamsManager;
+	impl EnsureOriginWithArg<RuntimeOrigin, RuntimeParametersKey> for ParamsManager {
+		type Success = ();
+
+		fn try_origin(
+			origin: RuntimeOrigin,
+			_key: &RuntimeParametersKey,
+		) -> Result<Self::Success, RuntimeOrigin> {
+			ensure_root(origin.clone()).map_err(|_| origin)
+		}
+
+		#[cfg(feature = "runtime-benchmarks")]
+		fn try_successful_origin(_key: &RuntimeParametersKey) -> Result<RuntimeOrigin, ()> {
+			Ok(RuntimeOrigin::root())
+		}
+	}
+}
+
+impl pallet_cdp_engine::Config for Test {
 	type AssetKind = CurrencyId;
-	type DefaultLiquidationRatio = ConstRatio150;
-	type DefaultDebitExchangeRate = DefaultDebitExchangeRate;
-	type DefaultLiquidationPenalty = DefaultPenalty;
+	type DefaultCompoundFactor = DefaultCompoundFactor;
 	type MinimumDebitValue = ConstU128<100>;
 	type MinimumCollateralAmount = MinimumCollateralAmount;
 	type GetNativeCurrencyId = GetNativeCurrencyId;
 	type GetStableCurrencyId = GetStableCurrencyId;
 	type MaxSwapSlippageCompareToOracle = MaxSwapSlippageCompareToOracle;
+	// Read risk params via pallet-parameters dynamic key.
+	type RiskManagementParams = dynamic_params::cdp_engine::RiskManagementParams;
 	type CDPTreasury = MockCDPTreasury;
 	type PriceSource = MockPriceProvider;
 	type UnsignedPriority = ConstU64<100>;
@@ -434,19 +451,6 @@ impl<AccountId: Clone + Default> CDPTreasuryExtended<AccountId> for MockCDPTreas
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut storage = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
 
-	crate::GenesisConfig::<Test> {
-		collateral_params: (
-			Some(Rate::from_inner(1_000_000_000)),
-			Some(Ratio::from_inner(1_500_000_000_000_000_000u128)), // 1.5
-			Some(Rate::from_inner(1_000_000_000_000_000_000)),
-			Some(Ratio::from_inner(2_000_000_000_000_000_000u128)), // 2.0
-			1000000000000000000u128,
-		),
-		_phantom: PhantomData,
-	}
-	.assimilate_storage(&mut storage)
-	.unwrap();
-
 	pallet_assets::GenesisConfig::<Test> {
 		assets: vec![(COLLATERAL_ASSET_ID, 1, true, 1), (STABLE_ASSET_ID, 1, true, 1)],
 		metadata: vec![],
@@ -468,12 +472,5 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	.assimilate_storage(&mut storage)
 	.unwrap();
 
-	let mut ext = sp_io::TestExternalities::from(storage);
-	ext.execute_with(|| {
-		pallet_loans::TotalPositions::<Test>::put(Position::default());
-		pallet_loans::TotalDebitByStabilityFee::<Test>::remove_all(None);
-		pallet_loans::Positions::<Test>::remove_all(None);
-	});
-
-	ext
+	storage.into()
 }

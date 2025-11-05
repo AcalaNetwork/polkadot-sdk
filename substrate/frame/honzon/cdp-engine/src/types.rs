@@ -3,8 +3,8 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
 	pallet_prelude::*,
 	traits::honzon::{
-		CDPTreasury, CDPTreasuryExtended, FractionalRate, LiquidateCollateral, PriceProvider,
-		Ratio, SwapLimit,
+		CDPTreasury, CDPTreasuryExtended, LiquidateCollateral, PriceProvider, Rate, Ratio,
+		SwapLimit,
 	},
 };
 use scale_info::TypeInfo;
@@ -12,33 +12,33 @@ use sp_runtime::{
 	traits::{Bounded, One, Saturating},
 	FixedPointNumber, FixedPointOperand, FixedU128, RuntimeDebug,
 };
-/// Compounding factor between debit value (FV) and debit balance (PV).
+/// Compound factor between debit value (FV) and debit balance (PV).
 ///
 /// This represents the accumulated interest rate, where FV = PV * factor.
 /// The value must be >= 1, meaning the factor can only increase over time.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, RuntimeDebug, TypeInfo, MaxEncodedLen)]
-pub struct CompoundingFactor(FixedU128);
-pub enum CompoundingFactorError {
+pub struct CompoundFactor(FixedU128);
+pub enum CompoundFactorError {
 	LessThanOne,
 }
 
-impl CompoundingFactor {
-	/// Create a new `CompoundingFactor` from a `FixedU128` inner value.
-	pub fn try_from_inner(inner: FixedU128) -> Result<Self, CompoundingFactorError> {
+impl CompoundFactor {
+	/// Create a new `CompoundFactor` from a `FixedU128` inner value.
+	pub fn try_from_inner(inner: FixedU128) -> Result<Self, CompoundFactorError> {
 		if inner < FixedU128::one() {
-			return Err(CompoundingFactorError::LessThanOne);
+			return Err(CompoundFactorError::LessThanOne);
 		}
 		Ok(Self(inner))
 	}
 
-	/// Create a new `CompoundingFactor` with value 1.
+	/// Create a new `CompoundFactor` with value 1.
 	///
-	/// In most cases, it should be the default value for the compounding factor.
+	/// In most cases, it should be the default value for the compound factor.
 	pub fn one() -> Self {
 		Self(FixedU128::one())
 	}
 
-	/// Create a new `CompoundingFactor` from a `FixedU128` inner value.
+	/// Create a new `CompoundFactor` from a `FixedU128` inner value.
 	///
 	/// # Safety
 	/// The inner value must be >= 1.
@@ -62,7 +62,7 @@ impl CompoundingFactor {
 	/// Since the factor is always >= 1, the reciprocal always exists.
 	pub fn reciprocal(self) -> FixedU128 {
 		FixedPointNumber::reciprocal(self.0)
-			.expect("compounding factor is always >= 1, so reciprocal is always available; qed")
+			.expect("compound factor is always >= 1, so reciprocal is always available; qed")
 	}
 
 	/// Multiply this factor by an integer value, saturating on overflow.
@@ -91,7 +91,7 @@ impl CompoundingFactor {
 }
 
 // Required for storage
-impl Encode for CompoundingFactor {
+impl Encode for CompoundFactor {
 	fn encode(&self) -> sp_std::prelude::Vec<u8> {
 		self.0.encode()
 	}
@@ -101,23 +101,35 @@ impl Encode for CompoundingFactor {
 	}
 }
 
-impl Decode for CompoundingFactor {
+impl Decode for CompoundFactor {
 	fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
 		let inner = FixedU128::decode(input)?;
 		if inner >= FixedU128::one() {
 			Ok(Self(inner))
 		} else {
-			Err(codec::Error::from("CompoundingFactor must be >= 1"))
+			Err(codec::Error::from("CompoundFactor must be >= 1"))
 		}
 	}
 }
 
-impl codec::EncodeLike for CompoundingFactor {}
-impl codec::EncodeLike<FixedU128> for CompoundingFactor {}
-impl codec::EncodeLike<CompoundingFactor> for FixedU128 {}
+impl codec::EncodeLike for CompoundFactor {}
+impl codec::EncodeLike<FixedU128> for CompoundFactor {}
+impl codec::EncodeLike<CompoundFactor> for FixedU128 {}
 
 /// Risk management param
-#[derive(Encode, Decode, Clone, RuntimeDebug, PartialEq, Eq, Default, TypeInfo, MaxEncodedLen)]
+#[derive(
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	Clone,
+	Copy,
+	RuntimeDebug,
+	PartialEq,
+	Eq,
+	Default,
+	TypeInfo,
+	MaxEncodedLen,
+)]
 pub struct RiskManagementParams<Balance> {
 	/// Maximum total debit value generated from it, when reach the hard
 	/// cap, CDP's owner cannot issue more stablecoin under the collateral
@@ -125,21 +137,21 @@ pub struct RiskManagementParams<Balance> {
 	pub maximum_total_debit_value: Balance,
 
 	/// Extra interest rate per sec, `None` value means not set
-	pub interest_rate_per_sec: Option<FractionalRate>,
+	pub interest_rate_per_sec: Rate,
 
 	/// Liquidation ratio, when the collateral ratio of
 	/// CDP under this collateral type is below the liquidation ratio, this
-	/// CDP is unsafe and can be liquidated. `None` value means not set
-	pub liquidation_ratio: Option<Ratio>,
+	/// CDP is unsafe and can be liquidated.
+	pub liquidation_ratio: Ratio,
 
 	/// Liquidation penalty rate, when liquidation occurs,
 	/// CDP will be deducted an additional penalty base on the product of
-	/// penalty rate and debit value. `None` value means not set
-	pub liquidation_penalty: Option<FractionalRate>,
+	/// penalty rate and debit value.
+	pub liquidation_penalty: Rate,
 
 	/// Required collateral ratio, if it's set, cannot adjust the position
 	/// of CDP so that the current collateral ratio is lower than the
-	/// required collateral ratio. `None` value means not set
+	/// required collateral ratio. None value means not set
 	pub required_collateral_ratio: Option<Ratio>,
 }
 

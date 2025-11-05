@@ -49,7 +49,7 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		let position = <LoansOf<T>>::positions(&vault_account);
 		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
 		let effective_stability_fee =
-			Self::get_effective_stability_fee(stability_fee, &vault_account)?;
+			Self::get_effective_stability_fee(stability_fee, &vault_account);
 		let debit_value = Self::convert_to_debit_value(position.debit, effective_stability_fee);
 		Ok((position.collateral, debit_value))
 	}
@@ -125,8 +125,7 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		let stable_currency_id = T::GetStableCurrencyId::get();
 
 		// Convert the stablecoin amount to the equivalent debit amount.
-		let debit_amount =
-			Self::convert_to_debit_balance(amount, Self::get_interest_rate_per_sec()?);
+		let debit_amount = Self::convert_to_debit_balance(amount, Self::interest_rate_per_sec());
 
 		// Increase the debit in the vault's position. This will mint stablecoin to the vault's
 		// account.
@@ -137,7 +136,7 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 			&vault_account,
 			collateral_adjustment,
 			debit_adjustment,
-			Some(Self::get_interest_rate_per_sec()?),
+			Some(Self::interest_rate_per_sec()),
 		)?;
 
 		// Transfer the newly minted stablecoin from the vault's account to the user.
@@ -171,7 +170,7 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		// Convert the stablecoin amount to the equivalent debit amount.
 		let debit_amount = Self::convert_to_debit_balance(
 			amount,
-			Self::get_effective_stability_fee(stability_fee, &vault_account)?,
+			Self::get_effective_stability_fee(stability_fee, &vault_account),
 		);
 
 		// Decrease the debit in the vault's position. This will burn the stablecoin from the
