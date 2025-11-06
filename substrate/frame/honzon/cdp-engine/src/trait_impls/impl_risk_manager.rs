@@ -17,7 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 //! Implementation of the RiskManager trait for the CDP Engine pallet.
-use crate::{pallet::*, AccountIdOf};
+use crate::*;
 use frame_support::traits::honzon::RiskManager;
 use pallet_loans::BalanceOf;
 use sp_runtime::DispatchResult;

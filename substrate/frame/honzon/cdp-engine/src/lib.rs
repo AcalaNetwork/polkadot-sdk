@@ -103,8 +103,8 @@ pub use weights::WeightInfo;
 
 mod types;
 pub use types::{CompoundFactor, LiquidateByPriority, RiskManagementParams};
-mod impl_risk_manager;
-mod impl_vault_provider;
+mod pallet_impls;
+mod trait_impls;
 
 pub use pallet::*;
 pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
@@ -123,14 +123,6 @@ pub const DEFAULT_MAX_ITERATIONS: u32 = 1000;
 
 pub type LoansOf<T> = pallet_loans::Pallet<T>;
 pub type CurrencyOf<T> = <T as Config>::Currency;
-
-/// Status of CDP
-#[derive(Encode, Decode, Clone, RuntimeDebug, PartialEq, Eq, TypeInfo)]
-pub enum CDPStatus {
-	Safe,
-	Unsafe,
-	ChecksFailed(DispatchError),
-}
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -377,11 +369,43 @@ pub mod pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// Liquidate unsafe CDP
+		/// Liquidates an unsafe CDP by confiscating its collateral and debt, then selling the
+		/// collateral to cover the debt plus a liquidation penalty.
 		///
-		/// The dispatch origin of this call must be _None_.
+		/// ## Dispatch Origin
 		///
-		/// - `who`: CDP's owner.
+		/// The dispatch origin of this call must be _None_ (unsigned extrinsic). This call can be
+		/// submitted by anyone and is typically triggered by an offchain worker that monitors CDP
+		/// safety status.
+		///
+		/// ## Details
+		///
+		/// This function will only succeed if the CDP owned by `who` is in an unsafe state (i.e.,
+		/// its collateral-to-debt ratio has fallen below the liquidation threshold). During
+		/// liquidation:
+		///
+		/// 1. The CDP's collateral and debt are confiscated to the CDP treasury
+		/// 2. The debt value is converted to stablecoin value including accumulated stability fees
+		/// 3. The collateral is liquidated (sold via DEX) to cover the debt plus a liquidation
+		///    penalty
+		/// 4. Any remaining collateral after covering the target amount may be refunded to the CDP
+		///    owner
+		///
+		/// The function will fail if the system is in emergency shutdown mode (use [`settle`]
+		/// instead in that case).
+		///
+		/// ## Parameters
+		///
+		/// - `who`: The account ID of the CDP owner to liquidate.
+		///
+		/// ## Errors
+		///
+		/// - [`Error::AlreadyShutdown`]: System is in emergency shutdown mode.
+		/// - [`Error::MustBeUnsafe`]: The CDP is not in an unsafe state and cannot be liquidated.
+		///
+		/// ## Events
+		///
+		/// - [`Event::LiquidateUnsafeCDP`]: Emitted when a CDP is successfully liquidated.
 		#[pallet::call_index(0)]
 		#[pallet::weight(<T as Config>::WeightInfo::liquidate(<T as Config>::CDPTreasury::max_auction()))]
 		pub fn liquidate(
@@ -397,7 +421,16 @@ pub mod pallet {
 
 		/// Settles a CDP with outstanding debit after an emergency shutdown.
 		///
-		/// The dispatch origin of this call must be _None_.
+		/// ## Dispatch Origin
+		///
+		/// The dispatch origin of this call must be _None_ (unsigned extrinsic). This call can be
+		/// submitted by anyone and is typically triggered by an offchain worker that monitors CDP
+		/// safety status.
+		///
+		/// ## Details
+		///
+		/// This function will only succeed if the CDP owned by `who` has outstanding debit after an
+		/// emergency shutdown. During settlement:
 		///
 		/// - `who`: Owner of the CDP to settle.
 		#[pallet::call_index(1)]
@@ -413,6 +446,7 @@ pub mod pallet {
 			Ok(())
 		}
 	}
+
 	#[pallet::validate_unsigned]
 	impl<T: Config> ValidateUnsigned for Pallet<T> {
 		type Call = Call<T>;
@@ -426,15 +460,11 @@ pub mod pallet {
 					if collateral.is_zero() && debit.is_zero() {
 						return InvalidTransaction::Stale.into();
 					}
-					let stability_fee = Rate::from_inner(stability_fee.into_inner());
-					if !matches!(
-						Self::check_cdp_status(collateral, debit, stability_fee, &account),
-						CDPStatus::Unsafe
-					) || T::EmergencyShutdown::is_shutdown()
+					if Self::is_cdp_safe(collateral, debit, stability_fee, &account).unwrap_or(true) ||
+						T::EmergencyShutdown::is_shutdown()
 					{
 						return InvalidTransaction::Stale.into();
 					}
-
 					ValidTransaction::with_tag_prefix("CDPEngineOffchainWorker")
 						.priority(T::UnsignedPriority::get())
 						.and_provides((<frame_system::Pallet<T>>::block_number(), account))
@@ -459,715 +489,5 @@ pub mod pallet {
 				_ => InvalidTransaction::Call.into(),
 			}
 		}
-	}
-}
-
-impl<T: Config> Pallet<T> {
-	fn accumulate_interest(now_secs: u64, last_accumulation_secs: u64) -> u32 {
-		// Only proceed if the system is not in emergency shutdown and the input timestamp is valid.
-		if !T::EmergencyShutdown::is_shutdown() && !now_secs.is_zero() {
-			let interval_secs = now_secs.saturating_sub(last_accumulation_secs);
-			let mut touched_entries: u32 = 0;
-
-			// Iterate over all debit active stability fee classes with outstanding debt.
-			for (stability_fee, total_debits) in pallet_loans::TotalDebitByStabilityFee::<T>::iter()
-			{
-				// Skip classes with no outstanding debt.
-				if total_debits.is_zero() {
-					continue;
-				}
-
-				// Compute interest rate for the elapsed interval for this stability fee.
-				let rate_to_accumulate = Self::compound_interest_rate(stability_fee, interval_secs);
-				if rate_to_accumulate.is_zero() {
-					continue;
-				}
-
-				// Retrieve current compound factor for this fee class.
-				let compound_factor = Self::get_compound_factor(stability_fee);
-				let compound_factor_increment = compound_factor.saturating_mul(rate_to_accumulate);
-				// Calculate the interest to issue
-				let stable_coin_balance_to_issue =
-					compound_factor_increment.saturating_mul_int(total_debits);
-
-				// Mint and issue the accumulated interest to the system surplus pool.
-				let res =
-					<T as Config>::CDPTreasury::on_system_surplus(stable_coin_balance_to_issue);
-				match res {
-					Ok(_) => {
-						// Update compound factor in storage to reflect the new accumulated
-						// interest.
-						let new_compound_factor =
-							compound_factor.saturating_add(compound_factor_increment);
-						CompoundFactorStorage::<T>::insert(stability_fee, new_compound_factor);
-						touched_entries = touched_entries.saturating_add(1);
-					},
-					Err(e) => {
-						// Log the error but allow the loop to continue for other fee classes.
-						log::warn!(
-							target: "cdp-engine",
-							"on_system_surplus: failed to on system surplus {:?}: {:?}. This is unexpected but should be safe",
-							stable_coin_balance_to_issue,
-							e
-						);
-					},
-				}
-			}
-
-			// Record the accumulation timestamp for future accrual runs.
-			LastAccumulationSecs::<T>::put(now_secs);
-			return touched_entries.saturating_add(1);
-		}
-
-		// Always update the accumulation timestamp even if no accrual occurred.
-		LastAccumulationSecs::<T>::put(now_secs);
-		0
-	}
-
-	/// Determines the status (safe, unsafe, or checks-failed) of a CDP position for a given
-	/// account.
-	///
-	/// This function expects that `collateral_amount`, `debit_amount`, and `stability_fee` all
-	/// directly reflect the on-chain [`Position`] entry for the provided `who` account. This is
-	/// relied upon by all internal call sites and critical for correct risk calculation.
-	///
-	/// This constraint ensures that collateralization checks always use the up-to-date, canonical
-	/// values for each CDP account. Do not call this function with custom or out-of-sync data.
-	fn check_cdp_status(
-		collateral_amount: BalanceOf<T>,
-		debit_amount: BalanceOf<T>,
-		stability_fee: Rate,
-		who: &AccountIdOf<T>,
-	) -> CDPStatus {
-		let currency_id = T::GetNativeCurrencyId::get();
-		let stable_currency_id = T::GetStableCurrencyId::get();
-		// Calculate relative price
-		let feed_price = match T::PriceSource::get_relative_price(currency_id, stable_currency_id) {
-			Some(price) => price,
-			None => return CDPStatus::ChecksFailed(Error::<T>::InvalidFeedPrice.into()),
-		};
-		// Calculate compound factor
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, who);
-		let compound_factor = Self::get_compound_factor(stability_fee);
-		let collateral_ratio = Self::calculate_collateral_ratio(
-			collateral_amount,
-			debit_amount,
-			feed_price,
-			compound_factor,
-		);
-		if collateral_ratio < Self::get_liquidation_ratio() {
-			CDPStatus::Unsafe
-		} else {
-			CDPStatus::Safe
-		}
-	}
-
-	/// Get the effective stability fee for a given account.
-	///
-	/// The effective stability fee for an account is the lowest value
-	/// among the position's stored stability fee, the current global stability fee, and any
-	/// applicable per-vault override.
-	fn get_effective_stability_fee(stability_fee: Rate, who: &AccountIdOf<T>) -> Rate {
-		let current_stability_fee = Self::interest_rate_per_sec();
-		let mut effective_fee = sp_std::cmp::min(stability_fee, current_stability_fee);
-
-		if let Some(vault_id) = VaultIdByAccountId::<T>::get(who) {
-			if let Some(override_fee) = Self::stability_fee_overrides(vault_id) {
-				effective_fee = sp_std::cmp::min(effective_fee, override_fee);
-			}
-		}
-
-		effective_fee
-	}
-
-	/// Calculates the compounded interest rate for a given rate per second over a specified number
-	/// of seconds.
-	///
-	/// The formula is:
-	/// `(1 + rate_per_sec).pow(secs) - 1`
-	pub fn compound_interest_rate(rate_per_sec: Rate, secs: u64) -> Rate {
-		rate_per_sec
-			.saturating_add(Rate::one())
-			.saturating_pow(secs.unique_saturated_into())
-			.saturating_sub(Rate::one())
-	}
-
-	/// Retrieve the compound factor associated with the given stability fee.
-	///
-	/// This function ensures the correct factor is available in storage,
-	/// initializing it with the default if not yet set.
-	pub fn get_compound_factor(stability_fee: Rate) -> CompoundFactor {
-		if let Some(compound_factor) = CompoundFactorStorage::<T>::get(stability_fee) {
-			compound_factor
-		} else {
-			let default_rate = T::DefaultCompoundFactor::get();
-			CompoundFactorStorage::<T>::insert(stability_fee, default_rate);
-			default_rate
-		}
-	}
-
-	/// Converts a given debit balance to its value based on the stability fee's compound factor.
-	pub fn convert_to_debit_value(
-		debit_balance: BalanceOf<T>,
-		stability_fee: Rate,
-	) -> BalanceOf<T> {
-		Self::get_compound_factor(stability_fee).saturating_mul_int(debit_balance)
-	}
-
-	/// Converts a debit value amount into a debit balance using the given stability fee's compound
-	/// factor
-	pub fn convert_to_debit_balance(
-		debit_value: BalanceOf<T>,
-		stability_fee: Rate,
-	) -> BalanceOf<T> {
-		Self::get_compound_factor(stability_fee)
-			.reciprocal()
-			.saturating_mul_int(debit_value)
-	}
-
-	pub(crate) fn average_compound_factor() -> CompoundFactor {
-		let mut total_debit = BalanceOf::<T>::zero();
-		let mut total_value = BalanceOf::<T>::zero();
-
-		for (stability_fee, debit_balance) in pallet_loans::TotalDebitByStabilityFee::<T>::iter() {
-			if debit_balance.is_zero() {
-				continue;
-			}
-			let rate = Self::get_compound_factor(stability_fee);
-			total_debit = total_debit.saturating_add(debit_balance);
-			total_value = total_value.saturating_add(rate.saturating_mul_int(debit_balance));
-		}
-
-		if total_debit.is_zero() {
-			T::DefaultCompoundFactor::get()
-		} else {
-			CompoundFactor::checked_from_rational(total_value, total_debit)
-				.unwrap_or_else(T::DefaultCompoundFactor::get)
-		}
-	}
-
-	/// Calculates the collateral ratio given collateral, debit, price, and compound factor.
-	pub fn calculate_collateral_ratio(
-		collateral_balance: BalanceOf<T>,
-		debit_balance: BalanceOf<T>,
-		price: Price,
-		compound_factor: CompoundFactor,
-	) -> Ratio {
-		let locked_collateral_value = price.saturating_mul_int(collateral_balance);
-		let debit_value = compound_factor.saturating_mul_int(debit_balance);
-
-		// if debit_value is zero, collateral ratio is max value
-		Ratio::checked_from_rational(locked_collateral_value, debit_value)
-			.unwrap_or_else(Ratio::max_value)
-	}
-
-	pub fn adjust_position(
-		who: &AccountIdOf<T>,
-		collateral_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
-		debit_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
-		maybe_new_stability_fee: Option<Rate>,
-	) -> DispatchResult {
-		<LoansOf<T>>::adjust_position(
-			who,
-			collateral_adjustment,
-			debit_adjustment,
-			maybe_new_stability_fee,
-		)?;
-		Ok(())
-	}
-
-	pub fn adjust_position_by_debit_value(
-		who: &AccountIdOf<T>,
-		collateral_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
-		debit_value_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
-	) -> DispatchResult {
-		let Position { debit, stability_fee, .. } = <LoansOf<T>>::positions(who);
-		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
-		let effective_stability_fee =
-			Self::get_effective_stability_fee(position_stability_fee, who);
-
-		match &debit_value_adjustment {
-			pallet_loans::BalanceAdjustment::Decrease(amount) => {
-				let debit_adjustment_abs =
-					Self::convert_to_debit_balance(*amount, effective_stability_fee);
-				let actual_adjustment_abs = debit.min(debit_adjustment_abs);
-				let debit_adjustment =
-					pallet_loans::BalanceAdjustment::decrease(actual_adjustment_abs);
-
-				Self::adjust_position(who, collateral_adjustment, debit_adjustment, None)?;
-			},
-			pallet_loans::BalanceAdjustment::Increase(amount) => {
-				let new_stability_fee = Self::interest_rate_per_sec();
-				let debit_adjustment_abs =
-					Self::convert_to_debit_balance(*amount, new_stability_fee);
-				let debit_adjustment =
-					pallet_loans::BalanceAdjustment::increase(debit_adjustment_abs);
-
-				Self::adjust_position(
-					who,
-					collateral_adjustment,
-					debit_adjustment,
-					Some(new_stability_fee),
-				)?;
-			},
-		}
-
-		Ok(())
-	}
-
-	// --- Shared validation helpers for risk management (trait + internal) ---
-	/// Shared validator for position collateral/debt, reused by both trait and pallet logic.
-	fn do_check_position(
-		collateral_balance: BalanceOf<T>,
-		debit_balance: BalanceOf<T>,
-		check_required_ratio: bool,
-	) -> Result<(), Error<T>> {
-		// If there is debit, check the collateral ratio
-		if !debit_balance.is_zero() {
-			let compound_factor = Self::average_compound_factor();
-			let debit_value = compound_factor.saturating_mul_int(debit_balance);
-			let feed_price = <T as Config>::PriceSource::get_relative_price(
-				T::GetNativeCurrencyId::get(),
-				T::GetStableCurrencyId::get(),
-			)
-			.ok_or(Error::<T>::InvalidFeedPrice)?;
-			let collateral_ratio = Self::calculate_collateral_ratio(
-				collateral_balance,
-				debit_balance,
-				feed_price,
-				compound_factor,
-			);
-
-			// Check collateral ratio >= required collateral ratio
-			if check_required_ratio {
-				if let Some(required_collateral_ratio) = Self::required_collateral_ratio() {
-					ensure!(
-						collateral_ratio >= required_collateral_ratio,
-						Error::<T>::BelowRequiredCollateralRatio
-					);
-				}
-			}
-
-			// Check collateral ratio >= liquidation ratio
-			let liquidation_ratio = Self::get_liquidation_ratio();
-			ensure!(collateral_ratio >= liquidation_ratio, Error::<T>::BelowLiquidationRatio);
-
-			ensure!(
-				debit_value >= T::MinimumDebitValue::get(),
-				Error::<T>::RemainDebitValueTooSmall,
-			);
-		} else if !collateral_balance.is_zero() {
-			ensure!(
-				collateral_balance >= T::MinimumCollateralAmount::get(),
-				Error::<T>::CollateralAmountBelowMinimum,
-			);
-		}
-
-		Ok(())
-	}
-
-	/// Shared checker for cap on aggregate debits.
-	fn do_check_debit_cap(total_debit_balance: BalanceOf<T>) -> Result<(), Error<T>> {
-		let hard_cap = Self::maximum_total_debit_value();
-		let mut total_debit_value = BalanceOf::<T>::zero();
-		for (stability_fee, debit_balance) in pallet_loans::TotalDebitByStabilityFee::<T>::iter() {
-			if debit_balance.is_zero() {
-				continue;
-			}
-			let compound_factor = Self::get_compound_factor(stability_fee);
-			total_debit_value =
-				total_debit_value.saturating_add(compound_factor.saturating_mul_int(debit_balance));
-		}
-		if total_debit_value.is_zero() && !total_debit_balance.is_zero() {
-			let compound_factor = Self::average_compound_factor();
-			total_debit_value = compound_factor.saturating_mul_int(total_debit_balance);
-		}
-		ensure!(total_debit_value <= hard_cap, Error::<T>::ExceedDebitValueHardCap);
-		Ok(())
-	}
-
-	/// Generate new debit in advance, buy collateral and deposit it into CDP,
-	/// and the collateral ratio will be reduced but CDP must still be at valid risk.
-	#[transactional]
-	pub fn expand_position_collateral(
-		who: &AccountIdOf<T>,
-		increase_debit_value: BalanceOf<T>,
-		min_increase_collateral: BalanceOf<T>,
-	) -> DispatchResult {
-		let currency_id = T::GetNativeCurrencyId::get();
-		let loans_module_account = <LoansOf<T>>::account_id();
-
-		// issue stable coin in advance
-		<T as Config>::CDPTreasury::issue_debit(&loans_module_account, increase_debit_value, true)?;
-
-		// swap stable coin to collateral
-		let increase_collateral = T::Swap::swap_exact_tokens_for_tokens(
-			loans_module_account.clone(),
-			vec![T::GetStableCurrencyId::get().into(), currency_id.into()],
-			increase_debit_value,
-			Some(min_increase_collateral),
-			loans_module_account.clone(),
-			true,
-		)?;
-
-		// update CDP state
-		let collateral_adjustment = pallet_loans::BalanceAdjustment::increase(increase_collateral);
-		let new_stability_fee = Self::interest_rate_per_sec();
-		let increase_debit_balance =
-			Self::convert_to_debit_balance(increase_debit_value, new_stability_fee);
-		let debit_adjustment = pallet_loans::BalanceAdjustment::increase(increase_debit_balance);
-		Self::adjust_position(
-			who,
-			collateral_adjustment,
-			debit_adjustment,
-			Some(new_stability_fee),
-		)?;
-
-		let Position { collateral, debit, .. } = <LoansOf<T>>::positions(who);
-		// check the CDP if is still at valid risk
-		Self::do_check_position(collateral, debit, false)?;
-		// debit cap check due to new issued stable coin
-		let Position { debit: total_debit, .. } = <LoansOf<T>>::total_positions();
-		Self::do_check_debit_cap(total_debit)?;
-		Ok(())
-	}
-
-	/// Sell the collateral locked in CDP to get stable coin to repay the debit,
-	/// and the collateral ratio will be increased.
-	#[transactional]
-	fn shrink_position_debit(
-		who: &AccountIdOf<T>,
-		decrease_collateral: BalanceOf<T>,
-		min_decrease_debit_value: BalanceOf<T>,
-	) -> DispatchResult {
-		let currency_id = T::GetNativeCurrencyId::get();
-		let loans_module_account = <LoansOf<T>>::account_id();
-		let stable_currency_id = T::GetStableCurrencyId::get();
-		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(who);
-		let position_stability_fee = Rate::from_inner(stability_fee.into_inner());
-		let effective_stability_fee =
-			Self::get_effective_stability_fee(position_stability_fee, who);
-
-		// ensure collateral of CDP is enough
-		ensure!(decrease_collateral <= collateral, Error::<T>::CollateralNotEnough);
-
-		// swap collateral to stable coin
-		let actual_stable_amount = T::Swap::swap_exact_tokens_for_tokens(
-			loans_module_account.clone(),
-			vec![currency_id.into(), stable_currency_id.into()],
-			decrease_collateral,
-			Some(min_decrease_debit_value),
-			loans_module_account.clone(),
-			true,
-		)?;
-
-		// update CDP state
-		let collateral_adjustment = pallet_loans::BalanceAdjustment::decrease(decrease_collateral);
-		let previous_debit_value = Self::convert_to_debit_value(debit, effective_stability_fee);
-		let (decrease_debit_value, decrease_debit_balance) =
-			if actual_stable_amount >= previous_debit_value {
-				// refund extra stable coin to the CDP owner
-				<T as Config>::Tokens::transfer(
-					stable_currency_id,
-					&loans_module_account,
-					who,
-					actual_stable_amount.saturating_sub(previous_debit_value),
-					Preservation::Protect,
-				)?;
-
-				(previous_debit_value, debit)
-			} else {
-				(
-					actual_stable_amount,
-					Self::convert_to_debit_balance(actual_stable_amount, effective_stability_fee),
-				)
-			};
-
-		let debit_adjustment = pallet_loans::BalanceAdjustment::decrease(decrease_debit_balance);
-		Self::adjust_position(who, collateral_adjustment, debit_adjustment, None)?;
-
-		// repay the debit of CDP
-		<T as Config>::CDPTreasury::burn_debit(&loans_module_account, decrease_debit_value)?;
-
-		// check the CDP if is still at valid risk.
-		let Position { collateral: updated_collateral, debit: updated_debit, .. } =
-			<LoansOf<T>>::positions(who);
-		Self::do_check_position(updated_collateral, updated_debit, false)?;
-		Ok(())
-	}
-
-	// settle cdp has debit when emergency shutdown
-	pub fn settle_cdp_has_debit(who: AccountIdOf<T>) -> DispatchResult {
-		let currency_id = T::GetNativeCurrencyId::get();
-		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
-		let stability_fee = Rate::from_inner(stability_fee.into_inner());
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
-		ensure!(!debit.is_zero(), Error::<T>::NoDebitValue);
-
-		// confiscate collateral in cdp to cdp treasury
-		// and decrease CDP's debit to zero
-		let settle_price: Price =
-			T::PriceSource::get_relative_price(T::GetStableCurrencyId::get(), currency_id)
-				.ok_or(Error::<T>::InvalidFeedPrice)?;
-		let bad_debt_value = Self::convert_to_debit_value(debit, stability_fee);
-		let confiscate_collateral_amount =
-			sp_std::cmp::min(settle_price.saturating_mul_int(bad_debt_value), collateral);
-
-		// confiscate collateral and all debit
-		<LoansOf<T>>::confiscate_collateral_and_debit(&who, confiscate_collateral_amount, debit)?;
-
-		Self::deposit_event(Event::SettleCDPInDebit { owner: who });
-		Ok(())
-	}
-
-	// close cdp has debit by swap collateral to exact debit
-	#[transactional]
-	pub fn close_cdp_has_debit_by_dex(
-		who: AccountIdOf<T>,
-		max_collateral_amount: BalanceOf<T>,
-	) -> DispatchResult {
-		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
-		let stability_fee = Rate::from_inner(stability_fee.into_inner());
-		ensure!(!debit.is_zero(), Error::<T>::NoDebitValue);
-		ensure!(
-			matches!(
-				Self::check_cdp_status(collateral, debit, stability_fee, &who),
-				CDPStatus::Safe
-			),
-			Error::<T>::MustBeSafe
-		);
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
-
-		// confiscate all collateral and debit of unsafe cdp to cdp treasury
-		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit)?;
-
-		// swap exact stable with DEX in limit of price impact
-		let debit_value = Self::convert_to_debit_value(debit, stability_fee);
-		let collateral_supply = collateral.min(max_collateral_amount);
-
-		let (actual_supply_collateral, _) = <T as Config>::CDPTreasury::swap_collateral_to_stable(
-			SwapLimit::ExactTarget(collateral_supply, debit_value),
-			false,
-		)?;
-
-		// refund remain collateral to CDP owner
-		let refund_collateral_amount = collateral
-			.checked_sub(&actual_supply_collateral)
-			.expect("swap success means collateral >= actual_supply_collateral; qed");
-		<T as Config>::CDPTreasury::withdraw_collateral(&who, refund_collateral_amount)?;
-
-		Self::deposit_event(Event::CloseCDPInDebitByDEX {
-			owner: who,
-			sold_collateral_amount: actual_supply_collateral,
-			refund_collateral_amount,
-			debit_value,
-		});
-		Ok(())
-	}
-
-	/// Liquidate an unsafe CDP.
-	///
-	/// 1. Ensure the CDP is unsafe
-	/// 2. Confiscate all collateral and debit of unsafe CDP to CDP treasury
-	/// 3. Convert the debit to stablecoin
-	/// 4. Liquidate the collateral by priority
-	/// 5. Deposit the event
-	/// 6. Return the weight
-	pub fn liquidate_unsafe_cdp(who: AccountIdOf<T>) -> Result<Weight, DispatchError> {
-		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
-		let stability_fee = Rate::from_inner(stability_fee.into_inner());
-
-		// ensure the cdp is unsafe
-		ensure!(
-			matches!(
-				Self::check_cdp_status(collateral, debit, stability_fee, &who),
-				CDPStatus::Unsafe
-			),
-			Error::<T>::MustBeUnsafe
-		);
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
-
-		// confiscate all collateral and debit of unsafe cdp to cdp treasury
-		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit)?;
-
-		let bad_debt_value = Self::convert_to_debit_value(debit, stability_fee);
-		let liquidation_penalty = Self::get_liquidation_penalty();
-		let target_stable_amount = liquidation_penalty.saturating_mul_acc_int(bad_debt_value);
-
-		Self::handle_liquidated_collateral(&who, collateral, target_stable_amount)?;
-
-		Self::deposit_event(Event::LiquidateUnsafeCDP {
-			owner: who,
-			collateral_amount: collateral,
-			bad_debt_value,
-			target_amount: target_stable_amount,
-		});
-		Ok(T::WeightInfo::liquidate(1))
-	}
-
-	/// Handle liquidated collateral by priority
-	///
-	/// 1. If target stable amount is zero, refund collateral to CDP owner
-	/// 2. If target stable amount is not zero, liquidate collateral by priority
-	pub fn handle_liquidated_collateral(
-		who: &AccountIdOf<T>,
-		amount: BalanceOf<T>,
-		target_stable_amount: BalanceOf<T>,
-	) -> DispatchResult {
-		let currency_id = T::GetNativeCurrencyId::get();
-		if target_stable_amount.is_zero() {
-			// refund collateral to CDP owner
-			if !amount.is_zero() {
-				<T as Config>::CDPTreasury::withdraw_collateral(who, amount)?;
-			}
-			return Ok(());
-		}
-		LiquidateByPriority::<T>::liquidate(who, currency_id, amount, target_stable_amount)
-	}
-}
-
-// Helper functions for risk management parameters
-impl<T: Config> Pallet<T> {
-	fn risk_management_params() -> RiskManagementParams<pallet_loans::BalanceOf<T>> {
-		T::RiskManagementParams::get()
-	}
-
-	/// Returns the maximum total debit value that can be issued for the current collateral type.
-	fn maximum_total_debit_value() -> BalanceOf<T> {
-		let params = Self::risk_management_params();
-		params.maximum_total_debit_value
-	}
-
-	/// Returns the required collateral ratio, if set, for the current collateral type.
-	fn required_collateral_ratio() -> Option<Ratio> {
-		let params = Self::risk_management_params();
-		params.required_collateral_ratio
-	}
-
-	/// Returns the interest rate per second for the current collateral type.
-	fn interest_rate_per_sec() -> Rate {
-		let params = Self::risk_management_params();
-		// default value is 0
-		params.interest_rate_per_sec
-	}
-
-	/// Returns the liquidation ratio for the current collateral type.
-	fn get_liquidation_ratio() -> Ratio {
-		let params = Self::risk_management_params();
-		params.liquidation_ratio
-	}
-
-	/// Returns the current liquidation penalty rate for the collateral type, or the default if not
-	/// set.
-	fn get_liquidation_penalty() -> Rate {
-		let params = Self::risk_management_params();
-		params.liquidation_penalty
-	}
-}
-
-// Unsigned implementations
-impl<T: Config> Pallet<T> {
-	fn submit_unsigned_liquidation_tx(who: AccountIdOf<T>) {
-		let who = T::Lookup::unlookup(who);
-		let call = Call::<T>::liquidate { who: who.clone() };
-		let xt = T::create_bare(call.into());
-		if SubmitTransaction::<T, Call<T>>::submit_transaction(xt).is_err() {
-			log::info!(
-				target: "cdp-engine offchain worker",
-				"submit unsigned liquidation tx for \nCDP - AccountId {:?} \nfailed!",
-				who,
-			);
-		}
-	}
-
-	fn submit_unsigned_settlement_tx(who: AccountIdOf<T>) {
-		let who = T::Lookup::unlookup(who);
-		let call = Call::<T>::settle { who: who.clone() };
-		let xt = T::create_bare(call.into());
-		if SubmitTransaction::<T, Call<T>>::submit_transaction(xt).is_err() {
-			log::info!(
-				target: "cdp-engine offchain worker",
-				"submit unsigned settlement tx for \nCDP - AccountId {:?} \nfailed!",
-				who,
-			);
-		}
-	}
-
-	fn _offchain_worker() -> Result<(), OffchainErr> {
-		if !sp_io::offchain::is_validator() {
-			return Err(OffchainErr::NotValidator);
-		}
-
-		let lock_expiration = Duration::from_millis(LOCK_DURATION);
-		let mut lock = StorageLock::<Time>::with_deadline(OFFCHAIN_WORKER_LOCK, lock_expiration);
-		let mut guard = lock.try_lock().map_err(|_| OffchainErr::OffchainLock)?;
-		let to_be_continue = StorageValueRef::persistent(OFFCHAIN_WORKER_DATA);
-
-		let start_key: Option<Vec<u8>> = if let Ok(Some(maybe_last_iterator_previous_key)) =
-			to_be_continue.get::<Option<Vec<u8>>>()
-		{
-			maybe_last_iterator_previous_key
-		} else {
-			None
-		};
-
-		let max_iterations = StorageValueRef::persistent(OFFCHAIN_WORKER_MAX_ITERATIONS)
-			.get::<u32>()
-			.unwrap_or(Some(DEFAULT_MAX_ITERATIONS))
-			.unwrap_or(DEFAULT_MAX_ITERATIONS);
-
-		let currency_id = T::GetNativeCurrencyId::get();
-		let is_shutdown = T::EmergencyShutdown::is_shutdown();
-
-		let mut map_iterator = match start_key.clone() {
-			Some(key) => <pallet_loans::Positions<T>>::iter_from(key),
-			None => <pallet_loans::Positions<T>>::iter(),
-		};
-
-		let mut finished = true;
-		let mut iteration_count = 0;
-		let iteration_start_time = sp_io::offchain::timestamp();
-
-		while let Some((who, Position { collateral, debit, stability_fee })) = map_iterator.next() {
-			let effective_stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
-			if !is_shutdown &&
-				matches!(
-					Self::check_cdp_status(collateral, debit, effective_stability_fee, &who),
-					CDPStatus::Unsafe
-				) {
-				Self::submit_unsigned_liquidation_tx(who);
-			} else if is_shutdown && !debit.is_zero() {
-				Self::submit_unsigned_settlement_tx(who);
-			}
-
-			iteration_count += 1;
-			if iteration_count == max_iterations {
-				finished = false;
-				break;
-			}
-			guard.extend_lock().map_err(|_| OffchainErr::OffchainLock)?;
-		}
-		let iteration_end_time = sp_io::offchain::timestamp();
-		log::debug!(
-			target: "cdp-engine offchain worker",
-			"iteration info: max_iterations: {:?}, currency_id: {:?}, start_key: {:?}, iteration_count: {:?}, start_at: {:?}, end_at: {:?}, execution_time: {:?}",
-			max_iterations,
-			currency_id,
-			start_key,
-			iteration_count,
-			iteration_start_time,
-			iteration_end_time,
-			iteration_end_time.diff(&iteration_start_time)
-		);
-
-		if finished {
-			to_be_continue.set(&Option::<Vec<u8>>::None);
-		} else {
-			to_be_continue.set(&Some(map_iterator.last_raw_key()));
-		}
-
-		guard.forget();
-
-		Ok(())
 	}
 }

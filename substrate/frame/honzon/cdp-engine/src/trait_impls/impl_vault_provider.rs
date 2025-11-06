@@ -17,7 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 //! Implementation of the VaultProvider trait for the CDP Engine pallet.
-use crate::{pallet::*, LoansOf};
+use crate::*;
 use frame_support::{
 	ensure,
 	traits::{
