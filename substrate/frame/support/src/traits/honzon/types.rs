@@ -20,10 +20,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode, MaxEncodedLen};
+use derive_more::{Add, Sub};
 use scale_info::TypeInfo;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
-use sp_runtime::{traits::CheckedDiv, DispatchError, DispatchResult, FixedU128, RuntimeDebug};
+use sp_runtime::{
+	traits::{CheckedAdd, CheckedDiv, CheckedSub, Saturating, Zero},
+	DispatchError, DispatchResult, FixedU128, RuntimeDebug,
+};
 use sp_std::prelude::*;
 
 pub trait GetByKey<Key, Value> {
@@ -135,17 +139,67 @@ pub enum SwapLimit<Balance> {
 	ExactTarget(Balance, Balance),
 }
 
+/// Associated debit units and interest rate
+///
+/// Debit value is additive
+/// Debit units with same stability_fee(interest_rate) is additive
+/// TODO: Rate can be a enum to denote RateType (e.g: initial_rate, current_rate, etc.)
+#[derive(Copy, Clone, Encode, Decode, Default, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+pub struct Debit<Unit, Rate> {
+	/// The PV amount of this debit
+	pub units: Unit,
+	/// The *initial* interest rate of this debit
+	pub stability_fee: Rate,
+}
+
+/// A wrapper for debit units types to prevent accident arithmetics with debit value
+#[derive(Copy, Clone, Encode, Decode, Default, RuntimeDebug, MaxEncodedLen, TypeInfo, Add, Sub)]
+pub struct DebitUnit<Balance>(Balance);
+impl<Balance> DebitUnit<Balance> {
+	pub fn new(units: Balance) -> Self {
+		Self(units)
+	}
+	pub fn into_inner(self) -> Balance {
+		self.0
+	}
+}
+
+// Only implement used operations
+// TODO: use declarative macros to implement the operations
+impl<Balance: CheckedAdd + Copy> CheckedAdd for DebitUnit<Balance> {
+	fn checked_add(&self, other: &Self) -> Option<Self> {
+		self.0.checked_add(&other.0).map(Self::new)
+	}
+}
+impl<Balance: CheckedSub + Copy> CheckedSub for DebitUnit<Balance> {
+	fn checked_sub(&self, other: &Self) -> Option<Self> {
+		self.0.checked_sub(&other.0).map(Self::new)
+	}
+}
+impl<Balance: Zero + Copy> Zero for DebitUnit<Balance> {
+	fn zero() -> Self {
+		Self(Balance::zero())
+	}
+	fn set_zero(&mut self) {
+		*self = Self(Balance::zero())
+	}
+	fn is_zero(&self) -> bool {
+		self.0.is_zero()
+	}
+}
+impl<Balance: Saturating> DebitUnit<Balance> {
+	pub fn saturating_sub(self, other: Self) -> Self {
+		Self(self.0.saturating_sub(other.0))
+	}
+}
+
 /// A collateralized debt position.
-#[derive(
-	Encode, Decode, Eq, PartialEq, Copy, Clone, RuntimeDebug, Default, MaxEncodedLen, TypeInfo,
-)]
-pub struct Position<Balance> {
+#[derive(Copy, Clone, Encode, Decode, Default, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+pub struct Position<Unit, Balance, Rate> {
 	/// The amount of collateral.
 	pub collateral: Balance,
 	/// The amount of debit.
-	pub debit: Balance,
-	/// The stability fee used for this position.
-	pub stability_fee: Rate,
+	pub debit: Debit<Unit, Rate>,
 }
 
 /// The current status of a connection.

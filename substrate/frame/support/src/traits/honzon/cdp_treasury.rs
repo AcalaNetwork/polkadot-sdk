@@ -8,8 +8,6 @@ pub trait CDPTreasury<AccountId> {
 	fn account_id() -> AccountId;
 	/// The type of balance used in the treasury.
 	type Balance;
-	/// The type of currency used in the treasury.
-	type CurrencyId;
 
 	/// Returns the amount of surplus in the treasury.
 	fn get_surplus_pool() -> Self::Balance;

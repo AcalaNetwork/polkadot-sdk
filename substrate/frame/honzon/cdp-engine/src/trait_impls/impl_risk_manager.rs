@@ -22,27 +22,34 @@ use frame_support::traits::honzon::RiskManager;
 use pallet_loans::BalanceOf;
 use sp_runtime::DispatchResult;
 
-impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyIdOf<T>, BalanceOf<T>, BalanceOf<T>>
+impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyIdOf<T>, Rate, BalanceOf<T>, BalanceOf<T>>
 	for Pallet<T>
 {
-	fn get_debit_value(_currency_id: CurrencyIdOf<T>, debit_balance: BalanceOf<T>) -> BalanceOf<T> {
-		Self::average_compound_factor().saturating_mul_int(debit_balance)
+	fn get_debit_value(
+		_currency_id: CurrencyIdOf<T>,
+		interest_rate_per_sec: Rate,
+		debit_balance: BalanceOf<T>,
+	) -> BalanceOf<T> {
+		Pallet::<T>::get_debit_value(interest_rate_per_sec, debit_balance)
 	}
 
 	fn check_position_valid(
 		_currency_id: CurrencyIdOf<T>,
 		collateral_balance: BalanceOf<T>,
 		debit_balance: BalanceOf<T>,
+		stability_fee: Rate,
 		check_required_ratio: bool,
 	) -> DispatchResult {
-		Self::do_check_position(collateral_balance, debit_balance, check_required_ratio)
-			.map_err(Into::into)
+		Self::do_check_position(
+			collateral_balance,
+			debit_balance,
+			stability_fee,
+			check_required_ratio,
+		)
+		.map_err(Into::into)
 	}
 
-	fn check_debit_cap(
-		_currency_id: CurrencyIdOf<T>,
-		total_debit_balance: BalanceOf<T>,
-	) -> DispatchResult {
-		Self::do_check_debit_cap(total_debit_balance).map_err(Into::into)
+	fn check_debit_cap(_currency_id: CurrencyIdOf<T>) -> DispatchResult {
+		Self::do_check_debit_cap().map_err(Into::into)
 	}
 }

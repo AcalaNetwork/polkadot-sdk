@@ -75,7 +75,6 @@ use frame_support::{
 use frame_system::{offchain::SubmitTransaction, pallet_prelude::*};
 use pallet_asset_conversion::Swap;
 use pallet_loans::BalanceOf;
-use scale_info::TypeInfo;
 use sp_runtime::{
 	offchain::{
 		storage::StorageValueRef,
@@ -108,6 +107,8 @@ mod trait_impls;
 
 pub use pallet::*;
 pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
+pub type LoansOf<T> = pallet_loans::Pallet<T>;
+pub type CurrencyOf<T> = <T as Config>::Currency;
 
 #[derive(RuntimeDebug)]
 pub enum OffchainErr {
@@ -120,9 +121,6 @@ pub const OFFCHAIN_WORKER_LOCK: &[u8] = b"acala/cdp-engine/lock/";
 pub const OFFCHAIN_WORKER_MAX_ITERATIONS: &[u8] = b"acala/cdp-engine/max-iterations/";
 pub const LOCK_DURATION: u64 = 100;
 pub const DEFAULT_MAX_ITERATIONS: u32 = 1000;
-
-pub type LoansOf<T> = pallet_loans::Pallet<T>;
-pub type CurrencyOf<T> = <T as Config>::Currency;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -301,7 +299,6 @@ pub mod pallet {
 
 	/// Compound factor of debit balance (PV) to debit value (FV) for a specific stability fee.
 	#[pallet::storage]
-	#[pallet::getter(fn compound_factor)]
 	pub type CompoundFactorStorage<T: Config> =
 		StorageMap<_, Twox64Concat, Rate, CompoundFactor, OptionQuery>;
 

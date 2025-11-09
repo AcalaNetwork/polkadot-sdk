@@ -18,7 +18,7 @@ impl<T: Config> Pallet<T> {
 					continue;
 				}
 
-				let compound_factor = Self::get_compound_factor(stability_fee);
+				let compound_factor = Self::get_or_init_compound_factor(stability_fee);
 				let compound_factor_increment = compound_factor.saturating_mul(rate_to_accumulate);
 				let stable_coin_balance_to_issue =
 					compound_factor_increment.saturating_mul_int(total_debits);
@@ -63,11 +63,9 @@ impl<T: Config> Pallet<T> {
 			.saturating_sub(Rate::one())
 	}
 
-	/// Retrieve the compound factor associated with the given stability fee.
-	///
-	/// This function ensures the correct factor is available in storage,
-	/// initializing it with the default if not yet set.
-	pub fn get_compound_factor(stability_fee: Rate) -> CompoundFactor {
+	/// Gets the compound factor for the given stability fee, initializing it with the default
+	/// if not yet set.
+	pub fn get_or_init_compound_factor(stability_fee: Rate) -> CompoundFactor {
 		if let Some(compound_factor) = CompoundFactorStorage::<T>::get(stability_fee) {
 			compound_factor
 		} else {
@@ -82,7 +80,7 @@ impl<T: Config> Pallet<T> {
 		debit_balance: pallet_loans::BalanceOf<T>,
 		stability_fee: Rate,
 	) -> pallet_loans::BalanceOf<T> {
-		Self::get_compound_factor(stability_fee).saturating_mul_int(debit_balance)
+		Self::get_or_init_compound_factor(stability_fee).saturating_mul_int(debit_balance)
 	}
 
 	/// Converts a debit value amount into a debit balance using the given stability fee's compound
@@ -91,29 +89,8 @@ impl<T: Config> Pallet<T> {
 		debit_value: pallet_loans::BalanceOf<T>,
 		stability_fee: Rate,
 	) -> pallet_loans::BalanceOf<T> {
-		Self::get_compound_factor(stability_fee)
+		Self::get_or_init_compound_factor(stability_fee)
 			.reciprocal()
 			.saturating_mul_int(debit_value)
-	}
-
-	pub fn average_compound_factor() -> CompoundFactor {
-		let mut total_debit = pallet_loans::BalanceOf::<T>::zero();
-		let mut total_value = pallet_loans::BalanceOf::<T>::zero();
-
-		for (stability_fee, debit_balance) in pallet_loans::TotalDebitByStabilityFee::<T>::iter() {
-			if debit_balance.is_zero() {
-				continue;
-			}
-			let rate = Self::get_compound_factor(stability_fee);
-			total_debit = total_debit.saturating_add(debit_balance);
-			total_value = total_value.saturating_add(rate.saturating_mul_int(debit_balance));
-		}
-
-		if total_debit.is_zero() {
-			T::DefaultCompoundFactor::get()
-		} else {
-			CompoundFactor::checked_from_rational(total_value, total_debit)
-				.unwrap_or_else(T::DefaultCompoundFactor::get)
-		}
 	}
 }

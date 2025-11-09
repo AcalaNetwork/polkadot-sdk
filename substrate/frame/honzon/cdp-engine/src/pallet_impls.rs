@@ -1,4 +1,4 @@
-mod compound_factor;
+mod compound;
 mod liquidation;
 mod offchain_worker;
 mod position_management;

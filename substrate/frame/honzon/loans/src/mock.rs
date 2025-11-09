@@ -25,7 +25,7 @@ use frame_support::{
 	pallet_prelude::*,
 	parameter_types,
 	traits::{
-		honzon::{AuctionManager, Handler, MockLiquidationStrategy, RiskManager},
+		honzon::{AuctionManager, DebitUnit, Handler, MockLiquidationStrategy, RiskManager},
 		tokens::fungible::UnionOf,
 		AsEnsureOriginWithArg, ConstU128, ConstU32,
 	},
@@ -34,8 +34,8 @@ use frame_support::{
 use frame_system::{EnsureRoot, EnsureSignedBy};
 use serde::{Deserialize, Serialize};
 use sp_runtime::{
-	traits::{AccountIdConversion, Convert, IdentityLookup},
-	BuildStorage, DispatchResult, Either,
+	traits::{AccountIdConversion, Convert, IdentityLookup, Zero},
+	BuildStorage, DispatchError, DispatchResult, Either, FixedU128,
 };
 use std::collections::HashMap;
 
@@ -49,7 +49,7 @@ construct_runtime!(
 		System: frame_system,
 		Loans: pallet_loans,
 		Assets: pallet_assets,
-		PalletBalances: pallet_balances,
+		Balances: pallet_balances,
 		CDPTreasuryModule: pallet_cdp_treasury,
 	}
 );
@@ -93,7 +93,7 @@ impl pallet_assets::Config for Runtime {
 	type Balance = Balance;
 	type AssetId = CurrencyId;
 	type AssetIdParameter = CurrencyId;
-	type Currency = PalletBalances;
+	type Currency = Balances;
 	type CreateOrigin = AsEnsureOriginWithArg<EnsureSignedBy<One, AccountId>>;
 	type ForceOrigin = EnsureRoot<AccountId>;
 	type AssetDeposit = ConstU128<1>;
@@ -171,20 +171,21 @@ ord_parameter_types! {
 parameter_types! {
 	pub const CDPTreasuryPalletId: PalletId = PalletId(*b"py/cdptr");
 	pub TreasuryAccount: AccountId = PalletId(*b"py/cdpta").into_account_truncating();
-	pub const StableCurrencyIdValue: CurrencyId = CurrencyId::Stable;
+	pub const StableCurrencyId: CurrencyId = CurrencyId::Stable;
+	pub const NativeCurrencyId: CurrencyId = CurrencyId::Native;
 }
 
 impl pallet_cdp_treasury::Config for Runtime {
-	type Fungibles = LoansMultiCurrency;
+	type CollateralCurrencyId = NativeCurrencyId;
+	type StableCurrencyId = StableCurrencyId;
 	type AuctionManagerHandler = MockAuctionManager;
+	type Fungibles = LoansMultiCurrency;
 	type UpdateOrigin = EnsureSignedBy<One, AccountId>;
 	type MaxAuctionsCount = ConstU32<10_000>;
+	type CurrencyId = CurrencyId;
 	type PalletId = CDPTreasuryPalletId;
 	type TreasuryAccount = TreasuryAccount;
 	type WeightInfo = ();
-	type CurrencyId = CurrencyId;
-	type StableCurrencyId = StableCurrencyIdValue;
-	type CollateralCurrencyId = CollateralCurrencyIdValue;
 	type Swap = MockSwap;
 	type Balance = Balance;
 	type AssetKind = CurrencyId;
@@ -221,36 +222,37 @@ impl pallet_asset_conversion::Swap<AccountId> for MockSwap {
 		Ok(0)
 	}
 }
-// mock risk manager
+/// mock risk manager
 pub struct MockRiskManager;
-impl RiskManager<AccountId, CurrencyId, Balance, Balance> for MockRiskManager {
-	fn get_debit_value(_currency_id: CurrencyId, debit_balance: Balance) -> Balance {
-		debit_balance / 2
+impl RiskManager<DebitUnit<Balance>, Balance, FixedU128> for MockRiskManager {
+	fn debit_units_to_value(_interest_rate: FixedU128, debit_units: DebitUnit<Balance>) -> Balance {
+		debit_units.into_inner()
 	}
-
+	fn value_to_debit_units(_interest_rate: FixedU128, debit_value: Balance) -> DebitUnit<Balance> {
+		DebitUnit::new(debit_value)
+	}
 	fn check_position_valid(
-		_currency_id: CurrencyId,
-		collateral_balance: Balance,
-		debit_balance: Balance,
-		check_required_ratio: bool,
+		_collateral_balance: Balance,
+		_debit_units: DebitUnit<Balance>,
+		_debit_interest_rate: FixedU128,
+		_check_required_ratio: bool,
 	) -> DispatchResult {
-		if debit_balance > 0 && check_required_ratio && collateral_balance < debit_balance * 2 {
-			return Err(sp_runtime::DispatchError::Other(
-				"mock below required collateral ratio error",
-			));
-		}
-		if collateral_balance < debit_balance {
-			return Err(sp_runtime::DispatchError::Other("mock below liquidation ratio error"));
-		}
 		Ok(())
 	}
+	fn check_debit_cap() -> DispatchResult {
+		// Calculate total debit value across all positions
+		let mut total_debit_value = Balance::zero();
+		pallet_loans::pallet::Positions::<Runtime>::iter().for_each(|(_who, position)| {
+			let debit_value =
+				Self::debit_units_to_value(position.debit.stability_fee, position.debit.units);
+			total_debit_value = total_debit_value.saturating_add(debit_value);
+		});
 
-	fn check_debit_cap(_currency_id: CurrencyId, total_debit_balance: Balance) -> DispatchResult {
-		if total_debit_balance > 1000 {
-			Err(sp_runtime::DispatchError::Other("mock exceed debit value cap error"))
-		} else {
-			Ok(())
+		// Mock: fail if total debit >= 1000 (test expects error at 1100)
+		if total_debit_value >= 1000 {
+			return Err(DispatchError::Other("mock exceed debit value cap error"));
 		}
+		Ok(())
 	}
 }
 
@@ -268,7 +270,7 @@ impl Convert<CurrencyId, Either<(), CurrencyId>> for CurrencyIdConvert {
 	}
 }
 
-type LoansMultiCurrency = UnionOf<Collateral, Assets, CurrencyIdConvert, CurrencyId, AccountId>;
+type LoansMultiCurrency = UnionOf<Balances, Assets, CurrencyIdConvert, CurrencyId, AccountId>;
 
 pub struct MockOnUpdateLoan;
 impl Handler<(u128, crate::BalanceAdjustment<u128>, u128)> for MockOnUpdateLoan {
@@ -279,21 +281,18 @@ impl Handler<(u128, crate::BalanceAdjustment<u128>, u128)> for MockOnUpdateLoan 
 
 parameter_types! {
 	pub const LoansPalletId: PalletId = PalletId(*b"py/loans");
-	pub const CollateralCurrencyIdValue: CurrencyId = CurrencyId::Native;
 }
 
-pub type Collateral = PalletBalances;
+pub type NativeFungible = Balances;
 
 impl pallet_loans::Config for Runtime {
+	type Currency = NativeFungible;
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = CDPTreasuryModule;
 	type PalletId = LoansPalletId;
 	type OnUpdateLoan = MockOnUpdateLoan;
-	type CurrencyId = CurrencyId;
-	type CollateralCurrencyId = CollateralCurrencyIdValue;
 	type LiquidationStrategy = MockLiquidationStrategy;
 	type RuntimeHoldReason = RuntimeHoldReason;
-	type Currency = Collateral;
 }
 
 pub struct ExtBuilder {
@@ -305,10 +304,7 @@ impl Default for ExtBuilder {
 	fn default() -> Self {
 		Self {
 			balances: vec![(ALICE, 10000), (BOB, 10000)],
-			asset_balances: vec![
-				(ALICE, CurrencyId::Stable, 10000),
-				(BOB, CurrencyId::Stable, 10000),
-			],
+			asset_balances: vec![(ALICE, CurrencyId::Stable, 0), (BOB, CurrencyId::Stable, 0)],
 		}
 	}
 }

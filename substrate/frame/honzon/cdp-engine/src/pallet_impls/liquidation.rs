@@ -61,15 +61,10 @@ impl<T: Config> Pallet<T> {
 	/// Liquidate an unsafe CDP and return the weight consumed.
 	pub fn liquidate_unsafe_cdp(who: AccountIdOf<T>) -> Result<Weight, DispatchError> {
 		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
-		let stability_fee = Rate::from_inner(stability_fee.into_inner());
 
-		ensure!(
-			!Self::is_cdp_safe(collateral, debit, stability_fee, &who)?,
-			Error::<T>::MustBeUnsafe
-		);
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
+		ensure!(!Self::is_cdp_safe(collateral, debit, stability_fee)?, Error::<T>::MustBeUnsafe);
 
-		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit)?;
+		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit, stability_fee)?;
 
 		let bad_debt_value = Self::convert_to_debit_value(debit, stability_fee);
 		let liquidation_penalty = Self::get_liquidation_penalty();

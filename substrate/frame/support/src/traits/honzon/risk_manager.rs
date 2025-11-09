@@ -1,45 +1,43 @@
 use sp_runtime::DispatchResult;
 /// A trait for managing the risk of the protocol.
-pub trait RiskManager<AccountId, CurrencyId, Balance, DebitBalance> {
+pub trait RiskManager<Unit, Balance, Rate> {
 	/// Returns the value of a given amount of debit.
-	fn get_debit_value(currency_id: CurrencyId, debit_balance: DebitBalance) -> Balance;
+	fn debit_units_to_value(interest_rate: Rate, debit_units: Unit) -> Balance;
+
+	/// Return the debit units of a given amount of value.
+	fn value_to_debit_units(interest_rate: Rate, debit_value: Balance) -> Unit;
 
 	/// Checks if a position is valid.
 	fn check_position_valid(
-		currency_id: CurrencyId,
 		collateral_balance: Balance,
-		debit_balance: DebitBalance,
+		debit_units: Unit,
+		debit_interest_rate: Rate,
 		check_required_ratio: bool,
 	) -> DispatchResult;
 
-	/// Checks if the total debit for a currency has reached its cap.
-	fn check_debit_cap(
-		currency_id: CurrencyId,
-		total_debit_balance: DebitBalance,
-	) -> DispatchResult;
+	/// Checks if the total debit has reached its cap.
+	fn check_debit_cap() -> DispatchResult;
 }
 
-#[cfg(feature = "std")]
-impl<AccountId, CurrencyId, Balance: Default, DebitBalance>
-	RiskManager<AccountId, CurrencyId, Balance, DebitBalance> for ()
-{
-	fn get_debit_value(_currency_id: CurrencyId, _debit_balance: DebitBalance) -> Balance {
+impl<Unit: Default, Balance: Default, Rate: Default> RiskManager<Unit, Balance, Rate> for () {
+	fn debit_units_to_value(_interest_rate: Rate, _debit_units: Unit) -> Balance {
+		Default::default()
+	}
+
+	fn value_to_debit_units(_interest_rate: Rate, _debit_value: Balance) -> Unit {
 		Default::default()
 	}
 
 	fn check_position_valid(
-		_currency_id: CurrencyId,
 		_collateral_balance: Balance,
-		_debit_balance: DebitBalance,
+		_debit_units: Unit,
+		_debit_interest_rate: Rate,
 		_check_required_ratio: bool,
 	) -> DispatchResult {
 		Ok(())
 	}
 
-	fn check_debit_cap(
-		_currency_id: CurrencyId,
-		_total_debit_balance: DebitBalance,
-	) -> DispatchResult {
+	fn check_debit_cap() -> DispatchResult {
 		Ok(())
 	}
 }

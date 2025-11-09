@@ -33,7 +33,6 @@ use sp_runtime::{
 
 impl<T: Config> CDPTreasury<T::AccountId> for Pallet<T> {
 	type Balance = T::Balance;
-	type CurrencyId = T::CurrencyId;
 
 	fn account_id() -> T::AccountId {
 		Self::account_id()

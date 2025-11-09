@@ -4,7 +4,7 @@ use sp_core::U256;
 use sp_runtime::DispatchResult;
 use sp_std::prelude::*;
 
-use super::{Position, Ratio, ExchangeRate};
+use super::{ExchangeRate, Position, Ratio};
 
 /// A trait for handling emergency shutdowns.
 pub trait EmergencyShutdown {
@@ -13,7 +13,7 @@ pub trait EmergencyShutdown {
 }
 
 /// A trait for managing the Honzon protocol, intended for use with EVM+.
-pub trait HonzonManager<AccountId, BalanceAdjustment, Balance> {
+pub trait HonzonManager<AccountId, BalanceAdjustment, Unit, Balance, Rate> {
 	/// Adjusts a CDP loan.
 	fn adjust_loan(
 		who: &AccountId,
@@ -23,7 +23,7 @@ pub trait HonzonManager<AccountId, BalanceAdjustment, Balance> {
 	/// Closes a CDP loan using a DEX.
 	fn close_loan_by_dex(who: AccountId, max_collateral_amount: Balance) -> DispatchResult;
 	/// Returns the CDP for a given account.
-	fn get_position(who: &AccountId) -> Position<Balance>;
+	fn get_position(who: &AccountId) -> Position<Unit, Balance, Rate>;
 	/// Returns the liquidation ratio for the collateral.
 	fn get_collateral_parameters() -> Vec<U256>;
 	/// Returns the current collateral-to-debit ratio of a CDP.

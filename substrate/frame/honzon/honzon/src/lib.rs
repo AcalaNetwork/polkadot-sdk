@@ -283,7 +283,7 @@ impl<T: Config> Pallet<T> {
 			);
 		}
 		let maybe_new_stability_fee = if debit_adjustment.is_increase() {
-			Some(<pallet_cdp_engine::Pallet<T>>::get_interest_rate_per_sec()?)
+			Some(<pallet_cdp_engine::Pallet<T>>::interest_rate_per_sec()?)
 		} else {
 			None
 		};

@@ -50,19 +50,7 @@ pub enum BalanceAdjustment<Balance> {
 	Decrease(Balance),
 }
 
-impl<Balance> Default for BalanceAdjustment<Balance>
-where
-	Balance: Zero,
-{
-	fn default() -> Self {
-		Self::Increase(Balance::zero())
-	}
-}
-
-impl<Balance> BalanceAdjustment<Balance>
-where
-	Balance: Copy + Zero + PartialOrd + Saturating + CheckedAdd + CheckedSub,
-{
+impl<Balance: Copy> BalanceAdjustment<Balance> {
 	/// Create a new increase adjustment.
 	pub fn increase(amount: Balance) -> Self {
 		Self::Increase(amount)
@@ -80,7 +68,6 @@ where
 			Self::Decrease(amount) => *amount,
 		}
 	}
-
 	/// Check if this is an increase adjustment.
 	pub fn is_increase(&self) -> bool {
 		matches!(self, Self::Increase(_))
@@ -90,12 +77,9 @@ where
 	pub fn is_decrease(&self) -> bool {
 		matches!(self, Self::Decrease(_))
 	}
+}
 
-	/// Check if this adjustment is zero (no change).
-	pub fn is_zero(&self) -> bool {
-		self.amount().is_zero()
-	}
-
+impl<Balance: CheckedAdd + CheckedSub> BalanceAdjustment<Balance> {
 	/// Apply this adjustment to a current balance, returning the new balance.
 	///
 	/// Returns `None` if the adjustment would cause underflow.
@@ -107,7 +91,9 @@ where
 				current.checked_sub(amount).ok_or(sp_arithmetic::ArithmeticError::Underflow),
 		}
 	}
+}
 
+impl<Balance: Copy + Saturating> BalanceAdjustment<Balance> {
 	/// Apply this adjustment to a current balance using saturating arithmetic.
 	pub fn saturating_apply_to(&self, current: Balance) -> Balance {
 		match self {
@@ -115,54 +101,13 @@ where
 			Self::Decrease(amount) => current.saturating_sub(*amount),
 		}
 	}
+}
 
-	/// Reverse this adjustment (increase becomes decrease and vice versa).
-	pub fn reverse(self) -> Self {
+impl<Balance: Zero + Copy> BalanceAdjustment<Balance> {
+	pub fn is_zero(&self) -> bool {
 		match self {
-			Self::Increase(amount) => Self::Decrease(amount),
-			Self::Decrease(amount) => Self::Increase(amount),
-		}
-	}
-
-	/// Combine two adjustments of the same type.
-	///
-	/// Returns `None` if the adjustments are of different types or would overflow.
-	pub fn combine_with(self, other: Self) -> Option<Self> {
-		match (&self, &other) {
-			(Self::Increase(a), Self::Increase(b)) => a.checked_add(b).map(Self::Increase),
-			(Self::Decrease(a), Self::Decrease(b)) => a.checked_add(b).map(Self::Decrease),
-			(Self::Increase(a), Self::Decrease(b)) =>
-				if a >= b {
-					a.checked_sub(b).map(Self::Increase)
-				} else {
-					b.checked_sub(a).map(Self::Decrease)
-				},
-			(Self::Decrease(a), Self::Increase(b)) =>
-				if b >= a {
-					b.checked_sub(a).map(Self::Increase)
-				} else {
-					a.checked_sub(b).map(Self::Decrease)
-				},
-		}
-	}
-
-	/// Combine two adjustments using saturating arithmetic.
-	pub fn saturating_combine_with(self, other: Self) -> Self {
-		match (&self, &other) {
-			(Self::Increase(a), Self::Increase(b)) => Self::Increase(a.saturating_add(*b)),
-			(Self::Decrease(a), Self::Decrease(b)) => Self::Decrease(a.saturating_add(*b)),
-			(Self::Increase(a), Self::Decrease(b)) =>
-				if a >= b {
-					Self::Increase(a.saturating_sub(*b))
-				} else {
-					Self::Decrease(b.saturating_sub(*a))
-				},
-			(Self::Decrease(a), Self::Increase(b)) =>
-				if b >= a {
-					Self::Increase(b.saturating_sub(*a))
-				} else {
-					Self::Decrease(a.saturating_sub(*b))
-				},
+			Self::Increase(amount) => amount.is_zero(),
+			Self::Decrease(amount) => amount.is_zero(),
 		}
 	}
 }
@@ -194,47 +139,5 @@ mod tests {
 		assert_eq!(increase.apply_to(200u128), Ok(300u128));
 		assert_eq!(decrease.apply_to(200u128), Ok(150u128));
 		assert_eq!(decrease.apply_to(30u128), Err(ArithmeticError::Underflow)); // underflow
-	}
-
-	#[test]
-	fn balance_adjustment_saturating_apply_to() {
-		let decrease = BalanceAdjustment::decrease(100u128);
-		assert_eq!(decrease.saturating_apply_to(50u128), 0u128); // saturates to 0
-	}
-
-	#[test]
-	fn balance_adjustment_reverse() {
-		let increase = BalanceAdjustment::increase(100u128);
-		let reversed = increase.reverse();
-		assert!(reversed.is_decrease());
-		assert_eq!(reversed.amount(), 100u128);
-	}
-
-	#[test]
-	fn balance_adjustment_combine() {
-		let increase1 = BalanceAdjustment::increase(100u128);
-		let increase2 = BalanceAdjustment::increase(50u128);
-		let combined = increase1.combine_with(increase2).unwrap();
-		assert!(combined.is_increase());
-		assert_eq!(combined.amount(), 150u128);
-
-		let decrease = BalanceAdjustment::decrease(75u128);
-		let combined = increase1.combine_with(decrease).unwrap();
-		assert!(combined.is_increase());
-		assert_eq!(combined.amount(), 25u128);
-
-		let decrease2 = BalanceAdjustment::decrease(150u128);
-		let combined = increase1.combine_with(decrease2).unwrap();
-		assert!(combined.is_decrease());
-		assert_eq!(combined.amount(), 50u128);
-	}
-
-	#[test]
-	fn balance_adjustment_saturating_combine() {
-		let increase = BalanceAdjustment::increase(100u128);
-		let decrease = BalanceAdjustment::decrease(50u128);
-		let combined = increase.saturating_combine_with(decrease);
-		assert!(combined.is_increase());
-		assert_eq!(combined.amount(), 50u128);
 	}
 }
