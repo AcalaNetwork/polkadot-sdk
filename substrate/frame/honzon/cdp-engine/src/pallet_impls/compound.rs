@@ -7,9 +7,9 @@ impl<T: Config> Pallet<T> {
 			let interval_secs = now_secs.saturating_sub(last_accumulation_secs);
 			let mut touched_entries: u32 = 0;
 
-			for (stability_fee, total_debits) in pallet_loans::TotalDebitByStabilityFee::<T>::iter()
+			for (stability_fee, debit_units) in pallet_loans::TotalDebitByStabilityFee::<T>::iter()
 			{
-				if total_debits.is_zero() {
+				if debit_units.is_zero() {
 					continue;
 				}
 
@@ -20,11 +20,11 @@ impl<T: Config> Pallet<T> {
 
 				let compound_factor = Self::get_or_init_compound_factor(stability_fee);
 				let compound_factor_increment = compound_factor.saturating_mul(rate_to_accumulate);
-				let stable_coin_balance_to_issue =
-					compound_factor_increment.saturating_mul_int(total_debits);
+				let stable_coin_amount_to_issue =
+					compound_factor_increment.saturating_mul_int(debit_units.into_inner());
 
 				let res =
-					<T as Config>::CDPTreasury::on_system_surplus(stable_coin_balance_to_issue);
+					<T as Config>::CDPTreasury::on_system_surplus(stable_coin_amount_to_issue);
 				match res {
 					Ok(_) => {
 						let new_compound_factor =
@@ -36,7 +36,7 @@ impl<T: Config> Pallet<T> {
 						log::warn!(
 							target: "cdp-engine",
 							"on_system_surplus: failed to on system surplus {:?}: {:?}. This is unexpected but should be safe",
-							stable_coin_balance_to_issue,
+							stable_coin_amount_to_issue,
 							e
 						);
 					},
@@ -76,21 +76,24 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Converts a given debit balance to its value based on the stability fee's compound factor.
-	pub fn convert_to_debit_value(
-		debit_balance: pallet_loans::BalanceOf<T>,
+	pub fn do_debit_units_to_value(
+		debit_units: pallet_loans::DebitUnitOf<T>,
 		stability_fee: Rate,
 	) -> pallet_loans::BalanceOf<T> {
-		Self::get_or_init_compound_factor(stability_fee).saturating_mul_int(debit_balance)
+		Self::get_or_init_compound_factor(stability_fee)
+			.saturating_mul_int(debit_units.into_inner())
 	}
 
 	/// Converts a debit value amount into a debit balance using the given stability fee's compound
 	/// factor
-	pub fn convert_to_debit_balance(
+	pub fn do_debit_value_to_units(
 		debit_value: pallet_loans::BalanceOf<T>,
 		stability_fee: Rate,
-	) -> pallet_loans::BalanceOf<T> {
-		Self::get_or_init_compound_factor(stability_fee)
-			.reciprocal()
-			.saturating_mul_int(debit_value)
+	) -> pallet_loans::DebitUnitOf<T> {
+		pallet_loans::DebitUnitOf::<T>::new(
+			Self::get_or_init_compound_factor(stability_fee)
+				.reciprocal()
+				.saturating_mul_int(debit_value),
+		)
 	}
 }

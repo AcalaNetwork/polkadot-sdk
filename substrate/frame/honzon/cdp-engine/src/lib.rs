@@ -109,6 +109,7 @@ pub use pallet::*;
 pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 pub type LoansOf<T> = pallet_loans::Pallet<T>;
 pub type CurrencyOf<T> = <T as Config>::Currency;
+pub type CurrencyIdOf<T> = <T as Config>::CurrencyId;
 
 #[derive(RuntimeDebug)]
 pub enum OffchainErr {
@@ -125,7 +126,6 @@ pub const DEFAULT_MAX_ITERATIONS: u32 = 1000;
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
-	pub type CurrencyIdOf<T> = <T as pallet_loans::Config>::CurrencyId;
 
 	#[pallet::config]
 	pub trait Config:
@@ -134,6 +134,7 @@ pub mod pallet {
 		+ frame_system::offchain::CreateTransactionBase<Call<Self>>
 		+ frame_system::offchain::CreateBare<Call<Self>>
 	{
+		type CurrencyId: Parameter + Member + Copy + MaybeSerializeDeserialize + Ord;
 		/// The risk management params
 		///
 		/// can be set via pallet-parameters
@@ -168,7 +169,6 @@ pub mod pallet {
 		type CDPTreasury: CDPTreasuryExtended<
 			Self::AccountId,
 			Balance = pallet_loans::BalanceOf<Self>,
-			CurrencyId = CurrencyIdOf<Self>,
 		>;
 
 		/// The price source of all types of currencies related to CDP
@@ -239,8 +239,6 @@ pub mod pallet {
 		BelowRequiredCollateralRatio,
 		/// The collateral ratio below the liquidation ratio
 		BelowLiquidationRatio,
-		/// The CDP must be unsafe status
-		MustBeUnsafe,
 		/// The CDP must be safe status
 		MustBeSafe,
 		/// Remain debit value in CDP below the dust amount
@@ -398,7 +396,10 @@ pub mod pallet {
 		/// ## Errors
 		///
 		/// - [`Error::AlreadyShutdown`]: System is in emergency shutdown mode.
-		/// - [`Error::MustBeUnsafe`]: The CDP is not in an unsafe state and cannot be liquidated.
+		/// - [`Error::InvalidFeedPrice`]: Feed price is invalid.
+		/// - [`Error::RemainDebitValueTooSmall`]: Remain debit value in CDP below the dust amount.
+		/// - [`Error::ExceedDebitValueHardCap`]: The total debit value of specific collateral type
+		///   already exceed the hard cap.
 		///
 		/// ## Events
 		///
@@ -412,7 +413,7 @@ pub mod pallet {
 			ensure_none(origin)?;
 			let who = T::Lookup::lookup(who)?;
 			ensure!(!T::EmergencyShutdown::is_shutdown(), Error::<T>::AlreadyShutdown);
-			let consumed_weight: Weight = Self::liquidate_unsafe_cdp(who)?;
+			let consumed_weight: Weight = Self::do_liquidate(who)?;
 			Ok(Some(consumed_weight).into())
 		}
 
@@ -430,6 +431,10 @@ pub mod pallet {
 		/// emergency shutdown. During settlement:
 		///
 		/// - `who`: Owner of the CDP to settle.
+		///
+		/// ## Errors
+		///
+		/// - [`Error::MustAfterShutdown`]: System is not in emergency shutdown mode.
 		#[pallet::call_index(1)]
 		#[pallet::weight(<T as Config>::WeightInfo::settle())]
 		pub fn settle(
@@ -439,7 +444,7 @@ pub mod pallet {
 			ensure_none(origin)?;
 			let who = T::Lookup::lookup(who)?;
 			ensure!(T::EmergencyShutdown::is_shutdown(), Error::<T>::MustAfterShutdown);
-			Self::settle_cdp_has_debit(who)?;
+			Self::do_settle(who)?;
 			Ok(())
 		}
 	}
@@ -452,13 +457,12 @@ pub mod pallet {
 			match call {
 				Call::liquidate { who } => {
 					let account = T::Lookup::lookup(who.clone())?;
-					let Position { collateral, debit, stability_fee } =
-						<LoansOf<T>>::positions(&account);
-					if collateral.is_zero() && debit.is_zero() {
+					let Position { collateral, debit } = <LoansOf<T>>::positions(&account);
+					if collateral.is_zero() && debit.units.is_zero() {
 						return InvalidTransaction::Stale.into();
 					}
-					if Self::is_cdp_safe(collateral, debit, stability_fee, &account).unwrap_or(true) ||
-						T::EmergencyShutdown::is_shutdown()
+					if Self::is_cdp_safe(collateral, debit.units, debit.stability_fee)
+						.unwrap_or(true) || T::EmergencyShutdown::is_shutdown()
 					{
 						return InvalidTransaction::Stale.into();
 					}
@@ -472,7 +476,7 @@ pub mod pallet {
 				Call::settle { who } => {
 					let account = T::Lookup::lookup(who.clone())?;
 					let Position { debit, .. } = <LoansOf<T>>::positions(&account);
-					if debit.is_zero() || !T::EmergencyShutdown::is_shutdown() {
+					if debit.units.is_zero() || !T::EmergencyShutdown::is_shutdown() {
 						return InvalidTransaction::Stale.into();
 					}
 

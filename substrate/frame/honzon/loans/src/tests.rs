@@ -39,8 +39,8 @@ fn total_positions() -> (u128, u128) {
 	let mut total_collateral = 0u128;
 	Positions::<Runtime>::iter().for_each(|(_who, position)| {
 		let debit_value = MockRiskManager::debit_units_to_value(
-			position.debit.stability_fee,
 			position.debit.units,
+			position.debit.stability_fee,
 		);
 		total_debit_value += debit_value;
 		total_collateral += position.collateral;
@@ -54,7 +54,7 @@ fn debit_value(
 ) -> u128 {
 	use frame_support::traits::honzon::RiskManager;
 	use mock::MockRiskManager;
-	MockRiskManager::debit_units_to_value(position.debit.stability_fee, position.debit.units)
+	MockRiskManager::debit_units_to_value(position.debit.units, position.debit.stability_fee)
 }
 
 // Helper to get debit units value (for DebitUnit comparisons)
@@ -62,7 +62,7 @@ fn debit_units_value(units: DebitUnit<u128>) -> u128 {
 	use frame_support::traits::honzon::RiskManager;
 	use mock::MockRiskManager;
 	// For Rate::one(), the value equals units
-	MockRiskManager::debit_units_to_value(Rate::one(), units)
+	MockRiskManager::debit_units_to_value(units, Rate::one())
 }
 
 #[test]
@@ -73,7 +73,8 @@ fn check_update_loan_underflow_work() {
 		assert_ok!(Loans::update_loan(
 			&ALICE,
 			BalanceAdjustment::Increase(100),
-			BalanceAdjustment::Increase(50)
+			BalanceAdjustment::Increase(50),
+			None,
 		));
 
 		// collateral underflow
@@ -81,7 +82,8 @@ fn check_update_loan_underflow_work() {
 			Loans::update_loan(
 				&ALICE,
 				BalanceAdjustment::Decrease(200),
-				BalanceAdjustment::Increase(0)
+				BalanceAdjustment::Increase(0),
+				None,
 			),
 			DispatchError::Arithmetic(ArithmeticError::Underflow),
 		);
@@ -91,7 +93,8 @@ fn check_update_loan_underflow_work() {
 			Loans::update_loan(
 				&ALICE,
 				BalanceAdjustment::Increase(0),
-				BalanceAdjustment::Decrease(100)
+				BalanceAdjustment::Decrease(100),
+				None,
 			),
 			DispatchError::Arithmetic(ArithmeticError::Underflow),
 		);
@@ -115,7 +118,8 @@ fn update_loan_should_work() {
 		assert_ok!(Loans::update_loan(
 			&ALICE,
 			BalanceAdjustment::Increase(3000),
-			BalanceAdjustment::Increase(2000)
+			BalanceAdjustment::Increase(2000),
+			None,
 		));
 
 		// just update records
@@ -140,7 +144,8 @@ fn update_loan_should_work() {
 		assert_ok!(Loans::update_loan(
 			&ALICE,
 			BalanceAdjustment::Decrease(3000),
-			BalanceAdjustment::Decrease(2000)
+			BalanceAdjustment::Decrease(2000),
+			None,
 		));
 		assert_eq!(debit_value(&Loans::positions(ALICE)), 0);
 		assert_eq!(Loans::positions(ALICE).collateral, 0);
@@ -159,12 +164,14 @@ fn transfer_loan_should_work() {
 		assert_ok!(Loans::update_loan(
 			&ALICE,
 			BalanceAdjustment::Increase(1000),
-			BalanceAdjustment::Increase(500)
+			BalanceAdjustment::Increase(500),
+			None,
 		));
 		assert_ok!(Loans::update_loan(
 			&BOB,
 			BalanceAdjustment::Increase(1200),
-			BalanceAdjustment::Increase(600)
+			BalanceAdjustment::Increase(600),
+			None,
 		));
 		assert_eq!(debit_value(&Loans::positions(ALICE)), 500);
 		assert_eq!(Loans::positions(ALICE).collateral, 1000);
@@ -196,7 +203,8 @@ fn confiscate_collateral_and_debit_work() {
 		assert_ok!(Loans::update_loan(
 			&BOB,
 			BalanceAdjustment::Increase(5000),
-			BalanceAdjustment::Increase(1000)
+			BalanceAdjustment::Increase(1000),
+			None
 		));
 		assert_eq!(NativeFungible::balance(&Loans::account_id()), 0);
 
@@ -217,7 +225,8 @@ fn confiscate_collateral_and_debit_work_success() {
 		assert_ok!(Loans::update_loan(
 			&ALICE,
 			BalanceAdjustment::Increase(500),
-			BalanceAdjustment::Increase(200)
+			BalanceAdjustment::Increase(200),
+			None,
 		));
 		// Manually hold collateral since update_loan doesn't do it
 		assert_ok!(NativeFungible::hold(&hold_reason, &ALICE, 500));

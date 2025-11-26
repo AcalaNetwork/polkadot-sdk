@@ -47,10 +47,10 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 	fn get_position(vault_id: &T::VaultId) -> Result<(BalanceOf<T>, BalanceOf<T>), DispatchError> {
 		let vault_account = vault_account_id::<T>(*vault_id);
 		let position = <LoansOf<T>>::positions(&vault_account);
-		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
-		let effective_stability_fee =
-			Self::get_effective_stability_fee(stability_fee, &vault_account);
-		let debit_value = Self::convert_to_debit_value(position.debit, effective_stability_fee);
+		// TODO(zjy): check how to handle the effective stability fee.
+		let effective_stability_fee = position.debit.stability_fee;
+		let debit_value =
+			Self::do_debit_units_to_value(position.debit.units, effective_stability_fee);
 		Ok((position.collateral, debit_value))
 	}
 
@@ -124,19 +124,16 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		VaultIdByAccountId::<T>::insert(&vault_account, *vault_id);
 		let stable_currency_id = T::GetStableCurrencyId::get();
 
-		// Convert the stablecoin amount to the equivalent debit amount.
-		let debit_amount = Self::convert_to_debit_balance(amount, Self::interest_rate_per_sec());
+		let effective_stability_fee =
+			Self::get_effective_stability_fee(Self::interest_rate_per_sec(), &vault_account);
 
 		// Increase the debit in the vault's position. This will mint stablecoin to the vault's
 		// account.
-		let debit_adjustment = pallet_loans::BalanceAdjustment::increase(debit_amount);
-		let collateral_adjustment =
-			pallet_loans::BalanceAdjustment::increase(BalanceOf::<T>::zero());
 		<LoansOf<T>>::adjust_position(
 			&vault_account,
-			collateral_adjustment,
-			debit_adjustment,
-			Some(Self::interest_rate_per_sec()),
+			pallet_loans::BalanceAdjustment::increase(BalanceOf::<T>::zero()),
+			pallet_loans::BalanceAdjustment::increase(amount),
+			Some(effective_stability_fee),
 		)?;
 
 		// Transfer the newly minted stablecoin from the vault's account to the user.
@@ -156,7 +153,8 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 		let vault_account = vault_account_id::<T>(*vault_id);
 		let stable_currency_id = T::GetStableCurrencyId::get();
 		let position = <LoansOf<T>>::positions(&vault_account);
-		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
+		let effective_stability_fee =
+			Self::get_effective_stability_fee(position.debit.stability_fee, &vault_account);
 
 		// Transfer stablecoin from the user to the vault's account for repayment.
 		<T as Config>::Tokens::transfer(
@@ -167,22 +165,11 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 			Preservation::Preserve,
 		)?;
 
-		// Convert the stablecoin amount to the equivalent debit amount.
-		let debit_amount = Self::convert_to_debit_balance(
-			amount,
-			Self::get_effective_stability_fee(stability_fee, &vault_account),
-		);
-
-		// Decrease the debit in the vault's position. This will burn the stablecoin from the
-		// vault's account.
-		let debit_adjustment = pallet_loans::BalanceAdjustment::decrease(debit_amount);
-		let collateral_adjustment =
-			pallet_loans::BalanceAdjustment::increase(BalanceOf::<T>::zero());
 		<LoansOf<T>>::adjust_position(
 			&vault_account,
-			collateral_adjustment,
-			debit_adjustment,
-			None,
+			pallet_loans::BalanceAdjustment::increase(BalanceOf::<T>::zero()),
+			pallet_loans::BalanceAdjustment::decrease(amount),
+			Some(effective_stability_fee),
 		)?;
 
 		Ok(())
@@ -191,7 +178,10 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 	fn close_vault(vault_id: &T::VaultId) -> DispatchResult {
 		let vault_account = vault_account_id::<T>(*vault_id);
 		let position = <LoansOf<T>>::positions(&vault_account);
-		ensure!(position.collateral.is_zero() && position.debit.is_zero(), "Vault is not empty");
+		ensure!(
+			position.collateral.is_zero() && position.debit.units.is_zero(),
+			"Vault is not empty"
+		);
 		VaultIdByAccountId::<T>::remove(&vault_account);
 		Ok(())
 	}
@@ -199,6 +189,6 @@ impl<T: Config> VaultProvider<T::AccountId, BalanceOf<T>, CurrencyIdOf<T>, T::Va
 	fn has_debt(vault_id: &T::VaultId) -> Result<bool, DispatchError> {
 		let vault_account = vault_account_id::<T>(*vault_id);
 		let position = <LoansOf<T>>::positions(&vault_account);
-		Ok(!position.debit.is_zero())
+		Ok(!position.debit.units.is_zero())
 	}
 }

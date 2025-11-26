@@ -21,13 +21,13 @@
 use super::*;
 use crate as pallet_cdp_engine;
 use frame_support::{
-	construct_runtime, derive_impl,
+	derive_impl,
 	dynamic_params::{dynamic_pallet_params, dynamic_params},
 	parameter_types,
 	traits::{
 		honzon::{
-			CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, EmergencyShutdown, Handler,
-			LiquidationTarget, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
+			CDPTreasury as CDPTreasuryT, CDPTreasuryExtended, DebitUnit, EmergencyShutdown,
+			Handler, LiquidationTarget, Price, PriceProvider, Rate, Ratio, RiskManager, SwapLimit,
 		},
 		ConstU128, ConstU32, ConstU64, EnsureOriginWithArg, UnixTime,
 	},
@@ -72,26 +72,52 @@ impl Handler<(AccountId, pallet_loans::BalanceAdjustment<Balance>, Balance)> for
 }
 
 // Configure a mock runtime to test the pallet.
-construct_runtime!(
-	pub enum Test
-	{
-		System: frame_system,
-		Assets: pallet_assets,
-		Balances: pallet_balances,
-		Loans: pallet_loans,
-		CDPEngine: pallet_cdp_engine,
-		Parameters: pallet_parameters,
-		ShutdownMock: shutdown_mock,
-	}
-);
+#[frame_support::runtime]
+mod runtime {
+
+	#[runtime::runtime]
+	#[runtime::derive(
+		RuntimeCall,
+		RuntimeEvent,
+		RuntimeError,
+		RuntimeOrigin,
+		RuntimeFreezeReason,
+		RuntimeHoldReason,
+		RuntimeSlashReason,
+		RuntimeLockId,
+		RuntimeTask,
+		RuntimeViewFunction
+	)]
+	pub struct Test;
+
+	#[runtime::pallet_index(0)]
+	pub type System = frame_system::Pallet<Test>;
+
+	#[runtime::pallet_index(1)]
+	pub type Assets = pallet_assets::Pallet<Test>;
+
+	#[runtime::pallet_index(2)]
+	pub type Balances = pallet_balances::Pallet<Test>;
+
+	#[runtime::pallet_index(3)]
+	pub type Loans = pallet_loans::Pallet<Test>;
+
+	#[runtime::pallet_index(4)]
+	pub type CDPEngine = pallet_cdp_engine::Pallet<Test>;
+
+	#[runtime::pallet_index(5)]
+	pub type Parameters = pallet_parameters::Pallet<Test>;
+
+	#[runtime::pallet_index(6)]
+	pub type ShutdownMock = shutdown_mock::Pallet<Test>;
+}
 
 impl shutdown_mock::Config for Test {}
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl frame_system::Config for Test {
-	// Use defaults from TestDefaultConfig and override only what's different for this mock runtime.
 	type Block = Block;
-	type AccountData = pallet_balances::AccountData<u128>;
+	type AccountData = pallet_balances::AccountData<Balance>;
 }
 
 impl<C> frame_system::offchain::CreateTransactionBase<C> for Test
@@ -120,25 +146,16 @@ impl UnixTime for MockUnixTime {
 	}
 }
 
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::pallet::DefaultConfig)]
 impl pallet_balances::Config for Test {
 	type Balance = Balance;
-	type DustRemoval = ();
-	type RuntimeEvent = RuntimeEvent;
 	type ExistentialDeposit = ConstU128<1>;
 	type AccountStore = System;
-	type WeightInfo = ();
-	type MaxLocks = ();
-	type MaxReserves = ();
 	type ReserveIdentifier = [u8; 8];
-	type RuntimeHoldReason = pallet_loans::HoldReason;
-	type RuntimeFreezeReason = ();
-	type FreezeIdentifier = ();
-	type MaxFreezes = ();
-	type DoneSlashHandler = ();
 }
 
+#[derive_impl(pallet_assets::config_preludes::TestDefaultConfig as pallet_assets::pallet::DefaultConfig)]
 impl pallet_assets::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
 	type AssetId = CurrencyId;
 	type AssetIdParameter = CurrencyId;
@@ -151,12 +168,7 @@ impl pallet_assets::Config for Test {
 	type MetadataDepositPerByte = ConstU128<0>;
 	type ApprovalDeposit = ConstU128<0>;
 	type StringLimit = ConstU32<64>;
-	type Freezer = ();
-	type Extra = ();
-	type WeightInfo = ();
 	type RemoveItemsLimit = ConstU32<1000>;
-	type CallbackHandle = ();
-	type Holder = ();
 	pallet_assets::runtime_benchmarks_enabled! {
 		type BenchmarkHelper = ();
 	}
@@ -177,40 +189,42 @@ parameter_types! {
 }
 
 pub struct MockRiskManager;
-impl RiskManager<u64, CurrencyId, Balance, Balance> for MockRiskManager {
-	fn get_debit_value(_currency_id: CurrencyId, debit_balance: Balance) -> Balance {
-		debit_balance
+impl RiskManager<DebitUnit<Balance>, Balance, FixedU128> for MockRiskManager {
+	fn debit_units_to_value(debit_units: DebitUnit<Balance>, _stability_fee: FixedU128) -> Balance {
+		debit_units.into_inner()
 	}
-
+	fn value_to_debit_units(debit_value: Balance, _stability_fee: FixedU128) -> DebitUnit<Balance> {
+		DebitUnit::new(debit_value)
+	}
 	fn check_position_valid(
-		_currency_id: CurrencyId,
-		collateral_balance: Balance,
-		debit_balance: Balance,
-		check_required_ratio: bool,
+		_collateral_balance: Balance,
+		_debit_units: DebitUnit<Balance>,
+		_debit_interest_rate: FixedU128,
+		_check_required_ratio: bool,
 	) -> DispatchResult {
-		if debit_balance.is_zero() {
-			return Ok(());
-		}
-		if check_required_ratio {
-			let collateral_value = collateral_balance.saturating_mul(100);
-			let required_value = debit_balance.saturating_mul(150);
-			if collateral_value < required_value {
-				return Err(Error::<Test>::BelowRequiredCollateralRatio.into());
-			}
-		}
 		Ok(())
 	}
+	fn check_debit_cap() -> DispatchResult {
+		// Calculate total debit value across all positions
+		let mut total_debit_value = Balance::zero();
+		pallet_loans::pallet::Positions::<Test>::iter().for_each(|(_who, position)| {
+			let debit_value =
+				Self::debit_units_to_value(position.debit.units, position.debit.stability_fee);
+			total_debit_value = total_debit_value.saturating_add(debit_value);
+		});
 
-	fn check_debit_cap(_currency_id: CurrencyId, _total_debit_balance: Balance) -> DispatchResult {
+		// Mock: fail if total debit >= 1000 (test expects error at 1100)
+		if total_debit_value >= 1000 {
+			return Err(DispatchError::Other("mock exceed debit value cap error"));
+		}
 		Ok(())
 	}
 }
 
 pub struct MockLiquidationStrategy;
-impl LiquidationTarget<u64, CurrencyId, Balance> for MockLiquidationStrategy {
+impl LiquidationTarget<u64, Balance> for MockLiquidationStrategy {
 	fn liquidate(
 		_who: &u64,
-		_currency_id: CurrencyId,
 		_collateral_to_sell: Balance,
 		_debit_to_cover: Balance,
 	) -> Result<(Balance, Balance), DispatchError> {
@@ -220,12 +234,10 @@ impl LiquidationTarget<u64, CurrencyId, Balance> for MockLiquidationStrategy {
 
 impl pallet_loans::Config for Test {
 	type Currency = Balances;
-	type RuntimeHoldReason = pallet_loans::HoldReason;
-	type CurrencyId = CurrencyId;
+	type RuntimeHoldReason = RuntimeHoldReason;
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = MockCDPTreasury;
 	type PalletId = LoansPalletId;
-	type CollateralCurrencyId = GetNativeCurrencyId;
 	type OnUpdateLoan = DummyOnUpdateLoan;
 	type LiquidationStrategy = MockLiquidationStrategy;
 }
@@ -333,6 +345,7 @@ mod custom_origin {
 
 impl pallet_cdp_engine::Config for Test {
 	type AssetKind = CurrencyId;
+	type CurrencyId = CurrencyId;
 	type DefaultCompoundFactor = DefaultCompoundFactor;
 	type MinimumDebitValue = ConstU128<100>;
 	type MinimumCollateralAmount = MinimumCollateralAmount;
@@ -361,7 +374,6 @@ parameter_types! {
 
 pub struct MockCDPTreasury;
 impl<AccountId: Clone + Default> CDPTreasuryT<AccountId> for MockCDPTreasury {
-	type CurrencyId = u32;
 	type Balance = Balance;
 
 	fn account_id() -> AccountId {

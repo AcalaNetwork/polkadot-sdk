@@ -15,13 +15,6 @@ impl<T: Config> Pallet<T> {
 		effective_fee
 	}
 
-	fn get_debit_value(
-		stability_fee: Rate,
-		debit_balance: pallet_loans::BalanceOf<T>,
-	) -> pallet_loans::BalanceOf<T> {
-		Self::get_or_init_compound_factor(stability_fee).saturating_mul_int(debit_balance)
-	}
-
 	/// Calculates the collateral ratio given collateral, debit, price, and compound factor.
 	pub fn calculate_collateral_ratio(
 		collateral_balance: pallet_loans::BalanceOf<T>,
@@ -38,7 +31,7 @@ impl<T: Config> Pallet<T> {
 	/// Check if collateral ratio below liquidation ratio
 	pub fn is_cdp_safe(
 		collateral_balance: pallet_loans::BalanceOf<T>,
-		debit_balance: pallet_loans::BalanceOf<T>,
+		debit_units: pallet_loans::DebitUnitOf<T>,
 		stability_fee: Rate,
 	) -> Result<bool, Error<T>> {
 		let feed_price = T::PriceSource::get_relative_price(
@@ -46,9 +39,9 @@ impl<T: Config> Pallet<T> {
 			T::GetStableCurrencyId::get(),
 		)
 		.ok_or(Error::<T>::InvalidFeedPrice)?;
-		let debit_value = Self::get_debit_value(stability_fee, debit_balance);
+		let debit_value = Self::do_debit_units_to_value(debit_units, stability_fee);
 		let collateral_ratio =
-			Self::calculate_collateral_ratio(collateral_balance, debit_value, feed_price);
+			Self::calculate_collateral_ratio(collateral_balance, feed_price, debit_value);
 		Ok(collateral_ratio >= Self::get_liquidation_ratio())
 	}
 
@@ -56,17 +49,17 @@ impl<T: Config> Pallet<T> {
 	/// Shared validator for position collateral/debt, reused by both trait and pallet logic.
 	pub fn do_check_position(
 		collateral_balance: pallet_loans::BalanceOf<T>,
-		debit_balance: pallet_loans::BalanceOf<T>,
-		stability_fee: Rate,
+		debit_units: pallet_loans::DebitUnitOf<T>,
+		debit_interest_rate: Rate,
 		check_required_ratio: bool,
 	) -> Result<(), Error<T>> {
-		if !debit_balance.is_zero() {
+		if !debit_units.is_zero() {
 			let feed_price = <T as Config>::PriceSource::get_relative_price(
 				T::GetNativeCurrencyId::get(),
 				T::GetStableCurrencyId::get(),
 			)
 			.ok_or(Error::<T>::InvalidFeedPrice)?;
-			let debit_value = Self::get_debit_value(stability_fee, debit_balance);
+			let debit_value = Self::do_debit_units_to_value(debit_units, debit_interest_rate);
 			let collateral_ratio =
 				Self::calculate_collateral_ratio(collateral_balance, feed_price, debit_value);
 
@@ -79,8 +72,10 @@ impl<T: Config> Pallet<T> {
 				}
 			}
 
-			let liquidation_ratio = Self::get_liquidation_ratio();
-			ensure!(collateral_ratio >= liquidation_ratio, Error::<T>::BelowLiquidationRatio);
+			ensure!(
+				collateral_ratio >= Self::get_liquidation_ratio(),
+				Error::<T>::BelowLiquidationRatio
+			);
 
 			ensure!(
 				debit_value >= T::MinimumDebitValue::get(),
@@ -100,11 +95,11 @@ impl<T: Config> Pallet<T> {
 	pub fn do_check_debit_cap() -> Result<(), Error<T>> {
 		let hard_cap = Self::maximum_total_debit_value();
 		let mut total_debit_value = pallet_loans::BalanceOf::<T>::zero();
-		for (stability_fee, debit_balance) in pallet_loans::TotalDebitByStabilityFee::<T>::iter() {
-			if debit_balance.is_zero() {
+		for (stability_fee, debit_units) in pallet_loans::TotalDebitByStabilityFee::<T>::iter() {
+			if debit_units.is_zero() {
 				continue;
 			}
-			let debit_value = Self::get_debit_value(stability_fee, debit_balance);
+			let debit_value = Self::do_debit_units_to_value(debit_units, stability_fee);
 			total_debit_value = total_debit_value.saturating_add(debit_value);
 		}
 		ensure!(total_debit_value <= hard_cap, Error::<T>::ExceedDebitValueHardCap);

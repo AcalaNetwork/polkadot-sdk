@@ -2,10 +2,10 @@ use sp_runtime::DispatchResult;
 /// A trait for managing the risk of the protocol.
 pub trait RiskManager<Unit, Balance, Rate> {
 	/// Returns the value of a given amount of debit.
-	fn debit_units_to_value(interest_rate: Rate, debit_units: Unit) -> Balance;
+	fn debit_units_to_value(debit_units: Unit, stability_fee: Rate) -> Balance;
 
 	/// Return the debit units of a given amount of value.
-	fn value_to_debit_units(interest_rate: Rate, debit_value: Balance) -> Unit;
+	fn value_to_debit_units(debit_value: Balance, stability_fee: Rate) -> Unit;
 
 	/// Checks if a position is valid.
 	fn check_position_valid(
@@ -20,11 +20,11 @@ pub trait RiskManager<Unit, Balance, Rate> {
 }
 
 impl<Unit: Default, Balance: Default, Rate: Default> RiskManager<Unit, Balance, Rate> for () {
-	fn debit_units_to_value(_interest_rate: Rate, _debit_units: Unit) -> Balance {
+	fn debit_units_to_value(_debit_units: Unit, _stability_fee: Rate) -> Balance {
 		Default::default()
 	}
 
-	fn value_to_debit_units(_interest_rate: Rate, _debit_value: Balance) -> Unit {
+	fn value_to_debit_units(_debit_value: Balance, _stability_fee: Rate) -> Unit {
 		Default::default()
 	}
 

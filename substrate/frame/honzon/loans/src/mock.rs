@@ -225,10 +225,10 @@ impl pallet_asset_conversion::Swap<AccountId> for MockSwap {
 /// mock risk manager
 pub struct MockRiskManager;
 impl RiskManager<DebitUnit<Balance>, Balance, FixedU128> for MockRiskManager {
-	fn debit_units_to_value(_interest_rate: FixedU128, debit_units: DebitUnit<Balance>) -> Balance {
+	fn debit_units_to_value(debit_units: DebitUnit<Balance>, _stability_fee: FixedU128) -> Balance {
 		debit_units.into_inner()
 	}
-	fn value_to_debit_units(_interest_rate: FixedU128, debit_value: Balance) -> DebitUnit<Balance> {
+	fn value_to_debit_units(debit_value: Balance, _stability_fee: FixedU128) -> DebitUnit<Balance> {
 		DebitUnit::new(debit_value)
 	}
 	fn check_position_valid(
@@ -244,7 +244,7 @@ impl RiskManager<DebitUnit<Balance>, Balance, FixedU128> for MockRiskManager {
 		let mut total_debit_value = Balance::zero();
 		pallet_loans::pallet::Positions::<Runtime>::iter().for_each(|(_who, position)| {
 			let debit_value =
-				Self::debit_units_to_value(position.debit.stability_fee, position.debit.units);
+				Self::debit_units_to_value(position.debit.units, position.debit.stability_fee);
 			total_debit_value = total_debit_value.saturating_add(debit_value);
 		});
 

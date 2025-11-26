@@ -62,15 +62,15 @@ impl<T: Config> Pallet<T> {
 		let mut iteration_count = 0;
 		let iteration_start_time = sp_io::offchain::timestamp();
 
-		for (who, Position { collateral, debit, stability_fee }) in map_iterator.by_ref() {
-			let effective_stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
+		for (who, Position { collateral, debit }) in map_iterator.by_ref() {
+			let effective_stability_fee = debit.stability_fee;
 			if !is_shutdown &&
-				Self::is_cdp_safe(collateral, debit, effective_stability_fee, &who)
+				Self::is_cdp_safe(collateral, debit.units, effective_stability_fee)
 					.map(|is_safe| !is_safe)
 					.unwrap_or(false)
 			{
 				Self::submit_unsigned_liquidation_tx(who);
-			} else if is_shutdown && !debit.is_zero() {
+			} else if is_shutdown && !debit.units.is_zero() {
 				Self::submit_unsigned_settlement_tx(who);
 			}
 

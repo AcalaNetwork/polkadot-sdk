@@ -19,37 +19,34 @@
 //! Implementation of the RiskManager trait for the CDP Engine pallet.
 use crate::*;
 use frame_support::traits::honzon::RiskManager;
-use pallet_loans::BalanceOf;
+use pallet_loans::{BalanceOf, DebitUnitOf};
 use sp_runtime::DispatchResult;
 
-impl<T: Config> RiskManager<AccountIdOf<T>, CurrencyIdOf<T>, Rate, BalanceOf<T>, BalanceOf<T>>
-	for Pallet<T>
-{
-	fn get_debit_value(
-		_currency_id: CurrencyIdOf<T>,
-		interest_rate_per_sec: Rate,
-		debit_balance: BalanceOf<T>,
-	) -> BalanceOf<T> {
-		Pallet::<T>::get_debit_value(interest_rate_per_sec, debit_balance)
+impl<T: Config> RiskManager<DebitUnitOf<T>, BalanceOf<T>, Rate> for Pallet<T> {
+	fn debit_units_to_value(debit_units: DebitUnitOf<T>, stability_fee: Rate) -> BalanceOf<T> {
+		Self::do_debit_units_to_value(debit_units, stability_fee)
+	}
+
+	fn value_to_debit_units(debit_value: BalanceOf<T>, stability_fee: Rate) -> DebitUnitOf<T> {
+		Self::do_debit_value_to_units(debit_value, stability_fee)
 	}
 
 	fn check_position_valid(
-		_currency_id: CurrencyIdOf<T>,
 		collateral_balance: BalanceOf<T>,
-		debit_balance: BalanceOf<T>,
-		stability_fee: Rate,
+		debit_units: DebitUnitOf<T>,
+		debit_interest_rate: Rate,
 		check_required_ratio: bool,
 	) -> DispatchResult {
 		Self::do_check_position(
 			collateral_balance,
-			debit_balance,
-			stability_fee,
+			debit_units,
+			debit_interest_rate,
 			check_required_ratio,
 		)
 		.map_err(Into::into)
 	}
 
-	fn check_debit_cap(_currency_id: CurrencyIdOf<T>) -> DispatchResult {
+	fn check_debit_cap() -> DispatchResult {
 		Self::do_check_debit_cap().map_err(Into::into)
 	}
 }

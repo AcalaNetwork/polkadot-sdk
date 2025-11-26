@@ -31,7 +31,7 @@ impl<T: Config> Pallet<T> {
 
 	/// Returns the current liquidation penalty rate for the collateral type, or the default if not
 	/// set.
-	pub fn get_liquidation_penalty() -> Rate {
+	pub fn liquidation_penalty() -> Rate {
 		let params = Self::risk_management_params();
 		params.liquidation_penalty
 	}

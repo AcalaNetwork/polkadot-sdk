@@ -2,21 +2,25 @@ use crate::*;
 
 impl<T: Config> Pallet<T> {
 	// settle cdp has debit when emergency shutdown
-	pub fn settle_cdp_has_debit(who: AccountIdOf<T>) -> DispatchResult {
-		let currency_id = T::GetNativeCurrencyId::get();
-		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
-		let stability_fee = Rate::from_inner(stability_fee.into_inner());
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
-		ensure!(!debit.is_zero(), Error::<T>::NoDebitValue);
+	pub fn do_settle(who: AccountIdOf<T>) -> DispatchResult {
+		let Position { collateral, debit } = <LoansOf<T>>::positions(&who);
 
-		let settle_price: Price =
-			T::PriceSource::get_relative_price(T::GetStableCurrencyId::get(), currency_id)
-				.ok_or(Error::<T>::InvalidFeedPrice)?;
-		let bad_debt_value = Self::convert_to_debit_value(debit, stability_fee);
+		ensure!(!debit.units.is_zero(), Error::<T>::NoDebitValue);
+
+		let settle_price: Price = T::PriceSource::get_relative_price(
+			T::GetStableCurrencyId::get(),
+			T::GetNativeCurrencyId::get(),
+		)
+		.ok_or(Error::<T>::InvalidFeedPrice)?;
+		let bad_debt_value = Self::do_debit_units_to_value(debit.units, debit.stability_fee);
 		let confiscate_collateral_amount =
 			sp_std::cmp::min(settle_price.saturating_mul_int(bad_debt_value), collateral);
 
-		<LoansOf<T>>::confiscate_collateral_and_debit(&who, confiscate_collateral_amount, debit)?;
+		<LoansOf<T>>::confiscate_collateral_and_debit(
+			&who,
+			confiscate_collateral_amount,
+			bad_debt_value,
+		)?;
 
 		Self::deposit_event(Event::SettleCDPInDebit { owner: who });
 		Ok(())
@@ -28,22 +32,27 @@ impl<T: Config> Pallet<T> {
 		who: AccountIdOf<T>,
 		max_collateral_amount: pallet_loans::BalanceOf<T>,
 	) -> DispatchResult {
-		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
-		let stability_fee = Rate::from_inner(stability_fee.into_inner());
-		ensure!(!debit.is_zero(), Error::<T>::NoDebitValue);
-		ensure!(Self::is_cdp_safe(collateral, debit, stability_fee, &who)?, Error::<T>::MustBeSafe);
-		let stability_fee = Self::get_effective_stability_fee(stability_fee, &who);
+		let Position { collateral, debit } = <LoansOf<T>>::positions(&who);
+		// ensure the CDP has debit.
+		ensure!(!debit.units.is_zero(), Error::<T>::NoDebitValue);
+		// ensure the CDP is safe.
+		ensure!(
+			Self::is_cdp_safe(collateral, debit.units, debit.stability_fee)?,
+			Error::<T>::MustBeSafe
+		);
 
-		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit)?;
+		// liquidate the collateral and debit to the CDP treasury.
+		let debit_value = Self::do_debit_units_to_value(debit.units, debit.stability_fee);
+		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit_value)?;
 
-		let debit_value = Self::convert_to_debit_value(debit, stability_fee);
 		let collateral_supply = collateral.min(max_collateral_amount);
-
+		// try to swap collateral to stable.
 		let (actual_supply_collateral, _) = <T as Config>::CDPTreasury::swap_collateral_to_stable(
 			SwapLimit::ExactTarget(collateral_supply, debit_value),
 			false,
 		)?;
 
+		// refund the remaining collateral to the CDP owner.
 		let refund_collateral_amount = collateral
 			.checked_sub(&actual_supply_collateral)
 			.expect("swap success means collateral >= actual_supply_collateral; qed");
@@ -59,15 +68,16 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Liquidate an unsafe CDP and return the weight consumed.
-	pub fn liquidate_unsafe_cdp(who: AccountIdOf<T>) -> Result<Weight, DispatchError> {
-		let Position { collateral, debit, stability_fee } = <LoansOf<T>>::positions(&who);
+	pub fn do_liquidate(who: AccountIdOf<T>) -> Result<Weight, DispatchError> {
+		let Position { collateral, debit } = <LoansOf<T>>::positions(&who);
 
-		ensure!(!Self::is_cdp_safe(collateral, debit, stability_fee)?, Error::<T>::MustBeUnsafe);
+		Self::do_check_position(collateral, debit.units, debit.stability_fee, false)?;
 
-		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, debit, stability_fee)?;
+		let bad_debt_value = Self::do_debit_units_to_value(debit.units, debit.stability_fee);
 
-		let bad_debt_value = Self::convert_to_debit_value(debit, stability_fee);
-		let liquidation_penalty = Self::get_liquidation_penalty();
+		<LoansOf<T>>::confiscate_collateral_and_debit(&who, collateral, bad_debt_value)?;
+
+		let liquidation_penalty = Self::liquidation_penalty();
 		let target_stable_amount = liquidation_penalty.saturating_mul_acc_int(bad_debt_value);
 
 		Self::handle_liquidated_collateral(&who, collateral, target_stable_amount)?;
@@ -82,7 +92,7 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Handle liquidated collateral by priority
-	pub fn handle_liquidated_collateral(
+	fn handle_liquidated_collateral(
 		who: &AccountIdOf<T>,
 		amount: pallet_loans::BalanceOf<T>,
 		target_stable_amount: pallet_loans::BalanceOf<T>,
