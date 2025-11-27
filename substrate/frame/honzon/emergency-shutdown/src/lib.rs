@@ -39,9 +39,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::unused_unit)]
 
-use frame_support::pallet_prelude::*;
+use frame_support::{
+	pallet_prelude::*,
+	traits::honzon::{AuctionManager, CDPTreasury, EmergencyShutdown, LockablePrice, Ratio},
+};
 use frame_system::{ensure_signed, pallet_prelude::*};
-use frame_support::traits::honzon::{AuctionManager, CDPTreasury, EmergencyShutdown, LockablePrice, Ratio};
 
 use sp_runtime::{traits::Zero, FixedPointNumber};
 use sp_std::prelude::*;
@@ -58,17 +60,11 @@ pub mod pallet {
 	use super::*;
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_loans::Config {
-		/// The overarching event type.
-		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
 		/// The single collateral currency type. This should be the native currency.
 		type CollateralCurrencyId: Get<<Self as pallet_loans::Config>::CurrencyId>;
 
 		/// The price source for the collateral currency, used to freeze the price during shutdown.
 		type PriceSource: LockablePrice<<Self as pallet_loans::Config>::CurrencyId>;
-
-		/// The CDP treasury, which holds the collateral assets post-settlement.
-		type CDPTreasury: CDPTreasury<Self::AccountId, Balance = pallet_loans::BalanceOf<Self>>;
 
 		/// The auction manager, used to verify that all auctions are resolved before refunds can
 		/// be processed.
@@ -142,9 +138,6 @@ pub mod pallet {
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
 
-	#[pallet::hooks]
-	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
-
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		/// Initiates an emergency shutdown of the system.
@@ -160,11 +153,11 @@ pub mod pallet {
 			ensure!(!Self::is_shutdown(), Error::<T>::AlreadyShutdown);
 
 			// get all collateral types
-			let currency_id = <T as pallet::Config>::CollateralCurrencyId::get();
+			let currency_id = T::CollateralCurrencyId::get();
 
 			// lock price for every collateral
 			// TODO: check the results
-			let _ = <T as Config>::PriceSource::lock_price(currency_id);
+			let _ = T::PriceSource::lock_price(currency_id);
 
 			IsShutdown::<T>::put(true);
 			Self::deposit_event(Event::Shutdown {
@@ -186,21 +179,19 @@ pub mod pallet {
 			ensure!(Self::is_shutdown(), Error::<T>::MustAfterShutdown); // must after shutdown
 
 			// Ensure all debits of CDPs have been settled, and all collateral auction has
-			// been done or canceled. Settle all collaterals type CDPs which have debit,
+			// been done or cancelled. Settle all collaterals type CDPs which have debit,
 			// cancel all collateral auctions in forward stage and wait for all collateral
 			// auctions in reverse stage to be ended.
-			let currency_id = <T as pallet::Config>::CollateralCurrencyId::get();
+			let currency_id = T::CollateralCurrencyId::get();
 			// there's no collateral auction
 			ensure!(
-				<T as Config>::AuctionManagerHandler::get_total_collateral_in_auction(currency_id)
-					.is_zero(),
+				T::AuctionManagerHandler::get_total_collateral_in_auction(currency_id).is_zero(),
 				Error::<T>::ExistPotentialSurplus,
 			);
 			// there's on debit in CDP
-			ensure!(
-				pallet_loans::Pallet::<T>::total_positions().debit.is_zero(),
-				Error::<T>::ExistUnhandledDebit,
-			);
+			for (_, debit_units) in pallet_loans::TotalDebitByStabilityFee::<T>::iter() {
+				ensure!(debit_units.is_zero(), Error::<T>::ExistUnhandledDebit);
+			}
 
 			// Open refund stage
 			CanRefund::<T>::put(true);
@@ -225,18 +216,20 @@ pub mod pallet {
 			let who = ensure_signed(origin)?;
 			ensure!(Self::can_refund(), Error::<T>::CanNotRefund);
 
-			let refund_ratio: Ratio = <T as Config>::CDPTreasury::get_debit_proportion(amount);
+			let refund_ratio: Ratio =
+				<T as pallet_loans::Config>::CDPTreasury::get_debit_proportion(amount);
 			let currency_id = <T as pallet::Config>::CollateralCurrencyId::get();
 
 			// burn caller's stable currency by CDP treasury
-			<T as Config>::CDPTreasury::burn_debit(&who, amount)?;
+			<T as pallet_loans::Config>::CDPTreasury::burn_debit(&who, amount)?;
 
 			// refund collaterals to caller by CDP treasury
-			let refund_amount = refund_ratio
-				.saturating_mul_int(<T as Config>::CDPTreasury::get_total_collaterals());
+			let refund_amount = refund_ratio.saturating_mul_int(
+				<T as pallet_loans::Config>::CDPTreasury::get_total_collaterals(),
+			);
 
 			if !refund_amount.is_zero() {
-				<T as Config>::CDPTreasury::withdraw_collateral(&who, refund_amount)?;
+				<T as pallet_loans::Config>::CDPTreasury::withdraw_collateral(&who, refund_amount)?;
 			}
 
 			Self::deposit_event(Event::Refund {

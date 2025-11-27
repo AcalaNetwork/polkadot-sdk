@@ -109,7 +109,7 @@ pub use pallet::*;
 pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 pub type LoansOf<T> = pallet_loans::Pallet<T>;
 pub type CurrencyOf<T> = <T as Config>::Currency;
-pub type CurrencyIdOf<T> = <T as Config>::CurrencyId;
+pub type CurrencyIdOf<T> = <T as pallet_loans::Config>::CurrencyId;
 
 #[derive(RuntimeDebug)]
 pub enum OffchainErr {
@@ -134,7 +134,6 @@ pub mod pallet {
 		+ frame_system::offchain::CreateTransactionBase<Call<Self>>
 		+ frame_system::offchain::CreateBare<Call<Self>>
 	{
-		type CurrencyId: Parameter + Member + Copy + MaybeSerializeDeserialize + Ord;
 		/// The risk management params
 		///
 		/// can be set via pallet-parameters

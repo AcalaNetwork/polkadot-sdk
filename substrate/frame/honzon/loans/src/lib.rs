@@ -85,6 +85,9 @@ pub mod pallet {
 	use super::*;
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
+		/// The currency ID type.
+		type CurrencyId: Parameter + Member + Copy + MaybeSerializeDeserialize + Ord + MaxEncodedLen;
+
 		/// Currency type for handling collateral holds on user accounts.
 		type Currency: HoldMutate<Self::AccountId, Reason = Self::RuntimeHoldReason>;
 

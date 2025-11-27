@@ -286,6 +286,7 @@ parameter_types! {
 pub type NativeFungible = Balances;
 
 impl pallet_loans::Config for Runtime {
+	type CurrencyId = CurrencyId;
 	type Currency = NativeFungible;
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = CDPTreasuryModule;

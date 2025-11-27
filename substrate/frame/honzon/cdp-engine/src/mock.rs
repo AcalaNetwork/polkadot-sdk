@@ -233,6 +233,7 @@ impl LiquidationTarget<u64, Balance> for MockLiquidationStrategy {
 }
 
 impl pallet_loans::Config for Test {
+	type CurrencyId = CurrencyId;
 	type Currency = Balances;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	type RiskManager = MockRiskManager;
@@ -345,7 +346,6 @@ mod custom_origin {
 
 impl pallet_cdp_engine::Config for Test {
 	type AssetKind = CurrencyId;
-	type CurrencyId = CurrencyId;
 	type DefaultCompoundFactor = DefaultCompoundFactor;
 	type MinimumDebitValue = ConstU128<100>;
 	type MinimumCollateralAmount = MinimumCollateralAmount;

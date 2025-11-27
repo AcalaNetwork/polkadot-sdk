@@ -5,25 +5,24 @@ authors = ["Acala Developers"]
 edition = { workspace = true }
 
 [dependencies]
-codec = { workspace = true, default-features = false }
+codec = { workspace = true }
 frame-support = { workspace = true, default-features = false }
 frame-system = { workspace = true, default-features = false }
-pallet-auction-manager = { workspace = true, default-features = false }
-pallet-cdp-treasury = { workspace = true, default-features = false }
 pallet-loans = { workspace = true, default-features = false }
-scale-info = { workspace = true, default-features = false }
+scale-info = { workspace = true }
 sp-runtime = { workspace = true, default-features = false }
 sp-std = { workspace = true, default-features = false }
 
 
 [dev-dependencies]
-frame-support = { workspace = true, features = ["std"] }
-pallet-assets = { workspace = true, features = ["std"] }
-pallet-balances = { workspace = true, features = ["std"] }
-pallet-cdp-treasury = { workspace = true, features = ["std"] }
-pallet-loans = { workspace = true, features = ["std"] }
-sp-core = { workspace = true, features = ["std"] }
-sp-io = { workspace = true, features = ["std"] }
+pallet-asset-conversion = { workspace = true }
+pallet-assets = { workspace = true }
+pallet-auction-manager = { workspace = true }
+pallet-balances = { workspace = true }
+pallet-cdp-treasury = { workspace = true }
+pallet-loans = { workspace = true }
+sp-core = { workspace = true }
+sp-io = { workspace = true }
 
 
 [features]
@@ -31,19 +30,37 @@ default = ["std"]
 std = [
 	"codec/std",
 	"frame-support/std",
-	"frame-support/std",
 	"frame-system/std",
+	"pallet-asset-conversion/std",
 	"pallet-assets/std",
 	"pallet-auction-manager/std",
 	"pallet-balances/std",
 	"pallet-cdp-treasury/std",
 	"pallet-loans/std",
 	"scale-info/std",
+	"sp-core/std",
+	"sp-io/std",
 	"sp-runtime/std",
 	"sp-std/std",
 ]
 try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
+	"pallet-asset-conversion/try-runtime",
+	"pallet-assets/try-runtime",
+	"pallet-auction-manager/try-runtime",
+	"pallet-balances/try-runtime",
+	"pallet-cdp-treasury/try-runtime",
 	"pallet-loans/try-runtime",
+	"sp-runtime/try-runtime",
+]
+runtime-benchmarks = [
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"pallet-asset-conversion/runtime-benchmarks",
+	"pallet-assets/runtime-benchmarks",
+	"pallet-balances/runtime-benchmarks",
+	"pallet-cdp-treasury/runtime-benchmarks",
+	"pallet-loans/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
 ]

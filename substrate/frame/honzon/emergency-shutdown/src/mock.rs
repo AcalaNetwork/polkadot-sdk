@@ -21,24 +21,19 @@
 #![cfg(test)]
 
 use super::*;
-use frame_support::traits::honzon::{
-	AuctionManager, CDPTreasury, LockablePrice, PriceProvider, RiskManager, Swap, SwapLimit,
-};
+use crate as pallet_emergency_shutdown;
 use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types, parameter_types,
 	traits::{
-		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, Everything, Nothing, SortedMembers,
+		honzon::{AuctionManager, LockablePrice, MockLiquidationStrategy},
+		AsEnsureOriginWithArg, ConstU32, SortedMembers,
 	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use sp_runtime::{
-	traits::{AccountIdConversion, IdentityLookup},
-	BuildStorage, DispatchError, DispatchResult, FixedU128,
-};
+use sp_runtime::{traits::AccountIdConversion, BuildStorage, DispatchError, DispatchResult};
 
-pub type AccountId = u128;
-pub type BlockNumber = u64;
+pub type AccountId = u64;
 pub type Balance = u128;
 pub type CurrencyId = u32;
 pub type AuctionId = u32;
@@ -48,19 +43,14 @@ pub const BOB: AccountId = 2;
 pub const NATIVE: CurrencyId = 0;
 pub const STABLE: CurrencyId = 1;
 
-mod emergency_shutdown {
-	pub use super::super::*;
-}
-
-type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
 
 construct_runtime!(
 	pub enum Test
 	{
 		System: frame_system,
-		EmergencyShutdownModule: emergency_shutdown,
-		PalletBalances: pallet_balances,
+		EmergencyShutdownModule: pallet_emergency_shutdown,
+		Balances: pallet_balances,
 		Assets: pallet_assets,
 		CDPTreasuryModule: pallet_cdp_treasury,
 		Loans: pallet_loans,
@@ -70,33 +60,14 @@ construct_runtime!(
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
 impl frame_system::Config for Test {
 	type AccountId = AccountId;
-	type Lookup = IdentityLookup<Self::AccountId>;
 	type Block = Block;
 	type AccountData = pallet_balances::AccountData<Balance>;
-	type OnNewAccount = ();
-	type OnKilledAccount = ();
-	type BaseCallFilter = Everything;
-	type SystemWeightInfo = ();
-	type PalletInfo = PalletInfo;
-	type OnSetCode = ();
-	type MaxConsumers = ConstU32<16>;
 }
 
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::pallet::DefaultConfig)]
 impl pallet_balances::Config for Test {
 	type Balance = Balance;
-	type DustRemoval = ();
-	type RuntimeEvent = RuntimeEvent;
-	type ExistentialDeposit = ConstU128<1>;
 	type AccountStore = System;
-	type MaxLocks = ();
-	type MaxReserves = ();
-	type ReserveIdentifier = [u8; 8];
-	type WeightInfo = ();
-	type RuntimeHoldReason = RuntimeHoldReason;
-	type RuntimeFreezeReason = RuntimeFreezeReason;
-	type FreezeIdentifier = ();
-	type MaxFreezes = ();
-	type DoneSlashHandler = ();
 }
 
 pub struct OneMember;
@@ -106,46 +77,14 @@ impl SortedMembers<AccountId> for OneMember {
 	}
 }
 
+#[derive_impl(pallet_assets::config_preludes::TestDefaultConfig as pallet_assets::pallet::DefaultConfig)]
 impl pallet_assets::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
 	type AssetId = CurrencyId;
 	type AssetIdParameter = u32;
-	type Currency = PalletBalances;
+	type Currency = Balances;
 	type CreateOrigin = AsEnsureOriginWithArg<EnsureSignedBy<OneMember, AccountId>>;
 	type ForceOrigin = EnsureRoot<AccountId>;
-	type AssetDeposit = ConstU128<1>;
-	type AssetAccountDeposit = ConstU128<1>;
-	type MetadataDepositBase = ConstU128<1>;
-	type MetadataDepositPerByte = ConstU128<1>;
-	type ApprovalDeposit = ConstU128<1>;
-	type StringLimit = ConstU32<50>;
-	type Freezer = ();
-	type Extra = ();
-	type WeightInfo = ();
-	type RemoveItemsLimit = ConstU32<1000>;
-	type CallbackHandle = ();
-	type Holder = ();
-}
-
-pub struct MockRiskManager;
-impl RiskManager<AccountId, CurrencyId, Balance, Balance> for MockRiskManager {
-	fn get_debit_value(_currency_id: CurrencyId, debit_balance: Balance) -> Balance {
-		debit_balance
-	}
-
-	fn check_position_valid(
-		_currency_id: CurrencyId,
-		_collateral_balance: Balance,
-		_debit_balance: Balance,
-		_check_required_ratio: bool,
-	) -> DispatchResult {
-		Ok(())
-	}
-
-	fn check_debit_cap(_currency_id: CurrencyId, _total_debit_balance: Balance) -> DispatchResult {
-		Ok(())
-	}
 }
 
 parameter_types! {
@@ -154,21 +93,14 @@ parameter_types! {
 }
 
 impl pallet_loans::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
-	type Currency = PalletBalances;
+	type RuntimeHoldReason = RuntimeHoldReason;
+	type LiquidationStrategy = MockLiquidationStrategy;
+	type Currency = Balances;
 	type CurrencyId = CurrencyId;
-	type RiskManager = MockRiskManager;
+	type RiskManager = ();
 	type CDPTreasury = CDPTreasuryModule;
 	type PalletId = LoansPalletId;
-	type CollateralCurrencyId = GetNativeCurrencyId;
 	type OnUpdateLoan = ();
-}
-
-pub struct MockPriceProvider;
-impl PriceProvider<CurrencyId> for MockPriceProvider {
-	fn get_price(_currency_id: CurrencyId) -> Option<FixedU128> {
-		Some(FixedU128::from_inner(100))
-	}
 }
 
 pub struct MockLockablePrice;
@@ -215,30 +147,34 @@ ord_parameter_types! {
 }
 
 pub struct MockSwap;
-impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
-	fn swap(
-		_who: &AccountId,
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
+impl pallet_asset_conversion::Swap<AccountId> for MockSwap {
+	type Balance = Balance;
+	type AssetKind = CurrencyId;
+
+	fn max_path_len() -> u32 {
+		2
 	}
 
-	fn get_swap_amount(
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_limit: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)> {
-		None
+	fn swap_exact_tokens_for_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_in: Self::Balance,
+		_amount_out_min: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(0)
 	}
 
-	fn swap_by_path(
-		_who: &AccountId,
-		_path: &[CurrencyId],
-		_limit: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
+	fn swap_tokens_for_exact_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		_amount_out: Self::Balance,
+		_amount_in_max: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		Ok(0)
 	}
 }
 
@@ -251,6 +187,7 @@ parameter_types! {
 impl pallet_cdp_treasury::Config for Test {
 	type UpdateOrigin = EnsureSignedBy<One, AccountId>;
 	type Fungibles = Assets;
+	type AssetKind = CurrencyId;
 	type AuctionManagerHandler = MockAuctionManager;
 	type Balance = Balance;
 	type CurrencyId = CurrencyId;
@@ -258,8 +195,8 @@ impl pallet_cdp_treasury::Config for Test {
 	type TreasuryAccount = TreasuryAccount;
 	type PalletId = CDPTreasuryPalletId;
 	type WeightInfo = ();
-	type GetStableCurrencyId = GetStableCurrencyId;
-	type GetBaseCurrencyId = GetNativeCurrencyId;
+	type StableCurrencyId = GetStableCurrencyId;
+	type CollateralCurrencyId = GetNativeCurrencyId;
 	type Swap = MockSwap;
 }
 
@@ -267,11 +204,9 @@ parameter_types! {
 	pub const CollateralCurrencyId: CurrencyId = NATIVE;
 }
 
-impl Config for Test {
-	type RuntimeEvent = RuntimeEvent;
+impl pallet_emergency_shutdown::Config for Test {
 	type CollateralCurrencyId = CollateralCurrencyId;
 	type PriceSource = MockLockablePrice;
-	type CDPTreasury = CDPTreasuryModule;
 	type AuctionManagerHandler = MockAuctionManager;
 	type ShutdownOrigin = EnsureSignedBy<One, AccountId>;
 	type WeightInfo = ();

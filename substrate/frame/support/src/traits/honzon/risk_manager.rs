@@ -19,18 +19,19 @@ pub trait RiskManager<Unit, Balance, Rate> {
 	fn check_debit_cap() -> DispatchResult;
 }
 
-impl<Unit: Default, Balance: Default, Rate: Default> RiskManager<Unit, Balance, Rate> for () {
-	fn debit_units_to_value(_debit_units: Unit, _stability_fee: Rate) -> Balance {
-		Default::default()
+use super::DebitUnit;
+impl<Balance: Default, Rate: Default> RiskManager<DebitUnit<Balance>, Balance, Rate> for () {
+	fn debit_units_to_value(debit_units: DebitUnit<Balance>, _stability_fee: Rate) -> Balance {
+		debit_units.into_inner()
 	}
 
-	fn value_to_debit_units(_debit_value: Balance, _stability_fee: Rate) -> Unit {
-		Default::default()
+	fn value_to_debit_units(debit_value: Balance, _stability_fee: Rate) -> DebitUnit<Balance> {
+		DebitUnit::new(debit_value)
 	}
 
 	fn check_position_valid(
 		_collateral_balance: Balance,
-		_debit_units: Unit,
+		_debit_units: DebitUnit<Balance>,
 		_debit_interest_rate: Rate,
 		_check_required_ratio: bool,
 	) -> DispatchResult {
