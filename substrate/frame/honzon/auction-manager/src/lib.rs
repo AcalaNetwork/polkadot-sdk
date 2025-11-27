@@ -103,7 +103,6 @@ pub mod pallet {
 		type CDPTreasury: CDPTreasury<
 			Self::AccountId,
 			Balance = <Self as pallet_auction::Config>::Balance,
-			CurrencyId = Self::CurrencyId,
 		>;
 		/// The price provider.
 		type PriceSource: PriceProvider<Self::CurrencyId>;

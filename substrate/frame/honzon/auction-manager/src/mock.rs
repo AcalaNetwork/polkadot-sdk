@@ -240,7 +240,6 @@ impl CDPTreasury<AccountId> for MockCDPTreasury {
 		TreasuryAccount::get()
 	}
 	type Balance = Balance;
-	type CurrencyId = CurrencyId;
 
 	fn get_surplus_pool() -> Self::Balance {
 		Default::default()
