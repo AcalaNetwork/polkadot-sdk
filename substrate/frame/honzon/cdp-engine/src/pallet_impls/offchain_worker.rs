@@ -65,9 +65,8 @@ impl<T: Config> Pallet<T> {
 		for (who, Position { collateral, debit }) in map_iterator.by_ref() {
 			let effective_stability_fee = debit.stability_fee;
 			if !is_shutdown &&
-				Self::is_cdp_safe(collateral, debit.units, effective_stability_fee)
-					.map(|is_safe| !is_safe)
-					.unwrap_or(false)
+				Self::do_check_position(collateral, debit.units, effective_stability_fee, false)
+					.is_err()
 			{
 				Self::submit_unsigned_liquidation_tx(who);
 			} else if is_shutdown && !debit.units.is_zero() {

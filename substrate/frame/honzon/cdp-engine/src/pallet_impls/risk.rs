@@ -28,23 +28,6 @@ impl<T: Config> Pallet<T> {
 			.unwrap_or_else(Ratio::max_value)
 	}
 
-	/// Check if collateral ratio below liquidation ratio
-	pub fn is_cdp_safe(
-		collateral_balance: pallet_loans::BalanceOf<T>,
-		debit_units: pallet_loans::DebitUnitOf<T>,
-		stability_fee: Rate,
-	) -> Result<bool, Error<T>> {
-		let feed_price = T::PriceSource::get_relative_price(
-			T::GetNativeCurrencyId::get(),
-			T::GetStableCurrencyId::get(),
-		)
-		.ok_or(Error::<T>::InvalidFeedPrice)?;
-		let debit_value = Self::do_debit_units_to_value(debit_units, stability_fee);
-		let collateral_ratio =
-			Self::calculate_collateral_ratio(collateral_balance, feed_price, debit_value);
-		Ok(collateral_ratio >= Self::get_liquidation_ratio())
-	}
-
 	// --- Shared validation helpers for risk management (trait + internal) ---
 	/// Shared validator for position collateral/debt, reused by both trait and pallet logic.
 	pub fn do_check_position(

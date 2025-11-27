@@ -36,10 +36,7 @@ impl<T: Config> Pallet<T> {
 		// ensure the CDP has debit.
 		ensure!(!debit.units.is_zero(), Error::<T>::NoDebitValue);
 		// ensure the CDP is safe.
-		ensure!(
-			Self::is_cdp_safe(collateral, debit.units, debit.stability_fee)?,
-			Error::<T>::MustBeSafe
-		);
+		Self::do_check_position(collateral, debit.units, debit.stability_fee, false)?;
 
 		// liquidate the collateral and debit to the CDP treasury.
 		let debit_value = Self::do_debit_units_to_value(debit.units, debit.stability_fee);
@@ -71,7 +68,12 @@ impl<T: Config> Pallet<T> {
 	pub fn do_liquidate(who: AccountIdOf<T>) -> Result<Weight, DispatchError> {
 		let Position { collateral, debit } = <LoansOf<T>>::positions(&who);
 
-		Self::do_check_position(collateral, debit.units, debit.stability_fee, false)?;
+		match Self::do_check_position(collateral, debit.units, debit.stability_fee, false) {
+			Ok(_) => return Err(Error::<T>::MustBeUnsafe.into()),
+			Err(Error::<T>::BelowLiquidationRatio) => { /* This is the expected error, continue with liquidation */
+			},
+			Err(e) => return Err(e.into()),
+		}
 
 		let bad_debt_value = Self::do_debit_units_to_value(debit.units, debit.stability_fee);
 

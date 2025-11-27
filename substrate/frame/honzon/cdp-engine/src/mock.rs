@@ -236,7 +236,7 @@ impl pallet_loans::Config for Test {
 	type CurrencyId = CurrencyId;
 	type Currency = Balances;
 	type RuntimeHoldReason = RuntimeHoldReason;
-	type RiskManager = MockRiskManager;
+	type RiskManager = CDPEngine;
 	type CDPTreasury = MockCDPTreasury;
 	type PalletId = LoansPalletId;
 	type OnUpdateLoan = DummyOnUpdateLoan;

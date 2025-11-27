@@ -238,8 +238,8 @@ pub mod pallet {
 		BelowRequiredCollateralRatio,
 		/// The collateral ratio below the liquidation ratio
 		BelowLiquidationRatio,
-		/// The CDP must be safe status
-		MustBeSafe,
+		/// The position is safe
+		MustBeUnsafe,
 		/// Remain debit value in CDP below the dust amount
 		RemainDebitValueTooSmall,
 		/// Remain collateral value in CDP below the dust amount.
@@ -460,8 +460,8 @@ pub mod pallet {
 					if collateral.is_zero() && debit.units.is_zero() {
 						return InvalidTransaction::Stale.into();
 					}
-					if Self::is_cdp_safe(collateral, debit.units, debit.stability_fee)
-						.unwrap_or(true) || T::EmergencyShutdown::is_shutdown()
+					if Self::do_check_position(collateral, debit.units, debit.stability_fee, false)
+						.is_ok() || T::EmergencyShutdown::is_shutdown()
 					{
 						return InvalidTransaction::Stale.into();
 					}

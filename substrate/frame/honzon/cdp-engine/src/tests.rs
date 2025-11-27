@@ -99,6 +99,24 @@ fn adjust_position_fails_with_insufficient_collateral_ratio() {
 		frame_system::Pallet::<Test>::set_block_number(1);
 		let account_id = 1u64;
 
+		// Set required collateral ratio first
+		let new_params = RiskManagementParams {
+			maximum_total_debit_value: 1_000_000_000_000_000_000u128,
+			interest_rate_per_sec: Rate::from_rational(1, 10000),
+			liquidation_ratio: Ratio::from_rational(15, 10),
+			liquidation_penalty: Rate::from_rational(1, 10000),
+			required_collateral_ratio: Some(Ratio::from_rational(12, 10)),
+		};
+		assert_ok!(Parameters::set_parameter(
+			RuntimeOrigin::root(),
+			RuntimeParameters::CdpEngine(
+				dynamic_params::cdp_engine::Parameters::RiskManagementParams(
+					dynamic_params::cdp_engine::RiskManagementParams,
+					Some(new_params),
+				)
+			),
+		));
+
 		// Try to create a position with low collateral ratio
 		assert_err!(
 			Loans::adjust_position(
@@ -142,24 +160,6 @@ fn emergency_shutdown_blocks_liquidation() {
 			CDPEngine::liquidate(RuntimeOrigin::none(), account_id),
 			Error::<Test>::AlreadyShutdown,
 		);
-	});
-}
-
-#[test]
-fn is_cdp_safe_works() {
-	new_test_ext().execute_with(|| {
-		frame_system::Pallet::<Test>::set_block_number(1);
-		// Safe CDP
-		let status = CDPEngine::is_cdp_safe(2000u128, DebitUnit::new(1000u128), Rate::one());
-		assert!(matches!(status, Ok(true)));
-
-		// Unsafe CDP
-		let status = CDPEngine::is_cdp_safe(100u128, DebitUnit::new(1000u128), Rate::one());
-		assert!(matches!(status, Ok(false)));
-
-		// Zero debit should be safe
-		let status = CDPEngine::is_cdp_safe(100u128, DebitUnit::new(0u128), Rate::one());
-		assert!(matches!(status, Ok(true)));
 	});
 }
 
