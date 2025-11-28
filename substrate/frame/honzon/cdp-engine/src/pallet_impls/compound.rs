@@ -2,10 +2,10 @@ use crate::*;
 
 impl<T: Config> Pallet<T> {
 	// accumulate interest for all debit active stability fee classes with outstanding debt
-	pub fn accumulate_interest(now_secs: u64, last_accumulation_secs: u64) -> u32 {
+	pub(crate) fn accumulate_interest(now_secs: u64, last_accumulation_secs: u64) -> u32 {
+		let mut touched_entries = 0;
 		if !T::EmergencyShutdown::is_shutdown() && !now_secs.is_zero() {
 			let interval_secs = now_secs.saturating_sub(last_accumulation_secs);
-			let mut touched_entries: u32 = 0;
 
 			for (stability_fee, debit_units) in pallet_loans::TotalDebitByStabilityFee::<T>::iter()
 			{
@@ -44,11 +44,11 @@ impl<T: Config> Pallet<T> {
 			}
 
 			LastAccumulationSecs::<T>::put(now_secs);
-			return touched_entries.saturating_add(1);
+			touched_entries = touched_entries.saturating_add(1);
 		}
 
 		LastAccumulationSecs::<T>::put(now_secs);
-		0
+		touched_entries
 	}
 
 	/// Calculates the compounded interest rate for a given rate per second over a specified number
@@ -56,7 +56,7 @@ impl<T: Config> Pallet<T> {
 	///
 	/// The formula is:
 	/// `(1 + rate_per_sec).pow(secs) - 1`
-	pub fn compound_interest_rate(rate_per_sec: Rate, secs: u64) -> Rate {
+	fn compound_interest_rate(rate_per_sec: Rate, secs: u64) -> Rate {
 		rate_per_sec
 			.saturating_add(Rate::one())
 			.saturating_pow(secs.unique_saturated_into())
@@ -65,7 +65,7 @@ impl<T: Config> Pallet<T> {
 
 	/// Gets the compound factor for the given stability fee, initializing it with the default
 	/// if not yet set.
-	pub fn get_or_init_compound_factor(stability_fee: Rate) -> CompoundFactor {
+	fn get_or_init_compound_factor(stability_fee: Rate) -> CompoundFactor {
 		if let Some(compound_factor) = CompoundFactorStorage::<T>::get(stability_fee) {
 			compound_factor
 		} else {
@@ -76,7 +76,7 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Converts a given debit balance to its value based on the stability fee's compound factor.
-	pub fn do_debit_units_to_value(
+	pub(crate) fn do_debit_units_to_value(
 		debit_units: pallet_loans::DebitUnitOf<T>,
 		stability_fee: Rate,
 	) -> pallet_loans::BalanceOf<T> {
@@ -86,7 +86,7 @@ impl<T: Config> Pallet<T> {
 
 	/// Converts a debit value amount into a debit balance using the given stability fee's compound
 	/// factor
-	pub fn do_debit_value_to_units(
+	pub(crate) fn do_debit_value_to_units(
 		debit_value: pallet_loans::BalanceOf<T>,
 		stability_fee: Rate,
 	) -> pallet_loans::DebitUnitOf<T> {

@@ -28,7 +28,7 @@ use sp_std::marker::PhantomData;
 
 /// Weight functions needed for pallet-cdp-engine.
 pub trait WeightInfo {
-	fn on_initialize() -> Weight;
+	fn on_initialize(c: u32) -> Weight;
 	fn set_collateral_params() -> Weight;
 	fn emergency_shutdown() -> Weight;
 	fn adjust_position() -> Weight;
@@ -39,8 +39,10 @@ pub trait WeightInfo {
 /// Weights for pallet-cdp-engine using the Substrate reference hardware.
 pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
-	fn on_initialize() -> Weight {
+	fn on_initialize(c: u32) -> Weight {
 		Weight::from_parts(33_360_000, 0)
+		.saturating_add(Weight::from_parts(23_139_000,0))
+		.saturating_mul(c as u64)
 			.saturating_add(T::DbWeight::get().reads(2 as u64))
 			.saturating_add(T::DbWeight::get().writes(1 as u64))
 	}
@@ -72,8 +74,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 // For backwards compatibility and tests
 impl WeightInfo for () {
-	fn on_initialize() -> Weight {
+	fn on_initialize(c: u32) -> Weight {
 		Weight::from_parts(33_360_000, 0)
+			.saturating_add(Weight::from_parts(23_139_000,0))
+			.saturating_mul(c as u64)
 			.saturating_add(RocksDbWeight::get().reads(2 as u64))
 			.saturating_add(RocksDbWeight::get().writes(1 as u64))
 	}

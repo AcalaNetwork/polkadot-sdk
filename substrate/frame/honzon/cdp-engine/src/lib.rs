@@ -330,11 +330,9 @@ pub mod pallet {
 			// so accumulate interest at the beginning of the block #2
 			let now_as_secs: u64 =
 				if now > One::one() { T::UnixTime::now().as_secs() } else { Default::default() };
-			let reads_writes =
+			let touched_entries =
 				Self::accumulate_interest(now_as_secs, Self::last_accumulation_secs());
-			<T as Config>::WeightInfo::on_initialize().saturating_add(
-				T::DbWeight::get().reads_writes(reads_writes as u64, reads_writes as u64),
-			)
+			<T as Config>::WeightInfo::on_initialize(touched_entries)
 		}
 
 		/// Runs after every block. Start offchain worker to check CDP and

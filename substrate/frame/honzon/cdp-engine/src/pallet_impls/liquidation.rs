@@ -2,7 +2,7 @@ use crate::*;
 
 impl<T: Config> Pallet<T> {
 	// settle cdp has debit when emergency shutdown
-	pub fn do_settle(who: AccountIdOf<T>) -> DispatchResult {
+	pub(crate) fn do_settle(who: AccountIdOf<T>) -> DispatchResult {
 		let Position { collateral, debit } = <LoansOf<T>>::positions(&who);
 
 		ensure!(!debit.units.is_zero(), Error::<T>::NoDebitValue);
@@ -65,7 +65,7 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Liquidate an unsafe CDP and return the weight consumed.
-	pub fn do_liquidate(who: AccountIdOf<T>) -> Result<Weight, DispatchError> {
+	pub(crate) fn do_liquidate(who: AccountIdOf<T>) -> Result<Weight, DispatchError> {
 		let Position { collateral, debit } = <LoansOf<T>>::positions(&who);
 
 		match Self::do_check_position(collateral, debit.units, debit.stability_fee, false) {
