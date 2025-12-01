@@ -24,14 +24,13 @@ use super::*;
 use frame_support::{
 	construct_runtime, derive_impl, ord_parameter_types, parameter_types,
 	traits::{
-		honzon::{AuctionManager, PriceProvider, Swap},
+		honzon::{AuctionManager, PriceProvider},
 		tokens::fungible::UnionOf,
 		AsEnsureOriginWithArg, ConstU128, ConstU32, Everything,
 	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
-use pallet_assets as assets;
 use sp_core::H256;
 use sp_runtime::{
 	traits::Convert, BuildStorage, DispatchError, DispatchResult, Either, FixedU128, Permill,
@@ -115,8 +114,8 @@ ord_parameter_types! {
 	pub const One: AccountId = ALICE;
 }
 
-impl assets::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
+#[derive_impl(pallet_assets::config_preludes::TestDefaultConfig as pallet_assets::pallet::DefaultConfig)]
+impl pallet_assets::Config for Test {
 	type Balance = Balance;
 	type AssetId = CurrencyId;
 	type AssetIdParameter = CurrencyId;
@@ -129,12 +128,6 @@ impl assets::Config for Test {
 	type MetadataDepositPerByte = MetadataDepositPerByte;
 	type ApprovalDeposit = ApprovalDeposit;
 	type StringLimit = StringLimit;
-	type Freezer = ();
-	type Extra = ();
-	type CallbackHandle = ();
-	type RemoveItemsLimit = ConstU32<100>;
-	type WeightInfo = ();
-	type Holder = ();
 }
 
 pub struct MockAuctionManager<AccountId>(PhantomData<AccountId>);
@@ -166,32 +159,40 @@ impl<AccountId> AuctionManager<AccountId> for MockAuctionManager<AccountId> {
 }
 
 pub struct MockSwap;
-use frame_support::traits::honzon::SwapLimit;
-impl Swap<AccountId, Balance, CurrencyId> for MockSwap {
-	fn swap(
-		_source: &AccountId,
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_amount: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
+impl<AccountId> pallet_asset_conversion::Swap<AccountId> for MockSwap
+where
+	AccountId: Clone,
+{
+	type Balance = Balance;
+	type AssetKind = CurrencyId;
+	fn max_path_len() -> u32 {
+		8
 	}
-	fn get_swap_amount(
-		_from: CurrencyId,
-		_to: CurrencyId,
-		_amount: SwapLimit<Balance>,
-	) -> Option<(Balance, Balance)> {
-		Some((0, 0))
+
+	fn swap_exact_tokens_for_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		amount_in: Self::Balance,
+		_amount_out_min: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		// Return a mock amount out
+		Ok(amount_in)
 	}
-	fn swap_by_path(
-		_source: &AccountId,
-		_path: &[CurrencyId],
-		_amount: SwapLimit<Balance>,
-	) -> Result<(Balance, Balance), DispatchError> {
-		Ok((0, 0))
+
+	fn swap_tokens_for_exact_tokens(
+		_sender: AccountId,
+		_path: Vec<Self::AssetKind>,
+		amount_out: Self::Balance,
+		_amount_in_max: Option<Self::Balance>,
+		_send_to: AccountId,
+		_keep_alive: bool,
+	) -> Result<Self::Balance, DispatchError> {
+		// Return a mock amount in
+		Ok(amount_out)
 	}
 }
-
 pub struct TreasuryAccount;
 impl frame_support::traits::Get<AccountId> for TreasuryAccount {
 	fn get() -> AccountId {
@@ -200,6 +201,9 @@ impl frame_support::traits::Get<AccountId> for TreasuryAccount {
 }
 
 impl pallet_cdp_treasury::Config for Test {
+	type StableCurrencyId = StableCurrencyId;
+	type CollateralCurrencyId = CollateralCurrencyId;
+	type AssetKind = CurrencyId;
 	type PalletId = CDPTreasuryPalletId;
 	type Fungibles = MultiCurrency;
 	type AuctionManagerHandler = MockAuctionManager<AccountId>;
@@ -210,8 +214,6 @@ impl pallet_cdp_treasury::Config for Test {
 	type CurrencyId = CurrencyId;
 	type MaxAuctionsCount = ConstU32<10>;
 	type TreasuryAccount = TreasuryAccount;
-	type GetStableCurrencyId = StableCurrencyId;
-	type GetBaseCurrencyId = CollateralCurrencyId;
 }
 
 pub struct MockPriceProvider;
@@ -257,6 +259,7 @@ impl Config for Test {
 	type IssuanceQuota = IssuanceQuotaParam;
 	type PalletId = IssuanceBufferPalletId;
 	type CDPTreasury = pallet_cdp_treasury::Pallet<Test>;
+	type WeightInfo = ();
 }
 
 pub struct ExtBuilder;
@@ -278,7 +281,7 @@ impl ExtBuilder {
 		.assimilate_storage(&mut t)
 		.unwrap();
 
-		assets::GenesisConfig::<Test> {
+		pallet_assets::GenesisConfig::<Test> {
 			assets: vec![(STABLE, ALICE, true, 1)],
 			metadata: vec![(STABLE, b"Stable".to_vec(), b"STB".to_vec(), 12)],
 			accounts: vec![(STABLE, ALICE, 1_000_000)],

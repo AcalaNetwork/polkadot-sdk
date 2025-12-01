@@ -104,6 +104,9 @@ pub mod pallet {
 		#[pallet::constant]
 		type PalletId: Get<PalletId>;
 
+		/// The currency ID of the collateral.
+		type CollateralCurrencyId: Get<Self::CurrencyId>;
+
 		/// Event handler which calls when update loan.
 		type OnUpdateLoan: Handler<(
 			Self::AccountId,
@@ -112,7 +115,11 @@ pub mod pallet {
 		)>;
 
 		/// Liquidation strategy for liquidating CDP positions
-		type LiquidationStrategy: LiquidationTarget<Self::AccountId, BalanceOf<Self>>;
+		type LiquidationStrategy: LiquidationTarget<
+			Self::AccountId,
+			Self::CurrencyId,
+			BalanceOf<Self>,
+		>;
 	}
 
 	#[pallet::event]
@@ -193,6 +200,7 @@ pub mod pallet {
 			// liquidate on behalf of the CDP treasury.
 			let (liquidated_collateral, covered_debit_value) = T::LiquidationStrategy::liquidate(
 				&module_account,
+				T::CollateralCurrencyId::get(),
 				collateral_confiscate,
 				debit_value_to_cover,
 			)?;

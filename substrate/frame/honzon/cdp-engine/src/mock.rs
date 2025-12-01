@@ -222,9 +222,10 @@ impl RiskManager<DebitUnit<Balance>, Balance, FixedU128> for MockRiskManager {
 }
 
 pub struct MockLiquidationStrategy;
-impl LiquidationTarget<u64, Balance> for MockLiquidationStrategy {
+impl LiquidationTarget<u64, CurrencyId, Balance> for MockLiquidationStrategy {
 	fn liquidate(
 		_who: &u64,
+		_collateral_currency: CurrencyId,
 		_collateral_to_sell: Balance,
 		_debit_to_cover: Balance,
 	) -> Result<(Balance, Balance), DispatchError> {
@@ -234,6 +235,7 @@ impl LiquidationTarget<u64, Balance> for MockLiquidationStrategy {
 
 impl pallet_loans::Config for Test {
 	type CurrencyId = CurrencyId;
+	type CollateralCurrencyId = GetNativeCurrencyId;
 	type Currency = Balances;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	type RiskManager = CDPEngine;

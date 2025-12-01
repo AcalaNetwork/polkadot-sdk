@@ -93,6 +93,7 @@ parameter_types! {
 }
 
 impl pallet_loans::Config for Test {
+	type CollateralCurrencyId = GetNativeCurrencyId;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	type LiquidationStrategy = MockLiquidationStrategy;
 	type Currency = Balances;
@@ -200,12 +201,7 @@ impl pallet_cdp_treasury::Config for Test {
 	type Swap = MockSwap;
 }
 
-parameter_types! {
-	pub const CollateralCurrencyId: CurrencyId = NATIVE;
-}
-
 impl pallet_emergency_shutdown::Config for Test {
-	type CollateralCurrencyId = CollateralCurrencyId;
 	type PriceSource = MockLockablePrice;
 	type AuctionManagerHandler = MockAuctionManager;
 	type ShutdownOrigin = EnsureSignedBy<One, AccountId>;

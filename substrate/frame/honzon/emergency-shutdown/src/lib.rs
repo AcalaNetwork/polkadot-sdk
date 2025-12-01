@@ -60,9 +60,6 @@ pub mod pallet {
 	use super::*;
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_loans::Config {
-		/// The single collateral currency type. This should be the native currency.
-		type CollateralCurrencyId: Get<<Self as pallet_loans::Config>::CurrencyId>;
-
 		/// The price source for the collateral currency, used to freeze the price during shutdown.
 		type PriceSource: LockablePrice<<Self as pallet_loans::Config>::CurrencyId>;
 
@@ -153,7 +150,7 @@ pub mod pallet {
 			ensure!(!Self::is_shutdown(), Error::<T>::AlreadyShutdown);
 
 			// get all collateral types
-			let currency_id = T::CollateralCurrencyId::get();
+			let currency_id = <T as pallet_loans::Config>::CollateralCurrencyId::get();
 
 			// lock price for every collateral
 			// TODO: check the results
@@ -182,7 +179,7 @@ pub mod pallet {
 			// been done or cancelled. Settle all collaterals type CDPs which have debit,
 			// cancel all collateral auctions in forward stage and wait for all collateral
 			// auctions in reverse stage to be ended.
-			let currency_id = T::CollateralCurrencyId::get();
+			let currency_id = <T as pallet_loans::Config>::CollateralCurrencyId::get();
 			// there's no collateral auction
 			ensure!(
 				T::AuctionManagerHandler::get_total_collateral_in_auction(currency_id).is_zero(),
@@ -218,7 +215,7 @@ pub mod pallet {
 
 			let refund_ratio: Ratio =
 				<T as pallet_loans::Config>::CDPTreasury::get_debit_proportion(amount);
-			let currency_id = <T as pallet::Config>::CollateralCurrencyId::get();
+			let currency_id = <T as pallet_loans::Config>::CollateralCurrencyId::get();
 
 			// burn caller's stable currency by CDP treasury
 			<T as pallet_loans::Config>::CDPTreasury::burn_debit(&who, amount)?;

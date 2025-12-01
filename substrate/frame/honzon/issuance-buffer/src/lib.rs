@@ -39,6 +39,7 @@ pub use pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
+	use crate::weights::WeightInfo;
 	use frame_support::{
 		pallet_prelude::*,
 		traits::{
@@ -55,7 +56,6 @@ pub mod pallet {
 		traits::{AccountIdConversion, Saturating, Zero},
 		Permill,
 	};
-	use crate::weights::WeightInfo;
 	use sp_std::result;
 
 	pub type BalanceOf<T> = <T as pallet_cdp_treasury::Config>::Balance;
@@ -97,11 +97,7 @@ pub mod pallet {
 		type PalletId: Get<PalletId>;
 
 		/// The CDP treasury pallet.
-		type CDPTreasury: CDPTreasury<
-			Self::AccountId,
-			Balance = BalanceOf<Self>,
-			CurrencyId = Self::CurrencyId,
-		>;
+		type CDPTreasury: CDPTreasury<Self::AccountId, Balance = BalanceOf<Self>>;
 	}
 
 	#[pallet::storage]

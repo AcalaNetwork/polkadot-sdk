@@ -6,7 +6,7 @@ use crate as pallet_connections;
 use crate::BenchmarkHelper;
 use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{AsEnsureOriginWithArg, ConstU128, ConstU32, fungibles::Mutate},
+	traits::{fungibles::Mutate, AsEnsureOriginWithArg, ConstU128, ConstU32},
 	PalletId,
 };
 use sp_core::H256;
@@ -16,12 +16,11 @@ use sp_runtime::{
 };
 
 use crate::{LiquidityRouter, VaultProvider};
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-#[cfg(feature = "runtime-benchmarks")]
-use frame_system::RawOrigin;
 #[cfg(feature = "runtime-benchmarks")]
 use frame_support::traits::tokens::fungibles::Inspect;
+#[cfg(feature = "runtime-benchmarks")]
+use frame_system::RawOrigin;
+use std::{cell::RefCell, collections::BTreeMap};
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -36,8 +35,8 @@ construct_runtime!(
 );
 
 parameter_types! {
-    pub const BlockHashCount: u64 = 250;
-    pub const SS58Prefix: u8 = 42;
+	pub const BlockHashCount: u64 = 250;
+	pub const SS58Prefix: u8 = 42;
 }
 
 impl frame_system::Config for Test {
@@ -115,12 +114,12 @@ impl pallet_assets::Config for Test {
 
 #[derive(Default, Clone)]
 pub struct Vault {
-    pub collateral: u128,
-    pub debt: u128,
+	pub collateral: u128,
+	pub debt: u128,
 }
 
 thread_local! {
-    static VAULTS: RefCell<BTreeMap<u32, Vault>> = RefCell::new(BTreeMap::new());
+	static VAULTS: RefCell<BTreeMap<u32, Vault>> = RefCell::new(BTreeMap::new());
 }
 
 pub struct MockVaultProvider;
@@ -128,40 +127,41 @@ impl VaultProvider<u64, u128, u32, u32> for MockVaultProvider {
 	type AssetId = u32;
 
 	fn get_position(vault_id: &u32) -> Result<(u128, u128), DispatchError> {
-        let vault = VAULTS.with(|v| v.borrow().get(vault_id).cloned().unwrap_or_default());
-        Ok((vault.collateral, vault.debt))
-    }
+		let vault = VAULTS.with(|v| v.borrow().get(vault_id).cloned().unwrap_or_default());
+		Ok((vault.collateral, vault.debt))
+	}
 
-    fn deposit_collateral(vault_id: &u32, _from: &u64, amount: u128) -> DispatchResult {
-        VAULTS.with(|v| {
-            let mut vaults = v.borrow_mut();
-            let vault = vaults.entry(*vault_id).or_default();
-            vault.collateral += amount;
-        });
-        Ok(())
-    }
-    fn withdraw_collateral(vault_id: &u32, _to: &u64, amount: u128) -> DispatchResult {
-        VAULTS.with(|v| {
-            let mut vaults = v.borrow_mut();
-            let vault = vaults.entry(*vault_id).or_default();
-            vault.collateral = vault.collateral.checked_sub(amount).ok_or("Not enough collateral")?;
-            Ok(())
-        })
-    }
-    fn mint(vault_id: &u32, to: &u64, amount: u128) -> DispatchResult {
-        let stable_asset_id = 1;
-        Assets::mint_into(stable_asset_id as u32, to, amount).unwrap();
-        VAULTS.with(|v| {
-            let mut vaults = v.borrow_mut();
-            let vault = vaults.entry(*vault_id).or_default();
-            vault.debt += amount;
-        });
-        Ok(())
-    }
-    fn repay(vault_id: &u32, from: &u64, amount: u128) -> DispatchResult {
-        let stable_asset_id = 1;
-        use frame_support::traits::tokens::{Fortitude, Precision, Preservation};
-        Assets::burn_from(
+	fn deposit_collateral(vault_id: &u32, _from: &u64, amount: u128) -> DispatchResult {
+		VAULTS.with(|v| {
+			let mut vaults = v.borrow_mut();
+			let vault = vaults.entry(*vault_id).or_default();
+			vault.collateral += amount;
+		});
+		Ok(())
+	}
+	fn withdraw_collateral(vault_id: &u32, _to: &u64, amount: u128) -> DispatchResult {
+		VAULTS.with(|v| {
+			let mut vaults = v.borrow_mut();
+			let vault = vaults.entry(*vault_id).or_default();
+			vault.collateral =
+				vault.collateral.checked_sub(amount).ok_or("Not enough collateral")?;
+			Ok(())
+		})
+	}
+	fn mint(vault_id: &u32, to: &u64, amount: u128) -> DispatchResult {
+		let stable_asset_id = 1;
+		Assets::mint_into(stable_asset_id as u32, to, amount).unwrap();
+		VAULTS.with(|v| {
+			let mut vaults = v.borrow_mut();
+			let vault = vaults.entry(*vault_id).or_default();
+			vault.debt += amount;
+		});
+		Ok(())
+	}
+	fn repay(vault_id: &u32, from: &u64, amount: u128) -> DispatchResult {
+		let stable_asset_id = 1;
+		use frame_support::traits::tokens::{Fortitude, Precision, Preservation};
+		Assets::burn_from(
 			stable_asset_id as u32,
 			from,
 			amount,
@@ -170,14 +170,14 @@ impl VaultProvider<u64, u128, u32, u32> for MockVaultProvider {
 			Fortitude::Polite,
 		)
 		.unwrap();
-        VAULTS.with(|v| {
-            let mut vaults = v.borrow_mut();
-            let vault = vaults.entry(*vault_id).or_default();
-            vault.debt = vault.debt.checked_sub(amount).ok_or("Not enough debt to repay")?;
-            Ok(())
-        })
-    }
-    	fn close_vault(vault_id: &u32) -> DispatchResult {
+		VAULTS.with(|v| {
+			let mut vaults = v.borrow_mut();
+			let vault = vaults.entry(*vault_id).or_default();
+			vault.debt = vault.debt.checked_sub(amount).ok_or("Not enough debt to repay")?;
+			Ok(())
+		})
+	}
+	fn close_vault(vault_id: &u32) -> DispatchResult {
 		VAULTS.with(|v| {
 			let mut vaults = v.borrow_mut();
 			let vault = vaults.get(vault_id).ok_or("Vault not found")?;
@@ -209,50 +209,45 @@ impl VaultProvider<u64, u128, u32, u32> for MockVaultProvider {
 }
 
 thread_local! {
-    static LIQUIDITY: RefCell<BTreeMap<(u32, u64), u128>> = RefCell::new(BTreeMap::new());
+	static LIQUIDITY: RefCell<BTreeMap<(u32, u64), u128>> = RefCell::new(BTreeMap::new());
 }
 
 pub struct MockLiquidityRouter;
 impl LiquidityRouter<u64, u128> for MockLiquidityRouter {
-    type DestinationId = u32;
+	type DestinationId = u32;
 
-    fn deposit(destination_id: Self::DestinationId, who: &u64, amount: u128) -> DispatchResult {
-        LIQUIDITY.with(|l| {
-            let mut liquidity = l.borrow_mut();
-            *liquidity.entry((destination_id, *who)).or_default() += amount;
-        });
-        Ok(())
-    }
+	fn deposit(destination_id: Self::DestinationId, who: &u64, amount: u128) -> DispatchResult {
+		LIQUIDITY.with(|l| {
+			let mut liquidity = l.borrow_mut();
+			*liquidity.entry((destination_id, *who)).or_default() += amount;
+		});
+		Ok(())
+	}
 
-    fn withdraw(destination_id: Self::DestinationId, who: &u64, amount: u128) -> DispatchResult {
-        LIQUIDITY.with(|l| {
-            let mut liquidity = l.borrow_mut();
-            let balance = liquidity.entry((destination_id, *who)).or_default();
-            *balance = balance.checked_sub(amount).ok_or("not enough liquidity")?;
-            Ok(())
-        })
-    }
+	fn withdraw(destination_id: Self::DestinationId, who: &u64, amount: u128) -> DispatchResult {
+		LIQUIDITY.with(|l| {
+			let mut liquidity = l.borrow_mut();
+			let balance = liquidity.entry((destination_id, *who)).or_default();
+			*balance = balance.checked_sub(amount).ok_or("not enough liquidity")?;
+			Ok(())
+		})
+	}
 
-    fn withdraw_all(
-        destination_id: Self::DestinationId,
-        who: &u64,
-    ) -> Result<(), DispatchError> {
-        LIQUIDITY.with(|l| {
-            let mut liquidity = l.borrow_mut();
-            liquidity.remove(&(destination_id, *who)).unwrap_or_default();
-            Ok(())
-        })
-    }
+	fn withdraw_all(destination_id: Self::DestinationId, who: &u64) -> Result<(), DispatchError> {
+		LIQUIDITY.with(|l| {
+			let mut liquidity = l.borrow_mut();
+			liquidity.remove(&(destination_id, *who)).unwrap_or_default();
+			Ok(())
+		})
+	}
 
-    fn get_destination_account(
-        _destination_id: Self::DestinationId,
-    ) -> Result<u64, DispatchError> {
-        Ok(99) // 99 is the destination account
-    }
+	fn get_destination_account(_destination_id: Self::DestinationId) -> Result<u64, DispatchError> {
+		Ok(99) // 99 is the destination account
+	}
 }
 
 parameter_types! {
-    pub const ConnectionsPalletId: PalletId = PalletId(*b"conpalet");
+	pub const ConnectionsPalletId: PalletId = PalletId(*b"conpalet");
 }
 
 impl crate::Config for Test {
@@ -268,6 +263,7 @@ impl crate::Config for Test {
 	type BlockNumber = u64;
 	type StableCurrencyId = ConstU32<1>;
 	type Fungibles = Assets;
+	type WeightInfo = ();
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = BenchHelper;
 }
@@ -292,41 +288,41 @@ pub struct BenchHelper;
 
 #[cfg(feature = "runtime-benchmarks")]
 impl BenchmarkHelper<u64, u128, u32, u32, u64> for BenchHelper {
-    fn destination_id(seed: u32) -> u32 {
-        seed.saturating_add(1)
-    }
+	fn destination_id(seed: u32) -> u32 {
+		seed.saturating_add(1)
+	}
 
-    fn collateral_amount() -> u128 {
-        1_000
-    }
+	fn collateral_amount() -> u128 {
+		1_000
+	}
 
-    fn mint_amount() -> u128 {
-        500
-    }
+	fn mint_amount() -> u128 {
+		500
+	}
 
-    fn prepare_open(
-        owner: &u64,
-        _connection_id: u32,
-        connection_account: &u64,
-        _destination_id: u32,
-        _collateral_amount: u128,
-        _mint_amount: u128,
-    ) -> DispatchResult {
-        let _ = connection_account;
-        let stable_asset_id: u32 = 1;
-        if !Assets::asset_exists(stable_asset_id.into()) {
-            Assets::force_create(
-                RawOrigin::Root.into(),
-                stable_asset_id.into(),
-                owner.clone(),
-                true,
-                1,
-            )?;
-        }
-        Ok(())
-    }
+	fn prepare_open(
+		owner: &u64,
+		_connection_id: u32,
+		connection_account: &u64,
+		_destination_id: u32,
+		_collateral_amount: u128,
+		_mint_amount: u128,
+	) -> DispatchResult {
+		let _ = connection_account;
+		let stable_asset_id: u32 = 1;
+		if !Assets::asset_exists(stable_asset_id.into()) {
+			Assets::force_create(
+				RawOrigin::Root.into(),
+				stable_asset_id.into(),
+				owner.clone(),
+				true,
+				1,
+			)?;
+		}
+		Ok(())
+	}
 
-    fn set_block_number(block: u64) {
-        System::set_block_number(block);
-    }
+	fn set_block_number(block: u64) {
+		System::set_block_number(block);
+	}
 }

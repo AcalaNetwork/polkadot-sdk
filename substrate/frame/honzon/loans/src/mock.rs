@@ -281,12 +281,14 @@ impl Handler<(u128, crate::BalanceAdjustment<u128>, u128)> for MockOnUpdateLoan 
 
 parameter_types! {
 	pub const LoansPalletId: PalletId = PalletId(*b"py/loans");
+	pub const GetNativeCurrencyId: CurrencyId = CurrencyId::Native;
 }
 
 pub type NativeFungible = Balances;
 
 impl pallet_loans::Config for Runtime {
 	type CurrencyId = CurrencyId;
+	type CollateralCurrencyId = GetNativeCurrencyId;
 	type Currency = NativeFungible;
 	type RiskManager = MockRiskManager;
 	type CDPTreasury = CDPTreasuryModule;

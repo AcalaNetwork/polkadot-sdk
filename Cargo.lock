@@ -12850,6 +12850,7 @@ dependencies = [
  "frame-support",
  "frame-system",
  "log",
+ "pallet-asset-conversion",
  "pallet-assets",
  "pallet-balances",
  "pallet-cdp-treasury",
