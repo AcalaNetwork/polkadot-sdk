@@ -5,7 +5,7 @@ use crate as pallet_connections;
 #[cfg(feature = "runtime-benchmarks")]
 use crate::BenchmarkHelper;
 use frame_support::{
-	construct_runtime, parameter_types,
+	construct_runtime, derive_impl, parameter_types,
 	traits::{fungibles::Mutate, AsEnsureOriginWithArg, ConstU128, ConstU32},
 	PalletId,
 };
@@ -90,6 +90,8 @@ impl pallet_balances::Config for Test {
 }
 
 use sp_runtime::FixedU128;
+
+#[derive_impl(pallet_assets::config_preludes::TestDefaultConfig as pallet_assets::pallet::DefaultConfig)]
 impl pallet_assets::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = u128;
@@ -104,12 +106,7 @@ impl pallet_assets::Config for Test {
 	type MetadataDepositPerByte = ConstU128<1>;
 	type ApprovalDeposit = ConstU128<1>;
 	type StringLimit = ConstU32<50>;
-	type Freezer = ();
-	type Extra = ();
-	type WeightInfo = ();
 	type RemoveItemsLimit = ConstU32<1000>;
-	type CallbackHandle = ();
-	type Holder = ();
 }
 
 #[derive(Default, Clone)]

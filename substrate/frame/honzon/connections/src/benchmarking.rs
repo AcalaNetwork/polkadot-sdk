@@ -3,9 +3,12 @@
 use super::*;
 use crate::Pallet as Connections;
 use frame_benchmarking::{v2::*, whitelisted_caller};
-use frame_support::{assert_ok, traits::{honzon::Rate, Get}};
+use frame_support::{
+	assert_ok,
+	traits::{honzon::Rate, Get},
+};
 use frame_system::RawOrigin;
-use sp_runtime::{FixedPointNumber, traits::{AccountIdConversion, BlockNumberProvider, Saturating}};
+use sp_runtime::{traits::AccountIdConversion, FixedPointNumber};
 
 /// Helper trait for preparing benchmarking state.
 pub trait BenchmarkHelper<AccountId, Balance, ConnectionId, DestinationId, BlockNumber> {
@@ -43,13 +46,7 @@ fn setup_connection<T: Config>(
 	owner: &T::AccountId,
 	destination_seed: u32,
 ) -> Result<
-	(
-		T::ConnectionId,
-		DestinationIdOf<T>,
-		T::Balance,
-		T::Balance,
-		T::AccountId,
-	),
+	(T::ConnectionId, DestinationIdOf<T>, T::Balance, T::Balance, T::AccountId),
 	BenchmarkError,
 > {
 	let connection_id = NextConnectionId::<T>::get();
@@ -121,8 +118,7 @@ mod benchmarks {
 	#[benchmark]
 	fn complete_withdrawal() -> Result<(), BenchmarkError> {
 		let owner: T::AccountId = whitelisted_caller();
-		let (connection_id, destination_id, _, mint, _) =
-			setup_connection::<T>(&owner, 2)?;
+		let (connection_id, destination_id, _, mint, _) = setup_connection::<T>(&owner, 2)?;
 
 		assert_ok!(Connections::<T>::initiate_withdrawal(
 			RawOrigin::Signed(owner.clone()).into(),
@@ -142,8 +138,7 @@ mod benchmarks {
 	#[benchmark]
 	fn withdraw_collateral() -> Result<(), BenchmarkError> {
 		let owner: T::AccountId = whitelisted_caller();
-		let (connection_id, _destination_id, collateral, _, _) =
-			setup_connection::<T>(&owner, 3)?;
+		let (connection_id, _destination_id, collateral, _, _) = setup_connection::<T>(&owner, 3)?;
 
 		#[extrinsic_call]
 		_(RawOrigin::Signed(owner.clone()), connection_id, collateral);
