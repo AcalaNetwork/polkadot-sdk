@@ -65,7 +65,7 @@ impl<T: Config> Pallet<T> {
 
 	/// Gets the compound factor for the given stability fee, initializing it with the default
 	/// if not yet set.
-	fn get_or_init_compound_factor(stability_fee: Rate) -> CompoundFactor {
+	pub fn get_or_init_compound_factor(stability_fee: Rate) -> CompoundFactor {
 		if let Some(compound_factor) = CompoundFactorStorage::<T>::get(stability_fee) {
 			compound_factor
 		} else {
@@ -76,7 +76,7 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Converts a given debit balance to its value based on the stability fee's compound factor.
-	pub(crate) fn do_debit_units_to_value(
+	pub fn do_debit_units_to_value(
 		debit_units: pallet_loans::DebitUnitOf<T>,
 		stability_fee: Rate,
 	) -> pallet_loans::BalanceOf<T> {

@@ -32,7 +32,7 @@ fn new_test_ext() -> sp_io::TestExternalities {
 fn set_stability_fee_should_work_for_admin() {
 	new_test_ext().execute_with(|| {
 		let new_fee = Rate::from_rational(1, 100); // 1%
-		assert_ok!(Honzon::set_stability_fee(RuntimeOrigin::root(), ALICE, new_fee));
+		assert_ok!(Honzon::set_stability_fee(RuntimeOrigin::root(), ALICE, Some(new_fee)));
 	});
 }
 
@@ -41,7 +41,7 @@ fn set_stability_fee_should_fail_for_non_admin() {
 	new_test_ext().execute_with(|| {
 		let new_fee = Rate::from_rational(1, 100); // 1%
 		assert_noop!(
-			Honzon::set_stability_fee(RuntimeOrigin::signed(ALICE), ALICE, new_fee),
+			Honzon::set_stability_fee(RuntimeOrigin::signed(ALICE), ALICE, Some(new_fee)),
 			DispatchError::BadOrigin
 		);
 	});

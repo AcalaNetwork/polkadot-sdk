@@ -20,23 +20,24 @@
 
 #![cfg(test)]
 
-use crate::Config;
+use crate as pallet_honzon;
 use frame_support::{
 	construct_runtime, ord_parameter_types,
 	pallet_prelude::*,
 	parameter_types,
 	traits::{
 		honzon::{
-			bounded::FractionalRate, AuctionManager, EmergencyShutdown, ExchangeRate,
+			AuctionManager, DebitUnit, EmergencyShutdown, ExchangeRate, FractionalRate,
 			LiquidationTarget, PriceProvider, Rate, Ratio, RiskManager,
 		},
 		tokens::fungible::UnionOf,
-		AsEnsureOriginWithArg, ConstU16, ConstU32, ConstU64, Everything, SortedMembers,
+		AsEnsureOriginWithArg, ConstU16, ConstU32, ConstU64, Everything, Get, SortedMembers,
 	},
 	PalletId,
 };
 use frame_system::{EnsureRoot, EnsureSignedBy};
 use pallet_asset_conversion::{AccountIdConverter, Ascending, Chain, WithFirstAsset};
+use pallet_cdp_engine::{CompoundFactor, RiskManagementParams};
 use scale_info::TypeInfo;
 use sp_core::{H256, U256};
 use sp_runtime::{
@@ -102,8 +103,6 @@ pub const NATIVE_ID: CurrencyId = 0;
 pub const STABLE_ID: CurrencyId = 1;
 pub const NATIVE: AssetKind = AssetKind::Native;
 
-use crate as honzon_pallet;
-
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;
 type Block = frame_system::mocking::MockBlock<Runtime>;
 
@@ -111,7 +110,7 @@ construct_runtime! {
 	pub enum Runtime
 	{
 		System: frame_system,
-		Honzon: honzon_pallet,
+		Honzon: pallet_honzon,
 		PalletBalances: pallet_balances,
 		Fungibles: pallet_assets,
 		CDPTreasury: pallet_cdp_treasury,
@@ -233,21 +232,23 @@ impl pallet_assets::Config for Runtime {
 }
 
 pub struct MockRiskManager;
-impl RiskManager<AccountId, CurrencyId, Balance, Balance> for MockRiskManager {
-	fn get_debit_value(_currency_id: CurrencyId, debit_balance: Balance) -> Balance {
-		debit_balance
+impl RiskManager<DebitUnit<Balance>, Balance, FixedU128> for MockRiskManager {
+	fn debit_units_to_value(debit_units: DebitUnit<Balance>, _stability_fee: FixedU128) -> Balance {
+		debit_units.into_inner()
 	}
-
+	fn value_to_debit_units(debit_value: Balance, _stability_fee: FixedU128) -> DebitUnit<Balance> {
+		DebitUnit::new(debit_value)
+	}
 	fn check_position_valid(
-		_currency_id: CurrencyId,
 		_collateral_balance: Balance,
-		_debit_balance: Balance,
+		_debit_units: DebitUnit<Balance>,
+		_debit_interest_rate: FixedU128,
 		_check_required_ratio: bool,
 	) -> DispatchResult {
 		Ok(())
 	}
 
-	fn check_debit_cap(_currency_id: CurrencyId, _total_debit_balance: Balance) -> DispatchResult {
+	fn check_debit_cap() -> DispatchResult {
 		Ok(())
 	}
 }
@@ -340,8 +341,8 @@ impl pallet_cdp_treasury::Config for Runtime {
 	type TreasuryAccount = TreasuryAccount;
 	type PalletId = CDPTreasuryPalletId;
 	type WeightInfo = ();
-	type GetStableCurrencyId = GetStableCurrencyId;
-	type GetBaseCurrencyId = GetNativeCurrencyId;
+	type CollateralCurrencyId = GetNativeCurrencyId;
+	type StableCurrencyId = GetStableCurrencyId;
 	type Swap = AssetConversion;
 }
 
@@ -385,6 +386,9 @@ impl pallet_asset_conversion::Config for Runtime {
 	type PalletId = AssetConversionPalletId;
 	type WeightInfo = ();
 	type HigherPrecisionBalance = U256;
+	pallet_asset_conversion::runtime_benchmarks_enabled! {
+		type BenchmarkHelper = ();
+	}
 }
 
 parameter_types! {
@@ -393,21 +397,33 @@ parameter_types! {
 	pub MinimumDebitValue: Balance = 100;
 	pub const DefaultDebitExchangeRate: ExchangeRate = ExchangeRate::from_inner(1_000_000_000_000_000_000);
 	pub DefaultLiquidationPenalty: FractionalRate = FractionalRate::try_from(Rate::from_rational(1, 10)).unwrap();
-	pub const MinimumCollateralAmount: u128 = 100;
+	pub const MinimumCollateralAmount: Balance = 100;
 	pub const MaxSwapSlippageCompareToOracle: Ratio = Ratio::from_rational(10, 100);
 	pub const UnsignedPriority: u64 = 100;
+	pub const DefaultCompoundFactor: CompoundFactor = unsafe { CompoundFactor::from_inner_unchecked(FixedU128::from_inner(1_000_000_000_000_000_000)) };
+}
+
+pub struct GetRiskManagementParams;
+impl Get<RiskManagementParams<Balance>> for GetRiskManagementParams {
+	fn get() -> RiskManagementParams<Balance> {
+		RiskManagementParams::<Balance> {
+			maximum_total_debit_value: 1_000_000_000_000_000_000u128,
+			interest_rate_per_sec: Rate::from_rational(1, 10000),
+			liquidation_ratio: Ratio::from_rational(15, 10),
+			liquidation_penalty: Rate::zero(),
+			required_collateral_ratio: None,
+		}
+	}
 }
 
 impl pallet_cdp_engine::Config for Runtime {
-	type UpdateOrigin = EnsureSignedBy<One, AccountId>;
-	type DefaultLiquidationRatio = DefaultLiquidationRatio;
+	type RiskManagementParams = GetRiskManagementParams;
+	type DefaultCompoundFactor = DefaultCompoundFactor;
 	type MinimumDebitValue = MinimumDebitValue;
+	type MinimumCollateralAmount = MinimumCollateralAmount;
 	type UnixTime = Timestamp;
 	type PalletId = CDPEnginePalletId;
 	type WeightInfo = ();
-	type DefaultDebitExchangeRate = DefaultDebitExchangeRate;
-	type DefaultLiquidationPenalty = DefaultLiquidationPenalty;
-	type MinimumCollateralAmount = MinimumCollateralAmount;
 	type GetNativeCurrencyId = GetNativeCurrencyId;
 	type GetStableCurrencyId = GetStableCurrencyId;
 	type AssetKind = AssetKind;
@@ -419,6 +435,7 @@ impl pallet_cdp_engine::Config for Runtime {
 	type Currency = PalletBalances;
 	type Tokens = Fungibles;
 	type Swap = AssetConversion;
+	type VaultId = u64;
 }
 
 impl pallet_timestamp::Config for Runtime {
@@ -439,7 +456,7 @@ parameter_types! {
 	pub const DepositPerAuthorization: Balance = 100;
 }
 
-impl Config for Runtime {
+impl pallet_honzon::Config for Runtime {
 	type Currency = PalletBalances;
 	type DepositPerAuthorization = DepositPerAuthorization;
 	type CollateralCurrencyId = GetNativeCurrencyId;

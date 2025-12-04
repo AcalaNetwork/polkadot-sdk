@@ -4,7 +4,7 @@ use sp_core::U256;
 use sp_runtime::DispatchResult;
 use sp_std::prelude::*;
 
-use super::{ExchangeRate, Position, Ratio};
+use super::{Position, Ratio};
 
 /// A trait for handling emergency shutdowns.
 pub trait EmergencyShutdown {
@@ -28,6 +28,4 @@ pub trait HonzonManager<AccountId, BalanceAdjustment, Unit, Balance, Rate> {
 	fn get_collateral_parameters() -> Vec<U256>;
 	/// Returns the current collateral-to-debit ratio of a CDP.
 	fn get_current_collateral_ratio(who: &AccountId) -> Option<Ratio>;
-	/// Returns the exchange rate of debit units to debit value.
-	fn get_debit_exchange_rate() -> ExchangeRate;
 }

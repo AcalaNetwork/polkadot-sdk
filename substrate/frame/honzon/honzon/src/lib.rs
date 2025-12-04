@@ -52,7 +52,7 @@ use frame_support::{
 	pallet_prelude::*,
 	traits::{
 		honzon::{
-			EmergencyShutdown, ExchangeRate, HonzonManager, Position, PriceProvider, Rate, Ratio,
+			DebitUnit, EmergencyShutdown, HonzonManager, Position, PriceProvider, Rate, Ratio,
 		},
 		Get, NamedReservableCurrency,
 	},
@@ -131,22 +131,26 @@ pub mod pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// Adjusts a `Position` by changing the collateral and debit amounts.
+		/// Adjusts a `Position` by changing the collateral and debit amounts, where the debit
+		/// adjustment is specified as a value in terms of the stablecoin.
 		///
 		/// - `collateral_adjustment`: A signed amount representing the change in collateral. A
 		///   positive value deposits collateral, while a negative value withdraws it.
-		/// - `debit_adjustment`: A signed amount representing the change in debit. A positive value
-		///   issues more stablecoin to the caller, while a negative value represents a repayment.
+		/// - `debit_value_adjustment`: A signed amount representing the change in the debit's
+		///   value. A positive value issues more stablecoin, while a negative value represents a
+		///   repayment.
 		#[pallet::call_index(0)]
 		#[pallet::weight(<T as Config>::WeightInfo::adjust_loan())]
 		pub fn adjust_loan(
 			origin: OriginFor<T>,
 			collateral_adjustment: BalanceAdjustmentOf<T>,
-			debit_adjustment: BalanceAdjustmentOf<T>,
+			debit_value_adjustment: BalanceAdjustmentOf<T>,
 		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
-			Self::do_adjust_loan(&who, collateral_adjustment, debit_adjustment)
+
+			Self::do_adjust_loan(&who, collateral_adjustment, debit_value_adjustment)
 		}
+
 		/// Closes a `Position` that has outstanding debit by selling collateral on a DEX.
 		///
 		/// This function is used when the `Position` is still in a safe state (i.e., not
@@ -177,12 +181,15 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::expand_position_collateral())]
 		pub fn expand_position_collateral(
 			origin: OriginFor<T>,
-			_increase_debit_value: BalanceOf<T>,
-			_min_increase_collateral: BalanceOf<T>,
+			increase_debit_value: BalanceOf<T>,
+			min_increase_collateral: BalanceOf<T>,
 		) -> DispatchResult {
-			let _who = ensure_signed(origin)?;
-			// TODO: not implemented
-			Ok(())
+			let who = ensure_signed(origin)?;
+			<pallet_cdp_engine::Pallet<T>>::expand_position_collateral(
+				&who,
+				increase_debit_value,
+				min_increase_collateral,
+			)
 		}
 
 		/// Sells the collateral locked in a `Position` to get stablecoin to repay the debit.
@@ -202,43 +209,6 @@ pub mod pallet {
 			let _who = ensure_signed(origin)?;
 			// TODO: not implemented
 			Ok(())
-		}
-
-		/// Adjusts a `Position` by changing the collateral and debit amounts, where the debit
-		/// adjustment is specified as a value in terms of the stablecoin.
-		///
-		/// This differs from `adjust_loan` where the debit adjustment is a direct amount of
-		/// the stablecoin.
-		///
-		/// - `collateral_adjustment`: A signed amount representing the change in collateral. A
-		///   positive value deposits collateral, while a negative value withdraws it.
-		/// - `debit_value_adjustment`: A signed amount representing the change in the debit's
-		///   value. A positive value issues more stablecoin, while a negative value represents a
-		///   repayment.
-		///
-		/// **Note:** This function is not yet implemented.
-		#[pallet::call_index(8)]
-		#[pallet::weight(<T as Config>::WeightInfo::adjust_loan())]
-		pub fn adjust_loan_by_debit_value(
-			origin: OriginFor<T>,
-			collateral_adjustment: BalanceAdjustmentOf<T>,
-			debit_value_adjustment: BalanceAdjustmentOf<T>,
-		) -> DispatchResult {
-			let who = ensure_signed(origin)?;
-
-			// not allowed to adjust the debit after system shutdown
-			if !debit_value_adjustment.is_zero() {
-				ensure!(
-					!<T as crate::Config>::EmergencyShutdown::is_shutdown(),
-					Error::<T>::AlreadyShutdown
-				);
-			}
-
-			<pallet_cdp_engine::Pallet<T>>::adjust_position_by_debit_value(
-				&who,
-				collateral_adjustment,
-				debit_value_adjustment,
-			)
 		}
 
 		/// Updates the stability fee for a specific `Position`.
@@ -273,45 +243,44 @@ impl<T: Config> Pallet<T> {
 	fn do_adjust_loan(
 		who: &<T as frame_system::Config>::AccountId,
 		collateral_adjustment: BalanceAdjustmentOf<T>,
-		debit_adjustment: BalanceAdjustmentOf<T>,
+		debit_value_adjustment: BalanceAdjustmentOf<T>,
 	) -> DispatchResult {
 		// not allowed to adjust the debit after system shutdown
-		if !debit_adjustment.is_zero() {
+		if !debit_value_adjustment.is_zero() {
 			ensure!(
 				!<T as crate::Config>::EmergencyShutdown::is_shutdown(),
 				Error::<T>::AlreadyShutdown
 			);
 		}
-		let maybe_new_stability_fee = if debit_adjustment.is_increase() {
-			Some(<pallet_cdp_engine::Pallet<T>>::interest_rate_per_sec()?)
-		} else {
-			None
-		};
-		<pallet_loans::Pallet<T>>::adjust_position(
+		<pallet_cdp_engine::Pallet<T>>::adjust_position(
 			who,
 			collateral_adjustment,
-			debit_adjustment,
-			maybe_new_stability_fee,
+			debit_value_adjustment,
 		)?;
 		Ok(())
 	}
 
 	fn do_close_loan_by_dex(
-		_who: <T as frame_system::Config>::AccountId,
-		_max_collateral_amount: BalanceOf<T>,
+		who: <T as frame_system::Config>::AccountId,
+		max_collateral_amount: BalanceOf<T>,
 	) -> DispatchResult {
 		ensure!(
 			!<T as crate::Config>::EmergencyShutdown::is_shutdown(),
 			Error::<T>::AlreadyShutdown
 		);
-		// TODO: not implemented
+		<pallet_cdp_engine::Pallet<T>>::close_cdp_has_debit_by_dex(who, max_collateral_amount)?;
 		Ok(())
 	}
 }
 
 impl<T: Config>
-	HonzonManager<<T as frame_system::Config>::AccountId, BalanceAdjustmentOf<T>, BalanceOf<T>>
-	for Pallet<T>
+	HonzonManager<
+		<T as frame_system::Config>::AccountId,
+		BalanceAdjustmentOf<T>,
+		DebitUnit<BalanceOf<T>>,
+		BalanceOf<T>,
+		Rate,
+	> for Pallet<T>
 {
 	fn adjust_loan(
 		who: &<T as frame_system::Config>::AccountId,
@@ -328,42 +297,40 @@ impl<T: Config>
 		Self::do_close_loan_by_dex(who, max_collateral_amount)
 	}
 
-	fn get_position(who: &<T as frame_system::Config>::AccountId) -> Position<BalanceOf<T>> {
+	fn get_position(
+		who: &<T as frame_system::Config>::AccountId,
+	) -> Position<DebitUnit<BalanceOf<T>>, BalanceOf<T>, Rate> {
 		<pallet_loans::Pallet<T>>::positions(who)
 	}
 
 	fn get_collateral_parameters() -> Vec<U256> {
-		let params = <pallet_cdp_engine::Pallet<T>>::collateral_params();
+		let params = <pallet_cdp_engine::Pallet<T>>::risk_management_params();
 
 		vec![
 			Ratio::one().into_inner().into(),
-			params.liquidation_ratio.unwrap_or_default().into_inner().into(),
+			params.liquidation_ratio.into_inner().into(),
 			Ratio::one().into_inner().into(),
 			params.required_collateral_ratio.unwrap_or_default().into_inner().into(),
 		]
 	}
 
 	fn get_current_collateral_ratio(who: &<T as frame_system::Config>::AccountId) -> Option<Ratio> {
-		let currency_id = <T as crate::Config>::CollateralCurrencyId::get();
-		let position: Position<BalanceOf<T>> = <pallet_loans::Pallet<T>>::positions(who);
-		let stable_currency_id = <T as crate::Config>::GetStableCurrencyId::get();
-		let stability_fee = Rate::from_inner(position.stability_fee.into_inner());
-
-		<T as crate::Config>::PriceSource::get_relative_price(currency_id, stable_currency_id).map(
-			|price| {
-				let exchange_rate =
-					<pallet_cdp_engine::Pallet<T>>::get_debit_exchange_rate(stability_fee);
-				<pallet_cdp_engine::Pallet<T>>::calculate_collateral_ratio(
-					position.collateral.into(),
-					position.debit.into(),
-					price,
-					exchange_rate,
-				)
-			},
+		let position: Position<DebitUnit<BalanceOf<T>>, BalanceOf<T>, Rate> =
+			<pallet_loans::Pallet<T>>::positions(who);
+		<T as crate::Config>::PriceSource::get_relative_price(
+			<T as crate::Config>::CollateralCurrencyId::get(),
+			<T as crate::Config>::GetStableCurrencyId::get(),
 		)
-	}
-
-	fn get_debit_exchange_rate() -> ExchangeRate {
-		ExchangeRate::one()
+		.map(|price| {
+			let debit_value = <pallet_cdp_engine::Pallet<T>>::do_debit_units_to_value(
+				position.debit.units,
+				position.debit.stability_fee,
+			);
+			<pallet_cdp_engine::Pallet<T>>::calculate_collateral_ratio(
+				position.collateral,
+				price,
+				debit_value,
+			)
+		})
 	}
 }

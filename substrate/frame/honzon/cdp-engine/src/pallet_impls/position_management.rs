@@ -1,12 +1,16 @@
 use crate::*;
 
 impl<T: Config> Pallet<T> {
-	pub fn adjust_position_by_debit_value(
+	pub fn adjust_position(
 		who: &AccountIdOf<T>,
 		collateral_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
 		debit_value_adjustment: pallet_loans::BalanceAdjustment<pallet_loans::BalanceOf<T>>,
-		maybe_new_stability_fee: Option<Rate>,
 	) -> DispatchResult {
+		let maybe_new_stability_fee = if debit_value_adjustment.is_increase() {
+			Some(Self::interest_rate_per_sec())
+		} else {
+			None
+		};
 		<LoansOf<T>>::adjust_position(
 			who,
 			collateral_adjustment,
