@@ -1,0 +1,10 @@
+---
+globs: mock.rs
+alwaysApply: false
+---
+
+Keep mock runtime simple and minimal, suitable for tests inside the crate's `tests.rs`
+
+When implementing a pallet's config:
+- use the `derive_impl` macro to derive the config from the default config if default config is available.
+
