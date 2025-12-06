@@ -20,10 +20,10 @@ mod extensions_impl {
         type AssetId = u32;
         type AccountId = [u8; 32];
         type Balance = u64;
-        fn total_supply(asset: u32) -> u64 {
+        fn total_supply(_asset: u32) -> u64 {
             200
         }
-        fn balance(asset: u32, who: [u8; 32]) -> u64 {
+        fn balance(_asset: u32, _who: [u8; 32]) -> u64 {
             100
         }
     }
