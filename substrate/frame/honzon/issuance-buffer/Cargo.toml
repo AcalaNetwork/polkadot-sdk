@@ -6,18 +6,18 @@ edition = { workspace = true }
 
 [dependencies]
 codec = { workspace = true, features = ["max-encoded-len"] }
-log = { workspace = true, default-features = false }
-scale-info = { workspace = true, default-features = false }
-sp-arithmetic = { workspace = true, default-features = false }
-sp-runtime = { workspace = true, default-features = false }
-sp-std = { workspace = true, default-features = false }
+log = { workspace = true }
+scale-info = { workspace = true }
+sp-arithmetic = { workspace = true }
+sp-runtime = { workspace = true }
+sp-std = { workspace = true }
 
-frame-support = { workspace = true, default-features = false }
-frame-system = { workspace = true, default-features = false }
-pallet-cdp-treasury = { workspace = true, default-features = false }
-pallet-oracle = { workspace = true, default-features = false }
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+pallet-cdp-treasury = { workspace = true }
+pallet-oracle = { workspace = true }
 
-frame-benchmarking = { workspace = true, default-features = false, optional = true }
+frame-benchmarking = { workspace = true, optional = true }
 
 [dev-dependencies]
 pallet-asset-conversion = { workspace = true, features = ["std"] }
@@ -31,23 +31,43 @@ sp-io = { workspace = true }
 default = ["std"]
 std = [
 	"codec/std",
-	"frame-benchmarking/std",
+	"frame-benchmarking?/std",
 	"frame-support/std",
 	"frame-system/std",
+	"log/std",
+	"pallet-asset-conversion/std",
 	"pallet-assets/std",
+	"pallet-balances/std",
 	"pallet-cdp-treasury/std",
 	"pallet-loans/std",
 	"pallet-oracle/std",
 	"scale-info/std",
+	"sp-arithmetic/std",
+	"sp-core/std",
+	"sp-io/std",
 	"sp-runtime/std",
 	"sp-std/std",
 ]
 try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
+	"pallet-asset-conversion/try-runtime",
+	"pallet-assets/try-runtime",
+	"pallet-balances/try-runtime",
+	"pallet-cdp-treasury/try-runtime",
+	"pallet-loans/try-runtime",
+	"pallet-oracle/try-runtime",
+	"sp-runtime/try-runtime",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
+	"pallet-asset-conversion/runtime-benchmarks",
+	"pallet-assets/runtime-benchmarks",
+	"pallet-balances/runtime-benchmarks",
+	"pallet-cdp-treasury/runtime-benchmarks",
+	"pallet-loans/runtime-benchmarks",
+	"pallet-oracle/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
 ]
