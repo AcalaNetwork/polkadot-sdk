@@ -7,18 +7,15 @@ use crate as pallet_savings;
 use crate::BenchmarkHelper;
 #[cfg(feature = "runtime-benchmarks")]
 use frame_support::assert_ok;
+#[cfg(feature = "runtime-benchmarks")]
+use frame_support::traits::fungibles::{Inspect as FungiblesInspect, Mutate as FungiblesMutate};
 use frame_support::{
-	construct_runtime, parameter_types,
-	traits::{
-		AsEnsureOriginWithArg,  ConstU32, SortedMembers,
-	},
+	construct_runtime, derive_impl, parameter_types,
+	traits::{AsEnsureOriginWithArg, ConstU32, SortedMembers},
 	PalletId,
 };
 use frame_system::{EnsureSigned, EnsureSignedBy};
-use pallet_asset_rewards::FreezeReason;
 use sp_core::H256;
-#[cfg(feature = "runtime-benchmarks")]
-use sp_runtime::traits::Saturating;
 use sp_runtime::{
 	traits::{AccountIdConversion, BlakeTwo256, IdentityLookup},
 	BuildStorage,
@@ -48,58 +45,31 @@ parameter_types! {
 	pub const SS58Prefix: u8 = 42;
 }
 
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::pallet::DefaultConfig)]
 impl frame_system::Config for Test {
-	type BaseCallFilter = frame_support::traits::Everything;
-	type BlockWeights = ();
-	type BlockLength = ();
-	type DbWeight = ();
-	type RuntimeOrigin = RuntimeOrigin;
-	type RuntimeCall = RuntimeCall;
 	type Nonce = u64;
 	type Hash = H256;
 	type Hashing = BlakeTwo256;
 	type AccountId = AccountId;
 	type Lookup = IdentityLookup<Self::AccountId>;
 	type Block = Block;
-	type RuntimeEvent = RuntimeEvent;
 	type BlockHashCount = BlockHashCount;
-	type Version = ();
-	type PalletInfo = PalletInfo;
 	type AccountData = pallet_balances::AccountData<Balance>;
-	type OnNewAccount = ();
-	type OnKilledAccount = ();
-	type SystemWeightInfo = ();
 	type SS58Prefix = SS58Prefix;
-	type OnSetCode = ();
 	type MaxConsumers = ConstU32<16>;
-	type RuntimeTask = ();
-	type ExtensionsWeightInfo = ();
-	type SingleBlockMigrations = ();
-	type MultiBlockMigrator = ();
-	type PreInherents = ();
-	type PostInherents = ();
-	type PostTransactions = ();
 }
 
 parameter_types! {
 	pub const ExistentialDeposit: Balance = 1;
 }
 
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::pallet::DefaultConfig)]
 impl pallet_balances::Config for Test {
-	type MaxLocks = ();
-	type MaxReserves = ();
 	type ReserveIdentifier = [u8; 8];
 	type Balance = Balance;
-	type RuntimeEvent = RuntimeEvent;
-	type DustRemoval = ();
 	type ExistentialDeposit = ExistentialDeposit;
 	type AccountStore = System;
-	type WeightInfo = ();
-	type FreezeIdentifier = FreezeReason;
 	type MaxFreezes = ConstU32<1>;
-	type RuntimeHoldReason = ();
-	type RuntimeFreezeReason = FreezeReason;
-	type DoneSlashHandler = ();
 }
 
 parameter_types! {
@@ -110,6 +80,7 @@ parameter_types! {
 	pub const MetadataDepositPerByte: Balance = 1;
 }
 
+#[derive_impl(pallet_assets::config_preludes::TestDefaultConfig as pallet_assets::pallet::DefaultConfig)]
 impl pallet_assets::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type Balance = Balance;
@@ -125,10 +96,7 @@ impl pallet_assets::Config for Test {
 	type ApprovalDeposit = ApprovalDeposit;
 	type StringLimit = StringLimit;
 	type Freezer = AssetsFreezer;
-	type Extra = ();
-	type WeightInfo = ();
 	type RemoveItemsLimit = ConstU32<1000>;
-	type CallbackHandle = ();
 	type Holder = AssetsHolder;
 }
 
@@ -138,12 +106,26 @@ parameter_types! {
 
 impl pallet_assets_freezer::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
-	type RuntimeFreezeReason = FreezeReason;
+	type RuntimeFreezeReason = RuntimeFreezeReason;
 }
 
 impl pallet_assets_holder::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
-	type RuntimeHoldReason = pallet_asset_rewards::HoldReason;
+	type RuntimeHoldReason = RuntimeHoldReason;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+pub struct AssetRewardsBenchHelper;
+
+#[cfg(feature = "runtime-benchmarks")]
+impl pallet_asset_rewards::benchmarking::BenchmarkHelper<AssetId> for AssetRewardsBenchHelper {
+	fn staked_asset() -> AssetId {
+		1
+	}
+
+	fn reward_asset() -> AssetId {
+		2
+	}
 }
 
 impl pallet_asset_rewards::Config for Test {
@@ -154,12 +136,12 @@ impl pallet_asset_rewards::Config for Test {
 	type PalletId = AssetRewardsPalletId;
 	type CreatePoolOrigin = EnsureSigned<AccountId>;
 	type AssetsFreezer = AssetsFreezer;
-	type RuntimeFreezeReason = FreezeReason;
+	type RuntimeFreezeReason = RuntimeFreezeReason;
 	type Consideration = ();
 	type WeightInfo = ();
 	type BlockNumberProvider = System;
 	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
+	type BenchmarkHelper = AssetRewardsBenchHelper;
 }
 
 parameter_types! {
@@ -187,8 +169,13 @@ impl BenchmarkHelper<AccountId, AssetId, Balance> for BenchHelper {
 	) -> (AssetId, AssetId, Option<AccountId>) {
 		let staked_asset_id = 1;
 		let reward_asset_id = 2;
-		let required = reward_budget.saturating_add(Assets::minimum_balance(reward_asset_id));
-		assert_ok!(Assets::mint_into(reward_asset_id, savings_account, required));
+		let required = reward_budget
+			.saturating_add(<Assets as FungiblesInspect<_>>::minimum_balance(reward_asset_id));
+		assert_ok!(<Assets as FungiblesMutate<_>>::mint_into(
+			reward_asset_id,
+			savings_account,
+			required
+		));
 		(staked_asset_id, reward_asset_id, Some(1))
 	}
 }
