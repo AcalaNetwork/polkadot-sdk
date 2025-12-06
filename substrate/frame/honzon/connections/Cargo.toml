@@ -25,36 +25,37 @@ frame-benchmarking = { optional = true, workspace = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
 
-# Dependencies for traits, will be used by mock
-pallet-assets = { workspace = true, optional = true }
-
 [dev-dependencies]
 sp-core = { workspace = true }
-pallet-balances = { workspace = true, default-features = true}
-pallet-assets = { workspace = true, default-features = true}
+pallet-assets = { workspace = true }
+pallet-balances = { workspace = true }
 
 [features]
 default = ["std"]
 std = [
-    "codec/std",
-    "frame-benchmarking?/std",
-    "frame-support/std",
-    "frame-system/std",
-    "scale-info/std",
-    "sp-runtime/std",
-    "sp-io/std",
-    "pallet-assets?/std",
+	"codec/std",
+	"frame-benchmarking?/std",
+	"frame-support/std",
+	"frame-system/std",
+	"scale-info/std",
+	"sp-runtime/std",
+	"sp-io/std",
+	"pallet-assets/std",
+	"pallet-balances/std",
+	"sp-core/std",
 ]
 runtime-benchmarks = [
-    "frame-benchmarking/runtime-benchmarks",
-    "frame-support/runtime-benchmarks",
-    "frame-system/runtime-benchmarks",
-    "sp-runtime/runtime-benchmarks",
-    "pallet-assets",
+	"frame-benchmarking/runtime-benchmarks",
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
+	"pallet-assets/runtime-benchmarks",
+	"pallet-balances/runtime-benchmarks",
 ]
 try-runtime = [
-    "frame-support/try-runtime",
-    "frame-system/try-runtime",
-    "sp-runtime/try-runtime",
-    "pallet-assets?/try-runtime",
+	"frame-support/try-runtime",
+	"frame-system/try-runtime",
+	"sp-runtime/try-runtime",
+	"pallet-assets/try-runtime",
+	"pallet-balances/try-runtime",
 ]
